@@ -607,6 +607,78 @@ def _location_relevance_score(location: dict, query: str) -> float:
     return score
 
 
+def rank_locations(query: str, locations: list[dict]) -> list[dict]:
+    """
+    Сортирует список локаций по UX-эвристике для выбора пользователем.
+
+    Приоритет выше у ожидаемых «человеческих» вариантов:
+    - точное совпадение названия с запросом;
+    - локации с понятной административной привязкой (регион/страна);
+    - более крупные населённые пункты (если API вернул population);
+    - варианты без координат в подписи.
+
+    Ниже опускаются:
+    - административные единицы вместо населённых пунктов (область/район и т.п.);
+    - дублирующиеся подписи, которые обычно приходится различать координатами;
+    - подписи, уже содержащие координаты.
+    """
+    if not locations:
+        return []
+
+    q = (query or "").strip()
+    q_lower = q.lower()
+
+    # Повторы «чистой» подписи обычно означают неоднозначность и более слабую UX-ясность.
+    base_label_counts: dict[str, int] = {}
+    for loc in locations:
+        base_label = str(loc.get("label") or build_location_label(loc, show_coords=False)).strip().lower()
+        base_label_counts[base_label] = base_label_counts.get(base_label, 0) + 1
+
+    def score(loc: dict) -> tuple[float, int, str]:
+        total = float(_location_relevance_score(loc, q))
+
+        # Большой бонус за точное совпадение по локальному названию.
+        local_name = str(loc.get("local_name") or get_city_name_ru(loc)).strip().lower()
+        raw_name = str(loc.get("name") or "").strip().lower()
+        if q_lower and (q_lower == local_name or q_lower == raw_name):
+            total += 700.0
+
+        # Понятная региональная привязка повышает читаемость и предсказуемость выбора.
+        if loc.get("state"):
+            total += 120.0
+
+        # Наличие country в ответе обычно коррелирует с «более нормализованной» записью.
+        if loc.get("country"):
+            total += 45.0
+
+        # Крупные населённые пункты обычно ожидаемее при неоднозначных запросах.
+        population = loc.get("population")
+        try:
+            pop_value = int(population) if population is not None else 0
+        except (TypeError, ValueError):
+            pop_value = 0
+        if pop_value > 0:
+            total += min(pop_value / 20000.0, 260.0)
+
+        label = str(loc.get("label") or "").lower()
+        if "—" in label and re.search(r"-?\d{1,2}\.\d+", label):
+            total -= 220.0
+
+        base_label = str(loc.get("label") or build_location_label(loc, show_coords=False)).strip().lower()
+        if base_label_counts.get(base_label, 0) > 1:
+            total -= 90.0
+
+        if _is_likely_administrative_unit(loc):
+            total -= 180.0
+
+        # Вторичные tie-breakers для стабильного порядка.
+        ru_priority = 0 if (loc.get("country") or "").upper() == "RU" and contains_cyrillic(q) else 1
+        alpha = str(loc.get("label") or build_location_label(loc, show_coords=False))
+        return (total, -ru_priority, alpha)
+
+    return sorted(locations, key=lambda loc: score(loc), reverse=True)
+
+
 def _dedupe_key(location: dict) -> tuple:
     """
     Ключ для схлопывания полных дублей: имя для отображения, страна, регион, координаты с шагом.

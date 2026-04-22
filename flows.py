@@ -4,6 +4,7 @@ from telebot import types
 from handlers.states import (
     ALERTS_MENU,
     LOCATIONS_MENU,
+    WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_COMPARE_CITY_1,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_DETAILS_CITY,
@@ -18,20 +19,13 @@ def start_alerts_flow(message: types.Message, *, ctx, session_store) -> None:
     """Запускает раздел уведомлений."""
     user_id = message.from_user.id
     ctx.logger.info("Пользователь %s вошёл в раздел уведомлений.", user_id)
-    user_data = ctx.load_user(user_id)
-    lat = user_data.get("lat")
-    lon = user_data.get("lon")
-
-    if lat is None or lon is None:
-        ctx.bot.send_message(
-            message.chat.id,
-            "Сначала нужно сохранить локацию. Используй «Текущая погода» или «Моя геолокация».",
-            reply_markup=ctx.main_menu(),
-        )
-        return
-
-    session_store.set_state(user_id, ALERTS_MENU)
-    ctx.bot.send_message(message.chat.id, ctx.format_alerts_status(user_data), reply_markup=ctx.alerts_menu())
+    ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
+    session_store.set_state(user_id, WAITING_ALERTS_SUBSCRIPTION_MENU)
+    ctx.bot.send_message(
+        message.chat.id,
+        "Раздел уведомлений по нескольким локациям.\nВыбери действие:",
+        reply_markup=ctx.alerts_menu(),
+    )
 
 
 def start_locations_flow(message: types.Message, *, ctx, session_store) -> None:
@@ -344,46 +338,51 @@ def alerts_worker(*, ctx) -> None:
                 if not isinstance(user_data, dict):
                     continue
 
-                user_data = ctx.ensure_notifications_defaults(user_data)
-                notifications = user_data["notifications"]
-
-                if not notifications.get("enabled", False):
+                user_data = ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(user_data))
+                subscriptions = user_data.get("alert_subscriptions", [])
+                if not isinstance(subscriptions, list) or not subscriptions:
                     continue
 
-                lat = user_data.get("lat")
-                lon = user_data.get("lon")
-                if lat is None or lon is None:
-                    continue
+                for sub in subscriptions:
+                    if not isinstance(sub, dict):
+                        continue
+                    if not bool(sub.get("enabled", True)):
+                        continue
+                    lat = sub.get("lat")
+                    lon = sub.get("lon")
+                    if lat is None or lon is None:
+                        continue
+                    interval_h = sub.get("interval_h", 2)
+                    if not isinstance(interval_h, int) or interval_h <= 0:
+                        interval_h = 2
+                    last_check_ts = sub.get("last_check_ts", 0)
+                    if not isinstance(last_check_ts, (int, float)):
+                        last_check_ts = 0
+                    if now_ts - int(last_check_ts) < interval_h * 3600:
+                        continue
 
-                interval_h = notifications.get("interval_h", 2)
-                last_check_ts = notifications.get("last_check_ts", 0)
-                if now_ts - int(last_check_ts) < interval_h * 3600:
-                    continue
+                    forecast_items = ctx.get_forecast_5d3h(float(lat), float(lon))
+                    if not forecast_items:
+                        sub["last_check_ts"] = now_ts
+                        changed = True
+                        continue
 
-                forecast_items = ctx.get_forecast_5d3h(lat, lon)
-                if not forecast_items:
-                    ctx.logger.warning("Не удалось получить прогноз в фоновом потоке для пользователя %s.", user_id_str)
-                    notifications["last_check_ts"] = now_ts
+                    alerts = ctx.detect_weather_alerts(forecast_items)
+                    if alerts:
+                        title_or_label = sub.get("title") or sub.get("label") or "неизвестная локация"
+                        alert_text = (
+                            "🌤 Weather Teller\n"
+                            f"Для локации {title_or_label} найдено изменение погоды:\n"
+                            f"• {alerts[0]}\n"
+                            "Открой Weather Teller и посмотри подробный прогноз по этой локации."
+                        )
+                        try:
+                            ctx.bot.send_message(int(user_id_str), alert_text)
+                        except Exception:
+                            ctx.logger.warning("Не удалось отправить уведомление пользователю %s.", user_id_str)
+
+                    sub["last_check_ts"] = now_ts
                     changed = True
-                    continue
-
-                alerts = ctx.detect_weather_alerts(forecast_items)
-                if alerts:
-                    city = user_data.get("city") or "неизвестная локация"
-                    alert_text = (
-                        "🌤 Weather Teller\n"
-                        f"Для локации {city} найдено изменение погоды:\n"
-                        f"• {alerts[0]}\n"
-                        "Проверь прогноз в боте."
-                    )
-                    try:
-                        ctx.bot.send_message(int(user_id_str), alert_text)
-                        ctx.logger.info("Уведомление успешно отправлено пользователю %s.", user_id_str)
-                    except Exception:
-                        ctx.logger.warning("Не удалось отправить уведомление пользователю %s.", user_id_str)
-
-                notifications["last_check_ts"] = now_ts
-                changed = True
 
             if changed:
                 ctx.save_all_users(all_users)

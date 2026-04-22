@@ -19,6 +19,7 @@ def _default_user_data() -> dict:
             "interval_h": 2,
             "last_check_ts": 0,
         },
+        "alert_subscriptions": [],
     }
 
 
@@ -118,6 +119,11 @@ def load_user(user_id: int) -> dict:
                 else default_data["notifications"]["last_check_ts"]
             ),
         },
+        "alert_subscriptions": (
+            [item for item in user_data.get("alert_subscriptions", []) if isinstance(item, dict)]
+            if isinstance(user_data.get("alert_subscriptions"), list)
+            else []
+        ),
     }
     return result
 

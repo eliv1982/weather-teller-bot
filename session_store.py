@@ -14,6 +14,7 @@ class SessionStore:
         self.compare_location_choices: dict[int, dict] = {}
         self.saved_location_drafts: dict[int, dict] = {}
         self.rename_location_drafts: dict[int, dict] = {}
+        self.alerts_subscription_drafts: dict[int, dict] = {}
 
     def get_state(self, user_id: int) -> str | None:
         """Возвращает текущее состояние пользователя."""
@@ -39,6 +40,7 @@ class SessionStore:
         """Очищает черновики сценариев раздела «Мои локации»."""
         self.saved_location_drafts.pop(user_id, None)
         self.rename_location_drafts.pop(user_id, None)
+        self.alerts_subscription_drafts.pop(user_id, None)
 
     def clear_all_user_runtime(self, user_id: int) -> None:
         """Очищает всё runtime-состояние пользователя."""

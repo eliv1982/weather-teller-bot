@@ -290,6 +290,7 @@ def handle_locations_text(
             return True
 
         locations = get_locations(query, limit=5)
+        locations = ctx.rank_locations(query, locations)
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,

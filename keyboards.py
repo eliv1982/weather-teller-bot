@@ -25,19 +25,56 @@ def geo_request_menu() -> types.ReplyKeyboardMarkup:
 def alerts_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт меню раздела уведомлений."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Включить уведомления"), types.KeyboardButton("Выключить уведомления"))
-    keyboard.row(types.KeyboardButton("Изменить интервал"), types.KeyboardButton("Показать статус"))
-    keyboard.row(types.KeyboardButton("Изменить локацию"))
+    keyboard.row(types.KeyboardButton("Показать подписки"))
+    keyboard.row(types.KeyboardButton("Добавить локацию в уведомления"))
+    keyboard.row(types.KeyboardButton("Включить/выключить подписку"))
+    keyboard.row(types.KeyboardButton("Изменить интервал подписки"))
+    keyboard.row(types.KeyboardButton("Удалить подписку"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
 
-def alerts_location_menu() -> types.ReplyKeyboardMarkup:
-    """Подменю выбора способа указания локации для уведомлений."""
+def alerts_add_location_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора способа добавления локации в подписки уведомлений."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Выбрать из сохранённых"))
     keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
     keyboard.row(types.KeyboardButton("Отправить геолокацию"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def alerts_first_enable_location_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора локации для первого включения уведомлений."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Использовать текущую локацию"))
+    keyboard.row(types.KeyboardButton("Выбрать из сохранённых"))
+    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def build_alert_subscriptions_keyboard(subscriptions: list[dict], callback_prefix: str) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора подписки уведомлений."""
+    keyboard = types.InlineKeyboardMarkup()
+    for item in subscriptions:
+        if not isinstance(item, dict):
+            continue
+        location_id = item.get("location_id")
+        if not isinstance(location_id, str) or not location_id:
+            continue
+        title = str(item.get("title") or item.get("label") or "Локация").strip()
+        label = str(item.get("label") or "").strip()
+        button_text = f"{title} — {label}" if label else title
+        if len(button_text) > 64:
+            button_text = button_text[:61] + "..."
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"{callback_prefix}:{location_id}",
+            )
+        )
     return keyboard
 
 

@@ -73,6 +73,39 @@ def format_alerts_status(user_data: dict) -> str:
     )
 
 
+def format_alert_subscriptions(user_data: dict) -> str:
+    """Форматирует список подписок уведомлений пользователя."""
+    subscriptions = user_data.get("alert_subscriptions", [])
+    if not isinstance(subscriptions, list) or not subscriptions:
+        return "Подписок на уведомления пока нет."
+
+    lines = ["Подписки на уведомления:"]
+    for item in subscriptions:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        label = str(item.get("label") or "Без подписи").strip()
+        if not title or title == label:
+            header = f"• {label}"
+        else:
+            header = f"• {title} — {label}"
+        interval_h = item.get("interval_h", 2)
+        if not isinstance(interval_h, int) or interval_h <= 0:
+            interval_h = 2
+        status = "включены" if bool(item.get("enabled", True)) else "выключены"
+        lines.append(header)
+        lines.append(f"  Статус: {status}")
+        lines.append(f"  Интервал: {interval_h} ч")
+        lines.append("")
+
+    if len(lines) == 1:
+        return "Подписок на уведомления пока нет."
+
+    if lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
+
+
 def _wind_text_from_values(wind_speed: float | None, wind_deg: float | None) -> str:
     """Собирает строку с ветром для ответов."""
     if wind_speed is None:

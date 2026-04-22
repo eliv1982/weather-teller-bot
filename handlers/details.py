@@ -26,6 +26,7 @@ def handle_details_text(
             return True
 
         locations = get_locations(query, limit=5)
+        locations = ctx.rank_locations(query, locations)
         if not locations:
             ctx.logger.info("Населённый пункт не найден для расширенных данных у пользователя %s: %s", user_id, query)
             ctx.bot.send_message(

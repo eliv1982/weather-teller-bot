@@ -13,13 +13,15 @@ from weather_app import (
     get_forecast_5d3h,
     get_air_pollution,
     build_geocode_item_with_disambiguated_label,
+    rank_locations,
     build_location_label,
     get_location_by_coordinates,
 )
 from keyboards import (
     add_saved_location_menu,
-    alerts_location_menu,
+    alerts_add_location_menu,
     alerts_menu,
+    build_alert_subscriptions_keyboard,
     build_current_weather_location_keyboard,
     build_favorite_pick_keyboard,
     build_forecast_day_keyboard,
@@ -33,6 +35,7 @@ from keyboards import (
 )
 from formatters import (
     format_alerts_status,
+    format_alert_subscriptions,
     format_compare_response,
     format_details_response,
     format_saved_locations,
@@ -40,7 +43,13 @@ from formatters import (
     help_text,
 )
 from forecast_service import group_forecast_by_day, format_forecast_day
-from alerts_service import ensure_notifications_defaults, detect_weather_alerts
+from alerts_service import (
+    add_alert_subscription,
+    ensure_alert_subscriptions_defaults,
+    ensure_notifications_defaults,
+    detect_weather_alerts,
+    migrate_legacy_alert_to_subscriptions,
+)
 from locations_service import (
     complete_alerts_location_from_item,
     complete_current_weather_from_location,
@@ -73,11 +82,16 @@ from handlers.states import (
     LOCATIONS_STATES,
     ALERTS_MENU,
     LOCATIONS_MENU,
-    WAITING_ALERTS_INTERVAL,
-    WAITING_ALERTS_LOCATION_GEO,
-    WAITING_ALERTS_LOCATION_MENU,
-    WAITING_ALERTS_LOCATION_PICK,
-    WAITING_ALERTS_LOCATION_TEXT,
+    WAITING_ALERTS_ADD_GEO,
+    WAITING_ALERTS_ADD_MENU,
+    WAITING_ALERTS_ADD_PICK,
+    WAITING_ALERTS_ADD_SAVED_PICK,
+    WAITING_ALERTS_ADD_TEXT,
+    WAITING_ALERTS_DELETE_PICK,
+    WAITING_ALERTS_INTERVAL_PICK,
+    WAITING_ALERTS_INTERVAL_VALUE,
+    WAITING_ALERTS_SUBSCRIPTION_MENU,
+    WAITING_ALERTS_TOGGLE_PICK,
     WAITING_COMPARE_CITY_1,
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
@@ -147,7 +161,7 @@ ctx = AppContext(
     save_all_users=save_all_users,
     main_menu=main_menu,
     alerts_menu=alerts_menu,
-    alerts_location_menu=alerts_location_menu,
+    alerts_add_location_menu=alerts_add_location_menu,
     locations_menu=locations_menu,
     add_saved_location_menu=add_saved_location_menu,
     geo_request_menu=geo_request_menu,
@@ -155,16 +169,21 @@ ctx = AppContext(
     build_forecast_days_keyboard=build_forecast_days_keyboard,
     build_forecast_day_keyboard=build_forecast_day_keyboard,
     build_location_pick_keyboard=build_location_pick_keyboard,
+    build_alert_subscriptions_keyboard=build_alert_subscriptions_keyboard,
     build_saved_locations_keyboard=build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
     format_alerts_status=format_alerts_status,
+    format_alert_subscriptions=format_alert_subscriptions,
     format_compare_response=format_compare_response,
     format_details_response=format_details_response,
     format_saved_locations=format_saved_locations,
     format_weather_response=format_weather_response,
     help_text=help_text,
     ensure_notifications_defaults=ensure_notifications_defaults,
+    ensure_alert_subscriptions_defaults=ensure_alert_subscriptions_defaults,
+    migrate_legacy_alert_to_subscriptions=migrate_legacy_alert_to_subscriptions,
+    add_alert_subscription=add_alert_subscription,
     detect_weather_alerts=detect_weather_alerts,
     save_saved_location_item=save_saved_location_item,
     complete_current_weather_from_location=complete_current_weather_from_location,
@@ -172,6 +191,8 @@ ctx = AppContext(
     group_forecast_by_day=group_forecast_by_day,
     format_forecast_day=format_forecast_day,
     build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+    rank_locations=rank_locations,
+    get_locations=get_locations,
     build_location_label=build_location_label,
     get_location_by_coordinates=get_location_by_coordinates,
     get_current_weather=get_current_weather,
@@ -328,17 +349,24 @@ def handle_back_to_menu(message: types.Message) -> None:
     state = session_store.get_state(user_id)
 
     if state in {
-        WAITING_ALERTS_LOCATION_MENU,
-        WAITING_ALERTS_LOCATION_TEXT,
-        WAITING_ALERTS_LOCATION_PICK,
-        WAITING_ALERTS_LOCATION_GEO,
+        WAITING_ALERTS_SUBSCRIPTION_MENU,
+        WAITING_ALERTS_ADD_MENU,
+        WAITING_ALERTS_ADD_TEXT,
+        WAITING_ALERTS_ADD_PICK,
+        WAITING_ALERTS_ADD_GEO,
+        WAITING_ALERTS_ADD_SAVED_PICK,
+        WAITING_ALERTS_TOGGLE_PICK,
+        WAITING_ALERTS_INTERVAL_PICK,
+        WAITING_ALERTS_INTERVAL_VALUE,
+        WAITING_ALERTS_DELETE_PICK,
     }:
         session_store.alerts_location_choices.pop(user_id, None)
+        session_store.alerts_subscription_drafts.pop(user_id, None)
         session_store.user_states[user_id] = ALERTS_MENU
-        user_data = ensure_notifications_defaults(load_user(user_id))
+        user_data = ensure_alert_subscriptions_defaults(ensure_notifications_defaults(load_user(user_id)))
         bot.send_message(
             message.chat.id,
-            format_alerts_status(user_data),
+            format_alert_subscriptions(user_data),
             reply_markup=alerts_menu(),
         )
         return
@@ -353,34 +381,39 @@ def handle_location_message(message: types.Message) -> None:
     user_id = message.from_user.id
     state = session_store.get_state(user_id)
 
-    if state == WAITING_ALERTS_LOCATION_GEO:
+    if state == WAITING_ALERTS_ADD_GEO:
         session_store.alerts_location_choices.pop(user_id, None)
         location_data = message.location
         lat = location_data.latitude
         lon = location_data.longitude
-        logger.info(
-            "Получена геолокация для уведомлений от пользователя %s: lat=%s, lon=%s.",
-            user_id,
-            lat,
-            lon,
-        )
+        logger.info("Получена геолокация для добавления подписки пользователя %s: lat=%s, lon=%s.", user_id, lat, lon)
         location = get_location_by_coordinates(lat, lon)
         if location:
-            city_label = build_location_label(location, show_coords=False)
+            label = build_location_label(location, show_coords=False)
         else:
-            city_label = "Выбранная геолокация"
+            label = "Выбранная геолокация"
 
-        user_data = load_user(user_id)
-        user_data["city"] = city_label
-        user_data["lat"] = lat
-        user_data["lon"] = lon
-        save_user(user_id, user_data)
-
+        user_data = ensure_alert_subscriptions_defaults(ensure_notifications_defaults(load_user(user_id)))
+        user_data, added = add_alert_subscription(
+            user_data,
+            location_id=f"geo_{int(lat * 10000)}_{int(lon * 10000)}",
+            title=label,
+            label=label,
+            lat=float(lat),
+            lon=float(lon),
+        )
+        if added:
+            save_user(user_id, user_data)
+        session_store.alerts_subscription_drafts.pop(user_id, None)
         session_store.user_states[user_id] = ALERTS_MENU
-        user_data = ensure_notifications_defaults(load_user(user_id))
         bot.send_message(
             message.chat.id,
-            "✅ Локация для уведомлений обновлена.\n\n" + format_alerts_status(user_data),
+            "✅ Подписка добавлена." if added else "Такая подписка уже существует.",
+            reply_markup=alerts_menu(),
+        )
+        bot.send_message(
+            message.chat.id,
+            format_alert_subscriptions(user_data),
             reply_markup=alerts_menu(),
         )
         return
@@ -477,6 +510,8 @@ def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
         ctx=ctx,
         session_store=session_store,
         ALERTS_MENU=ALERTS_MENU,
+        WAITING_ALERTS_ADD_MENU=WAITING_ALERTS_ADD_MENU,
+        WAITING_ALERTS_INTERVAL_VALUE=WAITING_ALERTS_INTERVAL_VALUE,
     )
 
 

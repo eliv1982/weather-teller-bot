@@ -22,11 +22,16 @@ WAITING_COMPARE_LOCATION_PICK = "waiting_compare_location_pick"
 
 # Состояния сценария уведомлений
 ALERTS_MENU = "alerts_menu"
-WAITING_ALERTS_INTERVAL = "waiting_alerts_interval"
-WAITING_ALERTS_LOCATION_MENU = "waiting_alerts_location_menu"
-WAITING_ALERTS_LOCATION_TEXT = "waiting_alerts_location_text"
-WAITING_ALERTS_LOCATION_PICK = "waiting_alerts_location_pick"
-WAITING_ALERTS_LOCATION_GEO = "waiting_alerts_location_geo"
+WAITING_ALERTS_SUBSCRIPTION_MENU = "waiting_alerts_subscription_menu"
+WAITING_ALERTS_ADD_MENU = "waiting_alerts_add_menu"
+WAITING_ALERTS_ADD_TEXT = "waiting_alerts_add_text"
+WAITING_ALERTS_ADD_PICK = "waiting_alerts_add_pick"
+WAITING_ALERTS_ADD_GEO = "waiting_alerts_add_geo"
+WAITING_ALERTS_ADD_SAVED_PICK = "waiting_alerts_add_saved_pick"
+WAITING_ALERTS_TOGGLE_PICK = "waiting_alerts_toggle_pick"
+WAITING_ALERTS_INTERVAL_PICK = "waiting_alerts_interval_pick"
+WAITING_ALERTS_INTERVAL_VALUE = "waiting_alerts_interval_value"
+WAITING_ALERTS_DELETE_PICK = "waiting_alerts_delete_pick"
 
 # Состояния сценария «Мои локации»
 LOCATIONS_MENU = "locations_menu"
@@ -64,11 +69,16 @@ COMPARE_STATES = {
 
 ALERTS_STATES = {
     ALERTS_MENU,
-    WAITING_ALERTS_INTERVAL,
-    WAITING_ALERTS_LOCATION_MENU,
-    WAITING_ALERTS_LOCATION_TEXT,
-    WAITING_ALERTS_LOCATION_PICK,
-    WAITING_ALERTS_LOCATION_GEO,
+    WAITING_ALERTS_SUBSCRIPTION_MENU,
+    WAITING_ALERTS_ADD_MENU,
+    WAITING_ALERTS_ADD_TEXT,
+    WAITING_ALERTS_ADD_PICK,
+    WAITING_ALERTS_ADD_GEO,
+    WAITING_ALERTS_ADD_SAVED_PICK,
+    WAITING_ALERTS_TOGGLE_PICK,
+    WAITING_ALERTS_INTERVAL_PICK,
+    WAITING_ALERTS_INTERVAL_VALUE,
+    WAITING_ALERTS_DELETE_PICK,
 }
 
 LOCATIONS_STATES = {

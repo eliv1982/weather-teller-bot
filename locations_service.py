@@ -141,6 +141,8 @@ def complete_alerts_location_from_item(
     *,
     user_states: dict,
     alerts_location_choices: dict,
+    enable_notifications: bool = False,
+    success_text: str = "✅ Локация для уведомлений обновлена.",
 ) -> None:
     """Сохраняет локацию из геокодинга для уведомлений и показывает статус."""
     if not save_user_location_from_geocode_item(user_id, location_item):
@@ -157,8 +159,11 @@ def complete_alerts_location_from_item(
     alerts_location_choices.pop(user_id, None)
     user_states[user_id] = "alerts_menu"
     user_data = ensure_notifications_defaults(load_user(user_id))
+    if enable_notifications:
+        user_data["notifications"]["enabled"] = True
+        save_user(user_id, user_data)
     bot.send_message(
         chat_id,
-        "✅ Локация для уведомлений обновлена.\n\n" + format_alerts_status(user_data),
+        success_text + "\n\n" + format_alerts_status(user_data),
         reply_markup=alerts_menu(),
     )

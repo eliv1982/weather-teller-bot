@@ -4,20 +4,25 @@ def handle_alerts_location_callback(
     ctx,
     session_store,
     ALERTS_MENU,
+    WAITING_ALERTS_ADD_MENU,
+    WAITING_ALERTS_INTERVAL_VALUE,
 ) -> None:
-    """Обрабатывает выбор локации для уведомлений (inline) или отмену."""
+    """Обрабатывает callback-сценарии раздела уведомлений."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "alerts_cancel":
+    user_data = ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
+    subscriptions = user_data.get("alert_subscriptions", [])
+
+    if call.data == "alerts_add_cancel":
         session_store.alerts_location_choices.pop(user_id, None)
-        session_store.user_states[user_id] = ALERTS_MENU
-        user_data = ctx.ensure_notifications_defaults(ctx.load_user(user_id))
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, ctx.format_alerts_status(user_data), reply_markup=ctx.alerts_menu())
+        session_store.user_states[user_id] = ALERTS_MENU
+        ctx.bot.send_message(chat_id, "Добавление подписки отменено.", reply_markup=ctx.alerts_menu())
+        ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
         return
 
-    if call.data.startswith("alerts_pick:"):
+    if call.data.startswith("alerts_add_pick:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -44,21 +49,152 @@ def handle_alerts_location_callback(
             return
 
         location_item = ctx.build_geocode_item_with_disambiguated_label(choices, index)
-        ctx.logger.info(
-            "Пользователь %s выбрал локацию для уведомлений #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
+        lat = location_item.get("lat")
+        lon = location_item.get("lon")
+        label = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
+        if lat is None or lon is None:
+            ctx.bot.answer_callback_query(call.id)
+            session_store.alerts_location_choices.pop(user_id, None)
+            session_store.user_states[user_id] = ALERTS_MENU
+            ctx.bot.send_message(chat_id, "Не удалось определить локацию. Попробуй снова.", reply_markup=ctx.alerts_menu())
+            return
+
+        user_data, added = ctx.add_alert_subscription(
+            user_data,
+            location_id=f"geo_{int(float(lat) * 10000)}_{int(float(lon) * 10000)}",
+            title=label,
+            label=label,
+            lat=float(lat),
+            lon=float(lon),
         )
+        if added:
+            ctx.save_user(user_id, user_data)
         ctx.bot.answer_callback_query(call.id)
-        ctx.complete_alerts_location_from_item(
-            ctx.bot,
-            chat_id,
-            user_id,
-            location_item,
-            user_states=session_store.user_states,
-            alerts_location_choices=session_store.alerts_location_choices,
+        session_store.alerts_location_choices.pop(user_id, None)
+        session_store.user_states[user_id] = ALERTS_MENU
+        ctx.bot.send_message(chat_id, "✅ Подписка добавлена." if added else "Такая подписка уже существует.", reply_markup=ctx.alerts_menu())
+        ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
+        return
+
+    if call.data.startswith("alerts_sub_add_saved:"):
+        location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+        if not location_id:
+            ctx.bot.answer_callback_query(call.id)
+            ctx.bot.send_message(
+                chat_id,
+                "⚠️ Не удалось выбрать локацию.",
+                reply_markup=ctx.alerts_add_location_menu(),
+            )
+            return
+
+        user_data = ctx.load_user(user_id)
+        saved_locations = user_data.get("saved_locations", [])
+        if not isinstance(saved_locations, list) or not saved_locations:
+            ctx.bot.answer_callback_query(call.id)
+            session_store.user_states[user_id] = WAITING_ALERTS_ADD_MENU
+            ctx.bot.send_message(
+                chat_id,
+                "Сохранённых локаций пока нет.",
+                reply_markup=ctx.alerts_add_location_menu(),
+            )
+            return
+
+        selected_item = next(
+            (item for item in saved_locations if isinstance(item, dict) and item.get("id") == location_id),
+            None,
         )
+        if not isinstance(selected_item, dict):
+            ctx.bot.answer_callback_query(call.id)
+            session_store.user_states[user_id] = WAITING_ALERTS_ADD_MENU
+            ctx.bot.send_message(
+                chat_id,
+                "⚠️ Выбранная локация не найдена. Попробуй снова.",
+                reply_markup=ctx.alerts_add_location_menu(),
+            )
+            return
+
+        lat = selected_item.get("lat")
+        lon = selected_item.get("lon")
+        label = selected_item.get("label") or selected_item.get("title") or "Выбранная локация"
+        if lat is None or lon is None:
+            ctx.bot.answer_callback_query(call.id)
+            session_store.user_states[user_id] = WAITING_ALERTS_ADD_MENU
+            ctx.bot.send_message(
+                chat_id,
+                "⚠️ У выбранной локации отсутствуют координаты. Выбери другую.",
+                reply_markup=ctx.alerts_add_location_menu(),
+            )
+            return
+
+        user_data, added = ctx.add_alert_subscription(
+            user_data,
+            location_id=str(selected_item.get("id") or location_id),
+            title=str(selected_item.get("title") or label),
+            label=str(label),
+            lat=float(lat),
+            lon=float(lon),
+        )
+        if added:
+            ctx.save_user(user_id, user_data)
+        session_store.alerts_location_choices.pop(user_id, None)
+        session_store.user_states[user_id] = ALERTS_MENU
+
+        ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(
+            chat_id,
+            "✅ Подписка добавлена." if added else "Такая подписка уже существует.",
+            reply_markup=ctx.alerts_menu(),
+        )
+        ctx.bot.send_message(
+            chat_id,
+            ctx.format_alert_subscriptions(user_data),
+            reply_markup=ctx.alerts_menu(),
+        )
+        return
+
+    if call.data.startswith("alerts_sub_toggle:"):
+        subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+        target = next((item for item in subscriptions if item.get("location_id") == subscription_id), None)
+        ctx.bot.answer_callback_query(call.id)
+        if not isinstance(target, dict):
+            ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
+            return
+        target["enabled"] = not bool(target.get("enabled", True))
+        ctx.save_user(user_id, user_data)
+        session_store.user_states[user_id] = ALERTS_MENU
+        ctx.bot.send_message(chat_id, "✅ Статус подписки обновлён.", reply_markup=ctx.alerts_menu())
+        ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
+        return
+
+    if call.data.startswith("alerts_sub_interval:"):
+        subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+        target = next((item for item in subscriptions if item.get("location_id") == subscription_id), None)
+        ctx.bot.answer_callback_query(call.id)
+        if not isinstance(target, dict):
+            ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
+            return
+        session_store.alerts_subscription_drafts[user_id] = {"location_id": subscription_id}
+        session_store.user_states[user_id] = WAITING_ALERTS_INTERVAL_VALUE
+        title = str(target.get("title") or target.get("label") or "подписка")
+        ctx.bot.send_message(
+            chat_id,
+            f"Введи новый интервал в часах для подписки {title}",
+            reply_markup=ctx.alerts_menu(),
+        )
+        return
+
+    if call.data.startswith("alerts_sub_delete:"):
+        subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+        ctx.bot.answer_callback_query(call.id)
+        new_subscriptions = [item for item in subscriptions if item.get("location_id") != subscription_id]
+        if len(new_subscriptions) == len(subscriptions):
+            ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
+            return
+        user_data["alert_subscriptions"] = new_subscriptions
+        ctx.save_user(user_id, user_data)
+        session_store.user_states[user_id] = ALERTS_MENU
+        ctx.bot.send_message(chat_id, "✅ Подписка удалена.", reply_markup=ctx.alerts_menu())
+        ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
         return
 
     ctx.bot.answer_callback_query(call.id)
