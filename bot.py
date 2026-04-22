@@ -13,11 +13,32 @@ from weather_app import (
     get_current_weather,
     get_forecast_5d3h,
     get_air_pollution,
-    analyze_air_pollution,
-    build_disambiguated_location_labels,
     build_geocode_item_with_disambiguated_label,
     build_location_label,
     get_location_by_coordinates,
+)
+from keyboards import (
+    add_saved_location_menu,
+    alerts_location_menu,
+    alerts_menu,
+    build_current_weather_location_keyboard,
+    build_favorite_pick_keyboard,
+    build_forecast_day_keyboard,
+    build_forecast_days_keyboard,
+    build_location_pick_keyboard,
+    build_saved_locations_keyboard,
+    build_scenario_location_choice_keyboard,
+    geo_request_menu,
+    locations_menu,
+    main_menu,
+)
+from formatters import (
+    format_alerts_status,
+    format_compare_response,
+    format_details_response,
+    format_saved_locations,
+    format_weather_response,
+    help_text,
 )
 from storage import load_user, save_user, load_all_users, save_all_users
 
@@ -74,130 +95,6 @@ MENU_BUTTONS = [
 ]
 
 
-def wind_direction_ru(deg: float) -> str:
-    """Переводит градусы направления ветра в русское направление."""
-    directions = [
-        "северный",
-        "северо-восточный",
-        "восточный",
-        "юго-восточный",
-        "южный",
-        "юго-западный",
-        "западный",
-        "северо-западный",
-    ]
-    index = round(deg / 45) % 8
-    return directions[index]
-
-
-def help_text() -> str:
-    """Возвращает текст справки по командам бота."""
-    return (
-        "ℹ️ Доступные команды:\n"
-        "/start — главное меню\n"
-        "/current — текущая погода\n"
-        "/forecast — прогноз на 5 дней\n"
-        "/geo — погода по геолокации\n"
-        "/compare — сравнить города\n"
-        "/details — расширенные данные\n"
-        "/alerts — уведомления\n"
-        "/locations — мои локации"
-    )
-
-
-def alerts_menu() -> types.ReplyKeyboardMarkup:
-    """Создаёт меню раздела уведомлений."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Включить уведомления"), types.KeyboardButton("Выключить уведомления"))
-    keyboard.row(types.KeyboardButton("Изменить интервал"), types.KeyboardButton("Показать статус"))
-    keyboard.row(types.KeyboardButton("Изменить локацию"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
-    return keyboard
-
-
-def alerts_location_menu() -> types.ReplyKeyboardMarkup:
-    """Подменю выбора способа указания локации для уведомлений."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
-    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
-    return keyboard
-
-
-def locations_menu() -> types.ReplyKeyboardMarkup:
-    """Создаёт меню управления сохранёнными локациями."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Сохранить текущую локацию"))
-    keyboard.row(types.KeyboardButton("Добавить новую локацию"))
-    keyboard.row(types.KeyboardButton("Показать мои локации"))
-    keyboard.row(types.KeyboardButton("Сделать основной"))
-    keyboard.row(types.KeyboardButton("Переименовать локацию"), types.KeyboardButton("Удалить локацию"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
-    return keyboard
-
-
-def add_saved_location_menu() -> types.ReplyKeyboardMarkup:
-    """Подменю выбора способа добавления новой локации."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
-    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
-    return keyboard
-
-
-def format_saved_locations(user_data: dict) -> str:
-    """Форматирует список сохранённых локаций пользователя."""
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(saved_locations, list) or not saved_locations:
-        return "Сохранённых локаций пока нет."
-
-    favorite_id = user_data.get("favorite_location_id")
-    lines = ["Мои локации:"]
-    for item in saved_locations:
-        if not isinstance(item, dict):
-            continue
-        location_id = item.get("id")
-        title = (item.get("title") or "Без названия").strip()
-        label = (item.get("label") or "Без подписи").strip()
-        mark = "⭐ " if location_id == favorite_id else ""
-        lines.append(f"{mark}{title} — {label}")
-
-    if len(lines) == 1:
-        return "Сохранённых локаций пока нет."
-    return "\n".join(lines)
-
-
-def build_favorite_pick_keyboard(saved_locations: list[dict]) -> types.InlineKeyboardMarkup:
-    """Создаёт inline-клавиатуру выбора основной локации."""
-    return build_saved_locations_keyboard(saved_locations, "favorite_pick")
-
-
-def build_saved_locations_keyboard(
-    saved_locations: list[dict],
-    callback_prefix: str,
-) -> types.InlineKeyboardMarkup:
-    """Создаёт inline-клавиатуру выбора сохранённой локации по заданному префиксу callback."""
-    keyboard = types.InlineKeyboardMarkup()
-    for item in saved_locations:
-        if not isinstance(item, dict):
-            continue
-        location_id = item.get("id")
-        if not isinstance(location_id, str) or not location_id:
-            continue
-        title = (item.get("title") or "Без названия").strip()
-        label = (item.get("label") or "").strip()
-        button_text = f"{title} — {label}" if label else title
-        if len(button_text) > 64:
-            button_text = button_text[:61] + "..."
-        keyboard.add(
-            types.InlineKeyboardButton(
-                text=button_text,
-                callback_data=f"{callback_prefix}:{location_id}",
-            )
-        )
-    return keyboard
-
-
 def save_saved_location_item(user_id: int, title: str, label: str, lat: float, lon: float) -> None:
     """Сохраняет локацию в список пользователя или обновляет title у дубля по координатам."""
     user_data = load_user(user_id)
@@ -236,23 +133,6 @@ def save_saved_location_item(user_id: int, title: str, label: str, lat: float, l
 
     user_data["saved_locations"] = saved_locations
     save_user(user_id, user_data)
-
-
-def format_alerts_status(user_data: dict) -> str:
-    """Форматирует статус уведомлений пользователя."""
-    city = user_data.get("city") or "Не выбрана"
-    notifications = user_data.get("notifications", {}) if isinstance(user_data.get("notifications"), dict) else {}
-    enabled = notifications.get("enabled", False)
-    interval_h = notifications.get("interval_h", 2)
-    if not isinstance(interval_h, int) or interval_h <= 0:
-        interval_h = 2
-
-    return (
-        "🔔 Статус уведомлений:\n"
-        f"• 📍 Локация: {city}\n"
-        f"• 🔔 Уведомления: {'включены' if enabled else 'выключены'}\n"
-        f"• 🕒 Интервал проверки: {interval_h} ч"
-    )
 
 
 def detect_weather_alerts(forecast_items: list[dict]) -> list[str]:
@@ -484,14 +364,14 @@ def send_details_by_coordinates(
         )
         return False
 
+    # Приоритет у подписи, которую пользователь уже выбрал/сохранил вручную.
     if preferred_city_label:
         city_label = preferred_city_label
+    elif city_fallback:
+        city_label = city_fallback
     else:
         location = get_location_by_coordinates(lat, lon)
-        if location:
-            city_label = build_location_label(location, show_coords=False)
-        else:
-            city_label = city_fallback
+        city_label = build_location_label(location, show_coords=False) if location else "Выбранная локация"
 
     user_data = load_user(user_id)
     user_data["city"] = city_label
@@ -562,15 +442,6 @@ def group_forecast_by_day(forecast_items: list[dict]) -> dict[str, list[dict]]:
     return grouped
 
 
-def build_forecast_days_keyboard(days: list[str]) -> types.InlineKeyboardMarkup:
-    """Создаёт inline-клавиатуру с днями прогноза."""
-    keyboard = types.InlineKeyboardMarkup()
-    for day in days:
-        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"forecast_day:{day}"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="forecast_menu"))
-    return keyboard
-
-
 def _forecast_min_temp(day_items: list[dict]) -> float | None:
     """Возвращает минимальную температуру за день."""
     temps = [
@@ -602,26 +473,6 @@ def _forecast_main_description(day_items: list[dict]) -> str:
         return "без описания"
 
     return max(descriptions, key=descriptions.get)
-
-
-def build_forecast_day_keyboard(days: list[str], current_day: str) -> types.InlineKeyboardMarkup:
-    """Создаёт inline-кнопки для выбранного дня прогноза."""
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(text="📅 К дням", callback_data="forecast_back"))
-
-    index = days.index(current_day)
-    nav_buttons = []
-    if index > 0:
-        prev_day = days[index - 1]
-        nav_buttons.append(types.InlineKeyboardButton(text="◀️", callback_data=f"forecast_day:{prev_day}"))
-    if index < len(days) - 1:
-        next_day = days[index + 1]
-        nav_buttons.append(types.InlineKeyboardButton(text="▶️", callback_data=f"forecast_day:{next_day}"))
-    if nav_buttons:
-        keyboard.row(*nav_buttons)
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="forecast_menu"))
-
-    return keyboard
 
 
 def format_forecast_day(day: str, day_items: list[dict], city_label: str) -> str:
@@ -703,11 +554,14 @@ def send_forecast_by_coordinates(
         )
         return False
 
+    # Приоритет у подписи, которую пользователь уже выбрал/сохранил вручную.
     if preferred_city_label:
         city_label = preferred_city_label
+    elif city_fallback:
+        city_label = city_fallback
     else:
         location = get_location_by_coordinates(lat, lon)
-        city_label = build_location_label(location, show_coords=False) if location else city_fallback
+        city_label = build_location_label(location, show_coords=False) if location else "Выбранная локация"
     grouped = group_forecast_by_day(forecast_items)
     if not grouped:
         logger.warning("Прогноз пришёл пустым после группировки для пользователя %s.", user_id)
@@ -740,128 +594,6 @@ def send_forecast_by_coordinates(
 def _message_stub_for_chat(chat_id: int) -> SimpleNamespace:
     """Заглушка сообщения с chat.id для вызовов send_* из обработчиков callback."""
     return SimpleNamespace(chat=SimpleNamespace(id=chat_id))
-
-
-def _weather_snapshot(weather: dict) -> dict:
-    """Возвращает краткий срез данных погоды для сравнения."""
-    main_data = weather.get("main", {})
-    weather_data = weather.get("weather", [{}])
-    wind_data = weather.get("wind", {})
-
-    return {
-        "temp": main_data.get("temp"),
-        "feels_like": main_data.get("feels_like"),
-        "description": weather_data[0].get("description", "без описания"),
-        "humidity": main_data.get("humidity"),
-        "wind_speed": wind_data.get("speed"),
-        "wind_deg": wind_data.get("deg"),
-    }
-
-
-def _wind_text_from_values(wind_speed: float | None, wind_deg: float | None) -> str:
-    """Собирает строку с ветром для ответов."""
-    if wind_speed is None:
-        return "н/д"
-    if wind_deg is None:
-        return f"{wind_speed} м/с"
-    return f"{wind_speed} м/с, {wind_direction_ru(wind_deg)}"
-
-
-def format_weather_response(city_label: str, weather: dict) -> str:
-    """Собирает текст ответа с текущей погодой."""
-    main_data = weather.get("main", {})
-    weather_data = weather.get("weather", [{}])
-    wind_data = weather.get("wind", {})
-
-    temp = main_data.get("temp")
-    feels_like = main_data.get("feels_like")
-    description = weather_data[0].get("description", "без описания")
-    humidity = main_data.get("humidity")
-    pressure = main_data.get("pressure")
-    wind_speed = wind_data.get("speed")
-    wind_deg = wind_data.get("deg")
-
-    pressure_mmhg = round(pressure * 0.75006) if pressure is not None else None
-    wind_text = _wind_text_from_values(wind_speed, wind_deg)
-
-    return (
-        f"📍 Населённый пункт: {city_label}\n"
-        f"🌡 Температура: {temp if temp is not None else 'н/д'} °C\n"
-        f"🤔 Ощущается как: {feels_like if feels_like is not None else 'н/д'} °C\n"
-        f"☁️ Описание: {description}\n"
-        f"💧 Влажность: {humidity if humidity is not None else 'н/д'}%\n"
-        f"🩺 Давление: {pressure_mmhg if pressure_mmhg is not None else 'н/д'} мм рт. ст.\n"
-        f"🌬 Ветер: {wind_text}"
-    )
-
-
-def build_location_pick_keyboard(
-    locations: list[dict],
-    pick_callback_prefix: str,
-    cancel_callback_data: str,
-    *,
-    compare_step: int | None = None,
-) -> types.InlineKeyboardMarkup:
-    """
-    Универсальная inline-клавиатура выбора населённого пункта из списка геокодинга.
-
-    Подписи на кнопках строятся через build_disambiguated_location_labels: при одинаковых
-    названиях к дублям добавляются координаты.
-
-    pick_callback_prefix — префикс callback_data, например «details_pick» или «compare_pick».
-    cancel_callback_data — полное значение callback для кнопки «Отмена».
-    compare_step — для сравнения: шаг 1 или 2, тогда callback_data вида «compare_pick:1:0».
-    """
-    keyboard = types.InlineKeyboardMarkup()
-    labels = build_disambiguated_location_labels(locations)
-    for index, loc in enumerate(locations):
-        label = labels[index]
-        if len(label) > 64:
-            label = label[:61] + "..."
-        if compare_step is not None:
-            callback_data = f"{pick_callback_prefix}:{compare_step}:{index}"
-        else:
-            callback_data = f"{pick_callback_prefix}:{index}"
-        keyboard.add(
-            types.InlineKeyboardButton(
-                text=label,
-                callback_data=callback_data,
-            )
-        )
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data=cancel_callback_data))
-    return keyboard
-
-
-def build_scenario_location_choice_keyboard(
-    locations: list[dict],
-    scenario: str,
-    *,
-    compare_step: int | None = None,
-) -> types.InlineKeyboardMarkup:
-    """
-    Inline-клавиатура выбора локации для сценария details / forecast / compare.
-
-    scenario: «details», «forecast» или «compare»; для compare обязательно передай compare_step (1 или 2).
-    """
-    if scenario == "details":
-        return build_location_pick_keyboard(locations, "details_pick", "details_cancel")
-    if scenario == "forecast":
-        return build_location_pick_keyboard(locations, "forecast_pick", "forecast_cancel")
-    if scenario == "compare":
-        if compare_step not in (1, 2):
-            raise ValueError("Для сценария compare нужен compare_step равный 1 или 2.")
-        return build_location_pick_keyboard(
-            locations,
-            "compare_pick",
-            "compare_cancel",
-            compare_step=compare_step,
-        )
-    raise ValueError(f"Неизвестный сценарий: {scenario}")
-
-
-def build_current_weather_location_keyboard(locations: list[dict]) -> types.InlineKeyboardMarkup:
-    """Inline-клавиатура выбора для сценария «Текущая погода»."""
-    return build_location_pick_keyboard(locations, "current_pick", "current_cancel")
 
 
 def save_user_location_from_geocode_item(user_id: int, location_item: dict) -> bool:
@@ -965,53 +697,6 @@ def complete_alerts_location_from_item(chat_id: int, user_id: int, location_item
     )
 
 
-def format_compare_response(city_1: str, weather_1: dict, city_2: str, weather_2: dict) -> str:
-    """Собирает текст сравнения двух населённых пунктов."""
-    w1 = _weather_snapshot(weather_1)
-    w2 = _weather_snapshot(weather_2)
-
-    wind_text_1 = _wind_text_from_values(w1["wind_speed"], w1["wind_deg"])
-    wind_text_2 = _wind_text_from_values(w2["wind_speed"], w2["wind_deg"])
-
-    temp_1 = w1["temp"]
-    temp_2 = w2["temp"]
-    wind_1 = w1["wind_speed"] if w1["wind_speed"] is not None else 0
-    wind_2 = w2["wind_speed"] if w2["wind_speed"] is not None else 0
-
-    if temp_1 is None or temp_2 is None:
-        temp_summary = "По температуре недостаточно данных для точного сравнения."
-    elif temp_1 == temp_2:
-        temp_summary = "Температура в обоих населённых пунктах одинаковая."
-    elif temp_1 > temp_2:
-        temp_summary = f"Теплее в населённом пункте {city_1}."
-    else:
-        temp_summary = f"Теплее в населённом пункте {city_2}."
-
-    if wind_1 == wind_2:
-        wind_summary = "Скорость ветра в обоих населённых пунктах одинаковая."
-    elif wind_1 > wind_2:
-        wind_summary = f"Сильнее ветер в населённом пункте {city_1}."
-    else:
-        wind_summary = f"Сильнее ветер в населённом пункте {city_2}."
-
-    return (
-        "🏙 Сравнение населённых пунктов\n\n"
-        f"1) {city_1}\n"
-        f"🌡 Температура: {w1['temp'] if w1['temp'] is not None else 'н/д'} °C\n"
-        f"🤔 Ощущается как: {w1['feels_like'] if w1['feels_like'] is not None else 'н/д'} °C\n"
-        f"☁️ Описание: {w1['description']}\n"
-        f"💧 Влажность: {w1['humidity'] if w1['humidity'] is not None else 'н/д'}%\n"
-        f"🌬 Ветер: {wind_text_1}\n\n"
-        f"2) {city_2}\n"
-        f"🌡 Температура: {w2['temp'] if w2['temp'] is not None else 'н/д'} °C\n"
-        f"🤔 Ощущается как: {w2['feels_like'] if w2['feels_like'] is not None else 'н/д'} °C\n"
-        f"☁️ Описание: {w2['description']}\n"
-        f"💧 Влажность: {w2['humidity'] if w2['humidity'] is not None else 'н/д'}%\n"
-        f"🌬 Ветер: {wind_text_2}\n\n"
-        f"📌 Итог:\n• {temp_summary}\n• {wind_summary}"
-    )
-
-
 def complete_compare_two_locations(
     chat_id: int,
     user_id: int,
@@ -1049,116 +734,6 @@ def complete_compare_two_locations(
     compare_drafts.pop(user_id, None)
     compare_location_choices.pop(user_id, None)
     bot.send_message(chat_id, answer, reply_markup=main_menu())
-
-
-def _format_hh_mm_from_unix(unix_ts: int | None) -> str:
-    """Преобразует unix timestamp в формат ЧЧ:ММ."""
-    if unix_ts is None:
-        return "н/д"
-    return datetime.fromtimestamp(unix_ts).strftime("%H:%M")
-
-
-def _format_visibility(visibility_meters: int | float | None) -> str:
-    """Возвращает видимость в метрах или километрах в удобном формате."""
-    if visibility_meters is None:
-        return "н/д"
-
-    try:
-        value = float(visibility_meters)
-    except (TypeError, ValueError):
-        return str(visibility_meters)
-
-    if value < 1000:
-        return f"{int(value)} м"
-    return f"{value / 1000:.1f} км"
-
-
-def _format_air_component_value(value: object) -> str:
-    """Форматирует значение компонента воздуха до 1 знака, если это число."""
-    if isinstance(value, (int, float)):
-        return f"{value:.1f}"
-    return str(value)
-
-
-def format_details_response(city_label: str, weather: dict, air_components: dict | None) -> str:
-    """Собирает текст ответа с расширенными данными о погоде и воздухе."""
-    main_data = weather.get("main", {})
-    weather_data = weather.get("weather", [{}])
-    wind_data = weather.get("wind", {})
-    clouds_data = weather.get("clouds", {})
-    sys_data = weather.get("sys", {})
-
-    temp = main_data.get("temp")
-    feels_like = main_data.get("feels_like")
-    description = weather_data[0].get("description", "без описания")
-    humidity = main_data.get("humidity")
-    pressure = main_data.get("pressure")
-    pressure_mmhg = round(pressure * 0.75006) if pressure is not None else None
-    wind_speed = wind_data.get("speed")
-    wind_deg = wind_data.get("deg")
-    clouds = clouds_data.get("all")
-    visibility = weather.get("visibility")
-    sunrise = _format_hh_mm_from_unix(sys_data.get("sunrise"))
-    sunset = _format_hh_mm_from_unix(sys_data.get("sunset"))
-
-    if wind_speed is None:
-        wind_text = "н/д"
-    elif wind_deg is None:
-        wind_text = f"{wind_speed} м/с"
-    else:
-        wind_text = f"{wind_speed} м/с, {wind_direction_ru(wind_deg)}"
-
-    lines = [
-        f"📍 Населённый пункт: {city_label}",
-        f"🌡 Температура: {temp if temp is not None else 'н/д'} °C",
-        f"🤔 Ощущается как: {feels_like if feels_like is not None else 'н/д'} °C",
-        f"☁️ Описание: {description}",
-        f"💧 Влажность: {humidity if humidity is not None else 'н/д'}%",
-        f"🩺 Давление: {pressure_mmhg if pressure_mmhg is not None else 'н/д'} мм рт. ст.",
-        f"🌬 Ветер: {wind_text}",
-        f"🌥 Облачность: {clouds if clouds is not None else 'н/д'}%",
-        f"👀 Видимость: {_format_visibility(visibility)}",
-        f"🌅 Восход солнца: {sunrise}",
-        f"🌇 Закат солнца: {sunset}",
-    ]
-
-    if not air_components:
-        lines.append("🌫 Данные о качестве воздуха недоступны.")
-        return "\n".join(lines)
-
-    air_analysis = analyze_air_pollution(air_components, extended=True)
-    lines.append(f"🌫 Качество воздуха: {air_analysis.get('overall_status', 'Нет данных')}")
-    details = air_analysis.get("details")
-
-    if isinstance(details, dict):
-        for component in details.values():
-            name = component.get("name", "Компонент")
-            value = _format_air_component_value(component.get("value", "н/д"))
-            status = component.get("status", "Нет данных")
-            lines.append(f"• {name} — {value} мкг/м³ ({status})")
-    else:
-        lines.append(str(details))
-
-    return "\n".join(lines)
-
-
-def main_menu() -> types.ReplyKeyboardMarkup:
-    """Создаёт главное меню бота."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Текущая погода"), types.KeyboardButton("Прогноз на 5 дней"))
-    keyboard.row(types.KeyboardButton("Моя геолокация"), types.KeyboardButton("Сравнить города"))
-    keyboard.row(types.KeyboardButton("Расширенные данные"), types.KeyboardButton("Мои локации"))
-    keyboard.row(types.KeyboardButton("Уведомления"))
-    keyboard.row(types.KeyboardButton("Помощь"))
-    return keyboard
-
-
-def geo_request_menu() -> types.ReplyKeyboardMarkup:
-    """Создаёт клавиатуру для запроса геолокации."""
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Отправить геолокацию", request_location=True))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
-    return keyboard
 
 
 @bot.message_handler(commands=["start"])
@@ -2042,11 +1617,6 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
         user_states.pop(user_id, None)
         forecast_saved_drafts.pop(user_id, None)
         forecast_cache.pop(user_id, None)
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="Главное меню.",
-        )
         bot.send_message(call.message.chat.id, "Главное меню.", reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
@@ -2652,6 +2222,7 @@ def handle_unknown_text(message: types.Message) -> None:
                 draft["lat"],
                 draft["lon"],
                 draft["city"],
+                preferred_city_label=draft["city"],
             ):
                 logger.info(
                     "Успешно получены расширенные данные по сохранённой локации для пользователя %s.",
@@ -2689,6 +2260,7 @@ def handle_unknown_text(message: types.Message) -> None:
                 draft["lon"],
                 draft["city"],
                 save_location=False,
+                preferred_city_label=draft["city"],
             ):
                 logger.info(
                     "Успешно получен прогноз по сохранённой локации для пользователя %s.",
@@ -2999,8 +2571,13 @@ def handle_unknown_text(message: types.Message) -> None:
 
 if __name__ == "__main__":
     try:
-        logger.info("Запуск бота.")
-        threading.Thread(target=alerts_worker, daemon=True).start()
+        process_id = os.getpid()
+        # Если появляются дубли ответов, сначала проверь, не запущены ли два экземпляра бота одновременно.
+        logger.info("Запуск бота. PID процесса: %s", process_id)
+        alerts_thread = threading.Thread(target=alerts_worker, daemon=True)
+        alerts_thread.start()
+        logger.info("Фоновый поток alerts_worker запущен (PID=%s).", process_id)
+        logger.info("Старт polling (PID=%s).", process_id)
         bot.infinity_polling(skip_pending=True)
     except KeyboardInterrupt:
         print("Бот остановлен пользователем.")
