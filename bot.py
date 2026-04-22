@@ -52,6 +52,17 @@ from handlers.forecast import handle_forecast_text
 from handlers.compare import handle_compare_text
 from handlers.alerts import handle_alerts_text
 from handlers.locations import handle_locations_text
+from handlers.geo import handle_geo_text
+from handlers.callbacks_current import handle_current_weather_callback
+from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
+from handlers.callbacks_compare import handle_compare_location_callback as handle_compare_callback_logic
+from handlers.callbacks_locations import (
+    handle_delete_location_pick_callback as handle_delete_location_callback_logic,
+    handle_favorite_pick_callback as handle_favorite_callback_logic,
+    handle_rename_location_pick_callback as handle_rename_location_callback_logic,
+    handle_saved_location_pick_callback as handle_saved_location_callback_logic,
+)
+from handlers.callbacks_forecast import handle_forecast_callback as handle_forecast_callback_logic
 from handlers.states import (
     ALERTS_STATES,
     COMPARE_STATES,
@@ -793,122 +804,35 @@ def handle_location_message(message: types.Message) -> None:
 @bot.callback_query_handler(func=lambda call: call.data.startswith("current_"))
 def handle_current_weather_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации или отмену в сценарии «Текущая погода»."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "current_cancel":
-        current_location_choices.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
-        return
-
-    if call.data.startswith("current_pick:"):
-        try:
-            index = int(call.data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            current_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        choices = current_location_choices.get(user_id)
-        if not choices or index < 0 or index >= len(choices):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            current_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        location_item = build_geocode_item_with_disambiguated_label(choices, index)
-        logger.info(
-            "Пользователь %s выбрал вариант текущей погоды #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
-        )
-        bot.answer_callback_query(call.id)
-        complete_current_weather_from_location(
-            bot,
-            chat_id,
-            user_id,
-            location_item,
-            user_states=user_states,
-            current_location_choices=current_location_choices,
-        )
-        return
-
-    bot.answer_callback_query(call.id)
+    handle_current_weather_callback(
+        call,
+        bot=bot,
+        logger=logger,
+        user_states=user_states,
+        current_location_choices=current_location_choices,
+        complete_current_weather_from_location=complete_current_weather_from_location,
+        main_menu=main_menu,
+        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("alerts_"))
 def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации для уведомлений (inline) или отмену."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "alerts_cancel":
-        alerts_location_choices.pop(user_id, None)
-        user_states[user_id] = ALERTS_MENU
-        user_data = ensure_notifications_defaults(load_user(user_id))
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, format_alerts_status(user_data), reply_markup=alerts_menu())
-        return
-
-    if call.data.startswith("alerts_pick:"):
-        try:
-            index = int(call.data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            bot.answer_callback_query(call.id)
-            alerts_location_choices.pop(user_id, None)
-            user_states[user_id] = ALERTS_MENU
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=alerts_menu(),
-            )
-            return
-
-        choices = alerts_location_choices.get(user_id)
-        if not choices or index < 0 or index >= len(choices):
-            bot.answer_callback_query(call.id)
-            alerts_location_choices.pop(user_id, None)
-            user_states[user_id] = ALERTS_MENU
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=alerts_menu(),
-            )
-            return
-
-        location_item = build_geocode_item_with_disambiguated_label(choices, index)
-        logger.info(
-            "Пользователь %s выбрал локацию для уведомлений #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
-        )
-        bot.answer_callback_query(call.id)
-        complete_alerts_location_from_item(
-            bot,
-            chat_id,
-            user_id,
-            location_item,
-            user_states=user_states,
-            alerts_location_choices=alerts_location_choices,
-        )
-        return
-
-    bot.answer_callback_query(call.id)
+    handle_alerts_callback_logic(
+        call,
+        bot=bot,
+        logger=logger,
+        user_states=user_states,
+        alerts_location_choices=alerts_location_choices,
+        ALERTS_MENU=ALERTS_MENU,
+        load_user=load_user,
+        ensure_notifications_defaults=ensure_notifications_defaults,
+        format_alerts_status=format_alerts_status,
+        alerts_menu=alerts_menu,
+        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+        complete_alerts_location_from_item=complete_alerts_location_from_item,
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("details_"))
@@ -989,454 +913,106 @@ def handle_details_location_callback(call: types.CallbackQuery) -> None:
 )
 def handle_compare_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор населённого пункта при сравнении (inline) или отмену."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "compare_cancel":
-        compare_location_choices.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
-        return
-
-    parts = call.data.split(":")
-    if len(parts) != 3 or parts[0] != "compare_pick":
-        bot.answer_callback_query(call.id)
-        return
-
-    try:
-        step = int(parts[1])
-        index = int(parts[2])
-    except ValueError:
-        bot.answer_callback_query(call.id)
-        compare_location_choices.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    meta = compare_location_choices.get(user_id)
-    if not meta or not isinstance(meta.get("locations"), list):
-        bot.answer_callback_query(call.id)
-        compare_location_choices.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    if meta.get("step") != step:
-        bot.answer_callback_query(call.id)
-        compare_location_choices.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    locations = meta["locations"]
-    if index < 0 or index >= len(locations):
-        bot.answer_callback_query(call.id)
-        compare_location_choices.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    location_item = build_geocode_item_with_disambiguated_label(locations, index)
-    lat = location_item.get("lat")
-    lon = location_item.get("lon")
-    if lat is None or lon is None:
-        bot.answer_callback_query(call.id)
-        compare_location_choices.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "Не удалось получить данные для сравнения. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    city_label = location_item.get("label") or build_location_label(location_item, show_coords=False)
-    logger.info(
-        "Пользователь %s выбрал населённый пункт для сравнения (шаг %s) #%s: %s",
-        user_id,
-        step,
-        index,
-        city_label,
+    handle_compare_callback_logic(
+        call,
+        bot=bot,
+        logger=logger,
+        user_states=user_states,
+        compare_drafts=compare_drafts,
+        compare_location_choices=compare_location_choices,
+        WAITING_COMPARE_CITY_2=WAITING_COMPARE_CITY_2,
+        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+        build_location_label=build_location_label,
+        complete_compare_two_locations=complete_compare_two_locations,
+        main_menu=main_menu,
     )
-    bot.answer_callback_query(call.id)
-
-    if step == 1:
-        compare_drafts[user_id] = {
-            "coordinates_1": (float(lat), float(lon)),
-            "city_1_input": city_label,
-            "city_1_label": city_label,
-        }
-        compare_location_choices.pop(user_id, None)
-        user_states[user_id] = WAITING_COMPARE_CITY_2
-        bot.send_message(chat_id, "Теперь введи второй населённый пункт.")
-        return
-
-    if step == 2:
-        draft = compare_drafts.get(user_id)
-        if not draft or "coordinates_1" not in draft:
-            compare_location_choices.pop(user_id, None)
-            compare_drafts.pop(user_id, None)
-            user_states.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        lat_1, lon_1 = draft["coordinates_1"]
-        city_label_1 = draft.get("city_1_label") or draft.get("city_1_input") or "Первый населённый пункт"
-        complete_compare_two_locations(
-            chat_id,
-            user_id,
-            lat_1,
-            lon_1,
-            city_label_1,
-            float(lat),
-            float(lon),
-            city_label,
-        )
-        return
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_pick:"))
 def handle_favorite_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор основной локации из списка сохранённых."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
-    if not location_id:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚠️ Не удалось выбрать основную локацию.", reply_markup=locations_menu())
-        return
-
-    user_data = load_user(user_id)
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(saved_locations, list) or not saved_locations:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
-        return
-
-    location_exists = any(
-        isinstance(item, dict) and item.get("id") == location_id
-        for item in saved_locations
-    )
-    if not location_exists:
-        bot.answer_callback_query(call.id)
-        bot.send_message(
-            chat_id,
-            "⚠️ Выбранная локация не найдена. Попробуй снова.",
-            reply_markup=locations_menu(),
-        )
-        return
-
-    user_data["favorite_location_id"] = location_id
-    save_user(user_id, user_data)
-    user_states[user_id] = LOCATIONS_MENU
-    logger.info("Пользователь %s выбрал основную локацию: %s", user_id, location_id)
-
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        chat_id,
-        "✅ Основная локация обновлена.\n\n" + format_saved_locations(user_data),
-        reply_markup=locations_menu(),
+    handle_favorite_callback_logic(
+        call,
+        bot=bot,
+        logger=logger,
+        user_states=user_states,
+        LOCATIONS_MENU=LOCATIONS_MENU,
+        load_user=load_user,
+        save_user=save_user,
+        format_saved_locations=format_saved_locations,
+        locations_menu=locations_menu,
     )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delete_location_pick:"))
 def handle_delete_location_pick_callback(call: types.CallbackQuery) -> None:
     """Удаляет выбранную сохранённую локацию."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
-
-    if not location_id:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚠️ Не удалось удалить локацию.", reply_markup=locations_menu())
-        return
-
-    user_data = load_user(user_id)
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(saved_locations, list) or not saved_locations:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
-        return
-
-    filtered_locations = [
-        item
-        for item in saved_locations
-        if not (isinstance(item, dict) and item.get("id") == location_id)
-    ]
-
-    if len(filtered_locations) == len(saved_locations):
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚠️ Выбранная локация не найдена.", reply_markup=locations_menu())
-        return
-
-    user_data["saved_locations"] = filtered_locations
-    if user_data.get("favorite_location_id") == location_id:
-        user_data["favorite_location_id"] = None
-    save_user(user_id, user_data)
-    user_states[user_id] = LOCATIONS_MENU
-    rename_location_drafts.pop(user_id, None)
-
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        chat_id,
-        "✅ Локация удалена.\n\n" + format_saved_locations(user_data),
-        reply_markup=locations_menu(),
+    handle_delete_location_callback_logic(
+        call,
+        bot=bot,
+        user_states=user_states,
+        rename_location_drafts=rename_location_drafts,
+        LOCATIONS_MENU=LOCATIONS_MENU,
+        load_user=load_user,
+        save_user=save_user,
+        format_saved_locations=format_saved_locations,
+        locations_menu=locations_menu,
     )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("rename_location_pick:"))
 def handle_rename_location_pick_callback(call: types.CallbackQuery) -> None:
     """Запоминает выбранную локацию и запрашивает новое имя."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
-
-    if not location_id:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚠️ Не удалось выбрать локацию.", reply_markup=locations_menu())
-        return
-
-    user_data = load_user(user_id)
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(saved_locations, list) or not saved_locations:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
-        return
-
-    location_exists = any(
-        isinstance(item, dict) and item.get("id") == location_id
-        for item in saved_locations
-    )
-    if not location_exists:
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚠️ Выбранная локация не найдена.", reply_markup=locations_menu())
-        return
-
-    rename_location_drafts[user_id] = {"location_id": location_id}
-    user_states[user_id] = WAITING_RENAME_LOCATION_TITLE
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        chat_id,
-        "Введи новое название для локации.",
-        reply_markup=types.ReplyKeyboardRemove(),
+    handle_rename_location_callback_logic(
+        call,
+        bot=bot,
+        user_states=user_states,
+        rename_location_drafts=rename_location_drafts,
+        LOCATIONS_MENU=LOCATIONS_MENU,
+        WAITING_RENAME_LOCATION_TITLE=WAITING_RENAME_LOCATION_TITLE,
+        load_user=load_user,
+        locations_menu=locations_menu,
+        types=types,
     )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("savedloc_"))
 def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации при добавлении новой сохранённой локации."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "savedloc_cancel":
-        saved_location_drafts.pop(user_id, None)
-        user_states[user_id] = LOCATIONS_MENU
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Выбор отменён.", reply_markup=locations_menu())
-        return
-
-    if call.data.startswith("savedloc_pick:"):
-        try:
-            index = int(call.data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            saved_location_drafts.pop(user_id, None)
-            user_states[user_id] = LOCATIONS_MENU
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Начни добавление заново.",
-                reply_markup=locations_menu(),
-            )
-            return
-
-        draft = saved_location_drafts.get(user_id)
-        locations = draft.get("locations") if isinstance(draft, dict) else None
-        if not isinstance(locations, list) or index < 0 or index >= len(locations):
-            saved_location_drafts.pop(user_id, None)
-            user_states[user_id] = LOCATIONS_MENU
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Начни добавление заново.",
-                reply_markup=locations_menu(),
-            )
-            return
-
-        location_item = build_geocode_item_with_disambiguated_label(locations, index)
-        lat = location_item.get("lat")
-        lon = location_item.get("lon")
-        label = location_item.get("label") or build_location_label(location_item, show_coords=False)
-        if lat is None or lon is None:
-            saved_location_drafts.pop(user_id, None)
-            user_states[user_id] = LOCATIONS_MENU
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                chat_id,
-                "Не удалось определить локацию. Попробуй снова.",
-                reply_markup=locations_menu(),
-            )
-            return
-
-        saved_location_drafts[user_id] = {
-            "lat": float(lat),
-            "lon": float(lon),
-            "label": label,
-        }
-        user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
-        bot.answer_callback_query(call.id)
-        bot.send_message(
-            chat_id,
-            "Введи название для этой локации, например: Дом",
-            reply_markup=types.ReplyKeyboardRemove(),
-        )
-        return
-
-    bot.answer_callback_query(call.id)
+    handle_saved_location_callback_logic(
+        call,
+        bot=bot,
+        user_states=user_states,
+        saved_location_drafts=saved_location_drafts,
+        LOCATIONS_MENU=LOCATIONS_MENU,
+        WAITING_NEW_SAVED_LOCATION_TITLE=WAITING_NEW_SAVED_LOCATION_TITLE,
+        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+        build_location_label=build_location_label,
+        locations_menu=locations_menu,
+        types=types,
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("forecast_"))
 def handle_forecast_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "forecast_cancel":
-        forecast_location_choices.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
-        return
-
-    if call.data.startswith("forecast_pick:"):
-        try:
-            index = int(call.data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            forecast_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        choices = forecast_location_choices.get(user_id)
-        if not choices or index < 0 or index >= len(choices):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            forecast_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        location_item = build_geocode_item_with_disambiguated_label(choices, index)
-        logger.info(
-            "Пользователь %s выбрал локацию для прогноза #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
-        )
-        bot.answer_callback_query(call.id)
-        stub = _message_stub_for_chat(chat_id)
-        city = location_item.get("label") or build_location_label(location_item, show_coords=False)
-        lat = location_item.get("lat")
-        lon = location_item.get("lon")
-        if lat is None or lon is None:
-            forecast_location_choices.pop(user_id, None)
-            user_states.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "Не удалось получить прогноз. Попробуй позже.",
-                reply_markup=main_menu(),
-            )
-            return
-        send_forecast_by_coordinates(
-            stub,
-            user_id,
-            float(lat),
-            float(lon),
-            city,
-            save_location=True,
-            preferred_city_label=city,
-        )
-        return
-
-    cache = forecast_cache.get(user_id)
-    if not cache:
-        bot.answer_callback_query(call.id, "Данные прогноза устарели.")
-        return
-
-    if call.data == "forecast_back":
-        days = list(cache["grouped"].keys())
-        keyboard = build_forecast_days_keyboard(days)
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"Выбери день прогноза для {cache['city']}:",
-            reply_markup=keyboard,
-        )
-        bot.answer_callback_query(call.id)
-        return
-
-    if call.data == "forecast_menu":
-        user_states.pop(user_id, None)
-        forecast_saved_drafts.pop(user_id, None)
-        forecast_cache.pop(user_id, None)
-        bot.send_message(call.message.chat.id, "Главное меню.", reply_markup=main_menu())
-        bot.answer_callback_query(call.id)
-        return
-
-    if call.data.startswith("forecast_day:"):
-        day = call.data.split(":", 1)[1]
-        logger.info("Пользователь %s выбрал день прогноза: %s", user_id, day)
-        day_items = cache["grouped"].get(day)
-        if not day_items:
-            bot.answer_callback_query(call.id, "День прогноза не найден.")
-            return
-
-        text = format_forecast_day(day, day_items, cache["city"])
-        keyboard = build_forecast_day_keyboard(list(cache["grouped"].keys()), day)
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=text,
-            reply_markup=keyboard,
-        )
-        bot.answer_callback_query(call.id)
-        return
-
-    bot.answer_callback_query(call.id)
+    handle_forecast_callback_logic(
+        call,
+        bot=bot,
+        logger=logger,
+        user_states=user_states,
+        forecast_saved_drafts=forecast_saved_drafts,
+        forecast_location_choices=forecast_location_choices,
+        forecast_cache=forecast_cache,
+        _message_stub_for_chat=_message_stub_for_chat,
+        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+        build_location_label=build_location_label,
+        send_forecast_by_coordinates=send_forecast_by_coordinates,
+        main_menu=main_menu,
+        build_forecast_days_keyboard=build_forecast_days_keyboard,
+        build_forecast_day_keyboard=build_forecast_day_keyboard,
+        format_forecast_day=format_forecast_day,
+    )
 
 
 @bot.message_handler(func=lambda message: True)
@@ -1546,22 +1122,20 @@ def handle_unknown_text(message: types.Message) -> None:
     ):
         return
 
-    if state == WAITING_GEO_LOCATION:
-        if message.text == "⬅️ В меню":
-            user_states.pop(user_id, None)
-            compare_drafts.pop(user_id, None)
-            details_location_choices.pop(user_id, None)
-            forecast_location_choices.pop(user_id, None)
-            compare_location_choices.pop(user_id, None)
-            bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
-            return
-
-        bot.send_message(
-            message.chat.id,
-            "Пожалуйста, отправь геолокацию через кнопку ниже.\n"
-            "Если ты используешь Telegram Desktop, открой бота на телефоне или вернись в меню.",
-            reply_markup=geo_request_menu(),
-        )
+    if handle_geo_text(
+        message,
+        user_id,
+        state,
+        WAITING_GEO_LOCATION=WAITING_GEO_LOCATION,
+        bot=bot,
+        user_states=user_states,
+        compare_drafts=compare_drafts,
+        details_location_choices=details_location_choices,
+        forecast_location_choices=forecast_location_choices,
+        compare_location_choices=compare_location_choices,
+        main_menu=main_menu,
+        geo_request_menu=geo_request_menu,
+    ):
         return
 
     bot.send_message(
