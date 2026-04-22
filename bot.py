@@ -1,7 +1,7 @@
 import os
 import logging
-import time
 import threading
+from functools import partial
 from types import SimpleNamespace
 from dotenv import load_dotenv
 import telebot
@@ -100,6 +100,19 @@ from handlers.states import (
 from storage import load_user, save_user, load_all_users, save_all_users
 from session_store import SessionStore
 from app_context import AppContext
+from flows import (
+    alerts_worker as flow_alerts_worker,
+    complete_compare_two_locations as flow_complete_compare_two_locations,
+    send_details_by_coordinates as flow_send_details_by_coordinates,
+    send_forecast_by_coordinates as flow_send_forecast_by_coordinates,
+    start_alerts_flow as flow_start_alerts_flow,
+    start_compare_flow as flow_start_compare_flow,
+    start_current_weather_flow as flow_start_current_weather_flow,
+    start_details_flow as flow_start_details_flow,
+    start_forecast_flow as flow_start_forecast_flow,
+    start_geo_weather_flow as flow_start_geo_weather_flow,
+    start_locations_flow as flow_start_locations_flow,
+)
 
 
 logging.basicConfig(
@@ -166,6 +179,18 @@ ctx = AppContext(
     get_air_pollution=get_air_pollution,
 )
 
+start_alerts_flow = partial(flow_start_alerts_flow, ctx=ctx, session_store=session_store)
+start_locations_flow = partial(flow_start_locations_flow, ctx=ctx, session_store=session_store)
+start_current_weather_flow = partial(flow_start_current_weather_flow, ctx=ctx, session_store=session_store)
+start_geo_weather_flow = partial(flow_start_geo_weather_flow, ctx=ctx, session_store=session_store)
+start_details_flow = partial(flow_start_details_flow, ctx=ctx, session_store=session_store)
+start_compare_flow = partial(flow_start_compare_flow, ctx=ctx, session_store=session_store)
+start_forecast_flow = partial(flow_start_forecast_flow, ctx=ctx, session_store=session_store)
+send_details_by_coordinates = partial(flow_send_details_by_coordinates, ctx=ctx, session_store=session_store)
+send_forecast_by_coordinates = partial(flow_send_forecast_by_coordinates, ctx=ctx, session_store=session_store)
+complete_compare_two_locations = partial(flow_complete_compare_two_locations, ctx=ctx, session_store=session_store)
+alerts_worker = partial(flow_alerts_worker, ctx=ctx)
+
 MENU_BUTTONS = [
     "Текущая погода",
     "Прогноз на 5 дней",
@@ -178,381 +203,9 @@ MENU_BUTTONS = [
 ]
 
 
-def start_alerts_flow(message: types.Message) -> None:
-    """Запускает раздел уведомлений."""
-    user_id = message.from_user.id
-    logger.info("Пользователь %s вошёл в раздел уведомлений.", user_id)
-    user_data = load_user(user_id)
-    lat = user_data.get("lat")
-    lon = user_data.get("lon")
-
-    if lat is None or lon is None:
-        bot.send_message(
-            message.chat.id,
-            "Сначала нужно сохранить локацию. Используй «Текущая погода» или «Моя геолокация».",
-            reply_markup=main_menu(),
-        )
-        return
-
-    session_store.set_state(user_id, ALERTS_MENU)
-    bot.send_message(message.chat.id, format_alerts_status(user_data), reply_markup=alerts_menu())
-
-
-def start_locations_flow(message: types.Message) -> None:
-    """Открывает раздел управления сохранёнными локациями."""
-    user_id = message.from_user.id
-    logger.info("Пользователь %s вошёл в раздел сохранённых локаций.", user_id)
-    session_store.clear_saved_location_flows(user_id)
-    session_store.set_state(user_id, LOCATIONS_MENU)
-    bot.send_message(
-        message.chat.id,
-        "Раздел сохранённых локаций.\nВыбери действие:",
-        reply_markup=locations_menu(),
-    )
-
-
-def alerts_worker() -> None:
-    """Фоновая проверка прогноза для уведомлений."""
-    logger.info("Фоновый поток уведомлений запущен.")
-
-    while True:
-        try:
-            all_users = load_all_users()
-            changed = False
-            now_ts = int(time.time())
-
-            for user_id_str, user_data in all_users.items():
-                if not isinstance(user_data, dict):
-                    continue
-
-                user_data = ensure_notifications_defaults(user_data)
-                notifications = user_data["notifications"]
-
-                if not notifications.get("enabled", False):
-                    continue
-
-                lat = user_data.get("lat")
-                lon = user_data.get("lon")
-                if lat is None or lon is None:
-                    continue
-
-                interval_h = notifications.get("interval_h", 2)
-                last_check_ts = notifications.get("last_check_ts", 0)
-                if now_ts - int(last_check_ts) < interval_h * 3600:
-                    continue
-
-                forecast_items = get_forecast_5d3h(lat, lon)
-                if not forecast_items:
-                    logger.warning("Не удалось получить прогноз в фоновом потоке для пользователя %s.", user_id_str)
-                    notifications["last_check_ts"] = now_ts
-                    changed = True
-                    continue
-
-                alerts = detect_weather_alerts(forecast_items)
-                if alerts:
-                    city = user_data.get("city") or "неизвестная локация"
-                    alert_text = (
-                        "🌤 Weather Teller\n"
-                        f"Для локации {city} найдено изменение погоды:\n"
-                        f"• {alerts[0]}\n"
-                        "Проверь прогноз в боте."
-                    )
-                    try:
-                        bot.send_message(int(user_id_str), alert_text)
-                        logger.info("Уведомление успешно отправлено пользователю %s.", user_id_str)
-                    except Exception:
-                        logger.warning("Не удалось отправить уведомление пользователю %s.", user_id_str)
-
-                notifications["last_check_ts"] = now_ts
-                changed = True
-
-            if changed:
-                save_all_users(all_users)
-        except Exception:
-            logger.exception("Ошибка в фоновом потоке уведомлений.")
-
-        time.sleep(60)
-
-
-def start_current_weather_flow(message: types.Message) -> None:
-    """Запускает сценарий ввода населённого пункта для текущей погоды."""
-    user_id = message.from_user.id
-    session_store.current_location_choices.pop(user_id, None)
-    session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
-    bot.send_message(message.chat.id, "Введи название населённого пункта.")
-
-
-def start_geo_weather_flow(message: types.Message) -> None:
-    """Запускает сценарий получения погоды по геолокации."""
-    logger.info("Запущен сценарий геолокации для пользователя %s.", message.from_user.id)
-    session_store.set_state(message.from_user.id, WAITING_GEO_LOCATION)
-    bot.send_message(
-        message.chat.id,
-        "Отправь геолокацию через кнопку ниже.\n"
-        "Если ты в Telegram Desktop и отправка недоступна, открой бота на телефоне или вернись в меню.",
-        reply_markup=geo_request_menu(),
-    )
-
-
-def start_details_flow(message: types.Message) -> None:
-    """Запускает сценарий получения расширенных данных по населённому пункту."""
-    user_id = message.from_user.id
-    logger.info("Запущен сценарий расширенных данных для пользователя %s.", user_id)
-    session_store.details_location_choices.pop(user_id, None)
-
-    user_data = load_user(user_id)
-    saved_city = user_data.get("city")
-    saved_lat = user_data.get("lat")
-    saved_lon = user_data.get("lon")
-
-    if saved_lat is not None and saved_lon is not None:
-        logger.info(
-            "Найдена сохранённая локация для /details у пользователя %s: %s (%s, %s).",
-            user_id,
-            saved_city,
-            saved_lat,
-            saved_lon,
-        )
-        session_store.details_saved_drafts[user_id] = {
-            "city": saved_city or "Сохранённая локация",
-            "lat": saved_lat,
-            "lon": saved_lon,
-        }
-        session_store.user_states[user_id] = WAITING_DETAILS_USE_SAVED_LOCATION
-        bot.send_message(
-            message.chat.id,
-            f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
-            "Ответь: Да или Нет.",
-        )
-        return
-
-    session_store.user_states[user_id] = WAITING_DETAILS_CITY
-    bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
-
-
-def send_details_by_coordinates(
-    message: types.Message,
-    user_id: int,
-    lat: float,
-    lon: float,
-    city_fallback: str,
-    *,
-    preferred_city_label: str | None = None,
-) -> bool:
-    """Получает и отправляет расширенные данные по известным координатам."""
-    weather = get_current_weather(lat, lon)
-    air_components = get_air_pollution(lat, lon)
-
-    if not weather:
-        logger.warning(
-            "Не удалось получить расширенные данные для пользователя %s (населённый пункт: %s, lat: %s, lon: %s).",
-            user_id,
-            city_fallback,
-            lat,
-            lon,
-        )
-        session_store.user_states.pop(user_id, None)
-        session_store.details_saved_drafts.pop(user_id, None)
-        session_store.details_location_choices.pop(user_id, None)
-        bot.send_message(
-            message.chat.id,
-            "Не удалось получить расширенные данные. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return False
-
-    # Приоритет у подписи, которую пользователь уже выбрал/сохранил вручную.
-    if preferred_city_label:
-        city_label = preferred_city_label
-    elif city_fallback:
-        city_label = city_fallback
-    else:
-        location = get_location_by_coordinates(lat, lon)
-        city_label = build_location_label(location, show_coords=False) if location else "Выбранная локация"
-
-    user_data = load_user(user_id)
-    user_data["city"] = city_label
-    user_data["lat"] = lat
-    user_data["lon"] = lon
-    save_user(user_id, user_data)
-
-    answer = format_details_response(city_label, weather, air_components)
-    session_store.user_states.pop(user_id, None)
-    session_store.details_saved_drafts.pop(user_id, None)
-    session_store.details_location_choices.pop(user_id, None)
-    bot.send_message(message.chat.id, answer, reply_markup=main_menu())
-    return True
-
-
-def start_compare_flow(message: types.Message) -> None:
-    """Запускает сценарий сравнения двух населённых пунктов."""
-    user_id = message.from_user.id
-    logger.info("Запущен сценарий сравнения населённых пунктов для пользователя %s.", user_id)
-    session_store.compare_drafts.pop(user_id, None)
-    session_store.compare_location_choices.pop(user_id, None)
-    session_store.user_states[user_id] = WAITING_COMPARE_CITY_1
-    bot.send_message(message.chat.id, "Введи первый населённый пункт для сравнения.")
-
-
-def start_forecast_flow(message: types.Message) -> None:
-    """Запускает сценарий прогноза на 5 дней."""
-    user_id = message.from_user.id
-    logger.info("Запущен сценарий прогноза на 5 дней для пользователя %s.", user_id)
-    session_store.forecast_location_choices.pop(user_id, None)
-
-    user_data = load_user(user_id)
-    saved_city = user_data.get("city")
-    saved_lat = user_data.get("lat")
-    saved_lon = user_data.get("lon")
-
-    if saved_lat is not None and saved_lon is not None:
-        session_store.forecast_saved_drafts[user_id] = {
-            "city": saved_city or "Сохранённая локация",
-            "lat": saved_lat,
-            "lon": saved_lon,
-        }
-        session_store.user_states[user_id] = WAITING_FORECAST_USE_SAVED_LOCATION
-        bot.send_message(
-            message.chat.id,
-            f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
-            "Ответь: Да или Нет.",
-        )
-        return
-
-    session_store.user_states[user_id] = WAITING_FORECAST_CITY
-    bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
-
-
-def show_forecast_days_message(message: types.Message, user_id: int) -> None:
-    """Показывает сообщение со списком дней прогноза."""
-    cache = session_store.forecast_cache.get(user_id)
-    if not cache:
-        bot.send_message(
-            message.chat.id,
-            "Не удалось получить прогноз. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    days = list(cache["grouped"].keys())
-    keyboard = build_forecast_days_keyboard(days)
-    bot.send_message(
-        message.chat.id,
-        f"Выбери день прогноза для {cache['city']}:",
-        reply_markup=keyboard,
-    )
-
-
-def send_forecast_by_coordinates(
-    message: types.Message,
-    user_id: int,
-    lat: float,
-    lon: float,
-    city_fallback: str,
-    *,
-    save_location: bool,
-    preferred_city_label: str | None = None,
-) -> bool:
-    """Получает прогноз, сохраняет данные в кэш и показывает дни."""
-    forecast_items = get_forecast_5d3h(lat, lon)
-    if not forecast_items:
-        logger.warning(
-            "Не удалось получить прогноз для пользователя %s (населённый пункт: %s, lat: %s, lon: %s).",
-            user_id,
-            city_fallback,
-            lat,
-            lon,
-        )
-        session_store.user_states.pop(user_id, None)
-        session_store.forecast_saved_drafts.pop(user_id, None)
-        session_store.forecast_cache.pop(user_id, None)
-        session_store.forecast_location_choices.pop(user_id, None)
-        bot.send_message(
-            message.chat.id,
-            "Не удалось получить прогноз. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return False
-
-    # Приоритет у подписи, которую пользователь уже выбрал/сохранил вручную.
-    if preferred_city_label:
-        city_label = preferred_city_label
-    elif city_fallback:
-        city_label = city_fallback
-    else:
-        location = get_location_by_coordinates(lat, lon)
-        city_label = build_location_label(location, show_coords=False) if location else "Выбранная локация"
-    grouped = group_forecast_by_day(forecast_items)
-    if not grouped:
-        logger.warning("Прогноз пришёл пустым после группировки для пользователя %s.", user_id)
-        session_store.user_states.pop(user_id, None)
-        session_store.forecast_saved_drafts.pop(user_id, None)
-        session_store.forecast_cache.pop(user_id, None)
-        session_store.forecast_location_choices.pop(user_id, None)
-        bot.send_message(
-            message.chat.id,
-            "Не удалось получить прогноз. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return False
-
-    if save_location:
-        user_data = load_user(user_id)
-        user_data["city"] = city_label
-        user_data["lat"] = lat
-        user_data["lon"] = lon
-        save_user(user_id, user_data)
-
-    session_store.forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
-    session_store.user_states.pop(user_id, None)
-    session_store.forecast_saved_drafts.pop(user_id, None)
-    session_store.forecast_location_choices.pop(user_id, None)
-    show_forecast_days_message(message, user_id)
-    return True
-
-
 def _message_stub_for_chat(chat_id: int) -> SimpleNamespace:
     """Заглушка сообщения с chat.id для вызовов send_* из обработчиков callback."""
     return SimpleNamespace(chat=SimpleNamespace(id=chat_id))
-
-
-def complete_compare_two_locations(
-    chat_id: int,
-    user_id: int,
-    lat_1: float,
-    lon_1: float,
-    city_label_1: str,
-    lat_2: float,
-    lon_2: float,
-    city_label_2: str,
-) -> None:
-    """Загружает погоду по двум точкам и отправляет текст сравнения."""
-    weather_1 = get_current_weather(lat_1, lon_1)
-    weather_2 = get_current_weather(lat_2, lon_2)
-
-    if not weather_1 or not weather_2:
-        logger.warning("Не удалось получить данные для сравнения у пользователя %s.", user_id)
-        session_store.user_states.pop(user_id, None)
-        session_store.compare_drafts.pop(user_id, None)
-        session_store.compare_location_choices.pop(user_id, None)
-        bot.send_message(
-            chat_id,
-            "Не удалось получить данные для сравнения. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    answer = format_compare_response(city_label_1, weather_1, city_label_2, weather_2)
-    logger.info(
-        "Успешно выполнено сравнение для пользователя %s: %s vs %s.",
-        user_id,
-        city_label_1,
-        city_label_2,
-    )
-    session_store.user_states.pop(user_id, None)
-    session_store.compare_drafts.pop(user_id, None)
-    session_store.compare_location_choices.pop(user_id, None)
-    bot.send_message(chat_id, answer, reply_markup=main_menu())
 
 
 @bot.message_handler(commands=["start"])
