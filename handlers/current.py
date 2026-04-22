@@ -9,68 +9,63 @@ def handle_current_text(
     user_id: int,
     state: str | None,
     *,
-    bot,
-    logger,
-    user_states: dict,
-    current_location_choices: dict,
-    complete_current_weather_from_location,
-    main_menu,
-    build_current_weather_location_keyboard,
+    ctx,
+    session_store,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария текущей погоды."""
     if state == WAITING_CURRENT_WEATHER_CITY:
         query = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл запрос для текущей погоды: %s", user_id, query)
+        ctx.logger.info("Пользователь %s ввёл запрос для текущей погоды: %s", user_id, query)
         if not query:
-            logger.info("Пустой ввод для текущей погоды: пользователь %s.", user_id)
-            bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            ctx.logger.info("Пустой ввод для текущей погоды: пользователь %s.", user_id)
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
         locations = get_locations(query, limit=5)
         if not locations:
-            logger.info("Населённый пункт не найден для пользователя %s: %s", user_id, query)
-            bot.send_message(
+            ctx.logger.info("Населённый пункт не найден для пользователя %s: %s", user_id, query)
+            ctx.bot.send_message(
                 message.chat.id,
                 "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
             )
             return True
 
         if len(locations) == 1:
-            complete_current_weather_from_location(
-                bot,
+            ctx.complete_current_weather_from_location(
+                ctx.bot,
                 message.chat.id,
                 user_id,
                 locations[0],
-                user_states=user_states,
-                current_location_choices=current_location_choices,
+                user_states=session_store.user_states,
+                current_location_choices=session_store.current_location_choices,
             )
             return True
 
-        current_location_choices[user_id] = locations
-        user_states[user_id] = WAITING_CURRENT_WEATHER_PICK
-        logger.info(
+        session_store.current_location_choices[user_id] = locations
+        session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_PICK
+        ctx.logger.info(
             "Найдено несколько вариантов (%s) для пользователя %s: %s",
             len(locations),
             user_id,
             query,
         )
-        bot.send_message(
+        ctx.bot.send_message(
             message.chat.id,
             "Найдено несколько вариантов. Выбери нужный населённый пункт:",
-            reply_markup=build_current_weather_location_keyboard(locations),
+            reply_markup=ctx.build_current_weather_location_keyboard(locations),
         )
         return True
 
     if state == WAITING_CURRENT_WEATHER_PICK:
-        if not current_location_choices.get(user_id):
-            user_states.pop(user_id, None)
-            bot.send_message(
+        if not session_store.current_location_choices.get(user_id):
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(
                 message.chat.id,
                 "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
+                reply_markup=ctx.main_menu(),
             )
             return True
-        bot.send_message(
+        ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
         )

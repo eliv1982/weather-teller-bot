@@ -98,6 +98,7 @@ from handlers.states import (
 )
 from storage import load_user, save_user, load_all_users, save_all_users
 from session_store import SessionStore
+from app_context import AppContext
 
 
 logging.basicConfig(
@@ -140,6 +141,47 @@ compare_location_choices = session_store.compare_location_choices
 saved_location_drafts = session_store.saved_location_drafts
 # Черновик для сценария «Переименовать локацию»: хранит выбранный location_id
 rename_location_drafts = session_store.rename_location_drafts
+
+ctx = AppContext(
+    bot=bot,
+    logger=logger,
+    load_user=load_user,
+    save_user=save_user,
+    load_all_users=load_all_users,
+    save_all_users=save_all_users,
+    main_menu=main_menu,
+    alerts_menu=alerts_menu,
+    alerts_location_menu=alerts_location_menu,
+    locations_menu=locations_menu,
+    add_saved_location_menu=add_saved_location_menu,
+    geo_request_menu=geo_request_menu,
+    build_current_weather_location_keyboard=build_current_weather_location_keyboard,
+    build_forecast_days_keyboard=build_forecast_days_keyboard,
+    build_forecast_day_keyboard=build_forecast_day_keyboard,
+    build_location_pick_keyboard=build_location_pick_keyboard,
+    build_saved_locations_keyboard=build_saved_locations_keyboard,
+    build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
+    build_favorite_pick_keyboard=build_favorite_pick_keyboard,
+    format_alerts_status=format_alerts_status,
+    format_compare_response=format_compare_response,
+    format_details_response=format_details_response,
+    format_saved_locations=format_saved_locations,
+    format_weather_response=format_weather_response,
+    help_text=help_text,
+    ensure_notifications_defaults=ensure_notifications_defaults,
+    detect_weather_alerts=detect_weather_alerts,
+    save_saved_location_item=save_saved_location_item,
+    complete_current_weather_from_location=complete_current_weather_from_location,
+    complete_alerts_location_from_item=complete_alerts_location_from_item,
+    group_forecast_by_day=group_forecast_by_day,
+    format_forecast_day=format_forecast_day,
+    build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+    build_location_label=build_location_label,
+    get_location_by_coordinates=get_location_by_coordinates,
+    get_current_weather=get_current_weather,
+    get_forecast_5d3h=get_forecast_5d3h,
+    get_air_pollution=get_air_pollution,
+)
 
 MENU_BUTTONS = [
     "Текущая погода",
@@ -793,13 +835,8 @@ def handle_current_weather_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации или отмену в сценарии «Текущая погода»."""
     handle_current_weather_callback(
         call,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        current_location_choices=current_location_choices,
-        complete_current_weather_from_location=complete_current_weather_from_location,
-        main_menu=main_menu,
-        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
+        ctx=ctx,
+        session_store=session_store,
     )
 
 
@@ -985,20 +1022,10 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
     handle_forecast_callback_logic(
         call,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        forecast_saved_drafts=forecast_saved_drafts,
-        forecast_location_choices=forecast_location_choices,
-        forecast_cache=forecast_cache,
+        ctx=ctx,
+        session_store=session_store,
         _message_stub_for_chat=_message_stub_for_chat,
-        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
-        build_location_label=build_location_label,
         send_forecast_by_coordinates=send_forecast_by_coordinates,
-        main_menu=main_menu,
-        build_forecast_days_keyboard=build_forecast_days_keyboard,
-        build_forecast_day_keyboard=build_forecast_day_keyboard,
-        format_forecast_day=format_forecast_day,
     )
 
 
@@ -1012,21 +1039,8 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        saved_location_drafts=saved_location_drafts,
-        rename_location_drafts=rename_location_drafts,
-        load_user=load_user,
-        save_user=save_user,
-        save_saved_location_item=save_saved_location_item,
-        format_saved_locations=format_saved_locations,
-        locations_menu=locations_menu,
-        add_saved_location_menu=add_saved_location_menu,
-        build_saved_locations_keyboard=build_saved_locations_keyboard,
-        build_favorite_pick_keyboard=build_favorite_pick_keyboard,
-        build_location_pick_keyboard=build_location_pick_keyboard,
-        geo_request_menu=geo_request_menu,
+        ctx=ctx,
+        session_store=session_store,
     ):
         return
 
@@ -1034,13 +1048,8 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        current_location_choices=current_location_choices,
-        complete_current_weather_from_location=complete_current_weather_from_location,
-        main_menu=main_menu,
-        build_current_weather_location_keyboard=build_current_weather_location_keyboard,
+        ctx=ctx,
+        session_store=session_store,
     ):
         return
 
@@ -1078,19 +1087,8 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        alerts_location_choices=alerts_location_choices,
-        load_user=load_user,
-        save_user=save_user,
-        ensure_notifications_defaults=ensure_notifications_defaults,
-        complete_alerts_location_from_item=complete_alerts_location_from_item,
-        format_alerts_status=format_alerts_status,
-        alerts_menu=alerts_menu,
-        alerts_location_menu=alerts_location_menu,
-        build_location_pick_keyboard=build_location_pick_keyboard,
-        geo_request_menu=geo_request_menu,
+        ctx=ctx,
+        session_store=session_store,
     ):
         return
 
