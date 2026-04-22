@@ -6,13 +6,40 @@ from handlers.states import (
     LOCATIONS_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_COMPARE_CITY_1,
+    WAITING_CURRENT_USE_FAVORITE,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_DETAILS_CITY,
+    WAITING_DETAILS_USE_FAVORITE,
     WAITING_DETAILS_USE_SAVED_LOCATION,
     WAITING_FORECAST_CITY,
+    WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
 )
+
+
+def _get_favorite_location(user_data: dict) -> dict | None:
+    """Возвращает основную локацию пользователя из saved_locations, если она валидна."""
+    favorite_id = user_data.get("favorite_location_id")
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(favorite_id, str) or not favorite_id:
+        return None
+    if not isinstance(saved_locations, list):
+        return None
+
+    favorite_item = next(
+        (
+            item
+            for item in saved_locations
+            if isinstance(item, dict) and item.get("id") == favorite_id
+        ),
+        None,
+    )
+    if not isinstance(favorite_item, dict):
+        return None
+    if favorite_item.get("lat") is None or favorite_item.get("lon") is None:
+        return None
+    return favorite_item
 
 
 def start_alerts_flow(message: types.Message, *, ctx, session_store) -> None:
@@ -45,6 +72,24 @@ def start_current_weather_flow(message: types.Message, *, ctx, session_store) ->
     """Запускает сценарий ввода населённого пункта для текущей погоды."""
     user_id = message.from_user.id
     session_store.current_location_choices.pop(user_id, None)
+    session_store.current_favorite_drafts.pop(user_id, None)
+
+    user_data = ctx.load_user(user_id)
+    favorite_item = _get_favorite_location(user_data)
+    if favorite_item is not None:
+        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
+        session_store.current_favorite_drafts[user_id] = {
+            "location": favorite_item,
+            "label": favorite_label,
+        }
+        session_store.set_state(user_id, WAITING_CURRENT_USE_FAVORITE)
+        ctx.bot.send_message(
+            message.chat.id,
+            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
+            reply_markup=ctx.yes_no_menu(),
+        )
+        return
+
     session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
     ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
 
@@ -66,8 +111,25 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
     user_id = message.from_user.id
     ctx.logger.info("Запущен сценарий расширенных данных для пользователя %s.", user_id)
     session_store.details_location_choices.pop(user_id, None)
+    session_store.details_favorite_drafts.pop(user_id, None)
 
     user_data = ctx.load_user(user_id)
+    favorite_item = _get_favorite_location(user_data)
+    if favorite_item is not None:
+        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
+        session_store.details_favorite_drafts[user_id] = {
+            "city": favorite_label,
+            "lat": favorite_item["lat"],
+            "lon": favorite_item["lon"],
+        }
+        session_store.user_states[user_id] = WAITING_DETAILS_USE_FAVORITE
+        ctx.bot.send_message(
+            message.chat.id,
+            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
+            reply_markup=ctx.yes_no_menu(),
+        )
+        return
+
     saved_city = user_data.get("city")
     saved_lat = user_data.get("lat")
     saved_lon = user_data.get("lon")
@@ -90,6 +152,7 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
             message.chat.id,
             f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
             "Ответь: Да или Нет.",
+            reply_markup=ctx.yes_no_menu(),
         )
         return
 
@@ -112,8 +175,25 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     user_id = message.from_user.id
     ctx.logger.info("Запущен сценарий прогноза на 5 дней для пользователя %s.", user_id)
     session_store.forecast_location_choices.pop(user_id, None)
+    session_store.forecast_favorite_drafts.pop(user_id, None)
 
     user_data = ctx.load_user(user_id)
+    favorite_item = _get_favorite_location(user_data)
+    if favorite_item is not None:
+        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
+        session_store.forecast_favorite_drafts[user_id] = {
+            "city": favorite_label,
+            "lat": favorite_item["lat"],
+            "lon": favorite_item["lon"],
+        }
+        session_store.user_states[user_id] = WAITING_FORECAST_USE_FAVORITE
+        ctx.bot.send_message(
+            message.chat.id,
+            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
+            reply_markup=ctx.yes_no_menu(),
+        )
+        return
+
     saved_city = user_data.get("city")
     saved_lat = user_data.get("lat")
     saved_lon = user_data.get("lon")
@@ -129,6 +209,7 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
             message.chat.id,
             f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
             "Ответь: Да или Нет.",
+            reply_markup=ctx.yes_no_menu(),
         )
         return
 

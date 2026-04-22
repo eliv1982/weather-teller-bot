@@ -173,6 +173,7 @@ def handle_locations_text(
             session_store.user_states[user_id] = WAITING_LOCATION_TITLE
             ctx.bot.send_message(
                 message.chat.id,
+                f"Сохраняю текущую локацию: {city}.\n"
                 "Введи название для этой локации, например: Дом",
                 reply_markup=types.ReplyKeyboardRemove(),
             )

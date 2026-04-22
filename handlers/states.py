@@ -1,6 +1,7 @@
 # Состояния сценария текущей погоды
 WAITING_CURRENT_WEATHER_CITY = "waiting_current_weather_city"
 WAITING_CURRENT_WEATHER_PICK = "waiting_current_weather_pick"
+WAITING_CURRENT_USE_FAVORITE = "waiting_current_use_favorite"
 
 # Состояния сценария геолокации
 WAITING_GEO_LOCATION = "waiting_geo_location"
@@ -8,11 +9,13 @@ WAITING_GEO_LOCATION = "waiting_geo_location"
 # Состояния сценария расширенных данных
 WAITING_DETAILS_CITY = "waiting_details_city"
 WAITING_DETAILS_PICK = "waiting_details_pick"
+WAITING_DETAILS_USE_FAVORITE = "waiting_details_use_favorite"
 WAITING_DETAILS_USE_SAVED_LOCATION = "waiting_details_use_saved_location"
 
 # Состояния сценария прогноза
 WAITING_FORECAST_CITY = "waiting_forecast_city"
 WAITING_FORECAST_PICK = "waiting_forecast_pick"
+WAITING_FORECAST_USE_FAVORITE = "waiting_forecast_use_favorite"
 WAITING_FORECAST_USE_SAVED_LOCATION = "waiting_forecast_use_saved_location"
 
 # Состояния сценария сравнения
@@ -47,17 +50,20 @@ WAITING_RENAME_LOCATION_TITLE = "waiting_rename_location_title"
 CURRENT_STATES = {
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_CURRENT_WEATHER_PICK,
+    WAITING_CURRENT_USE_FAVORITE,
 }
 
 DETAILS_STATES = {
     WAITING_DETAILS_CITY,
     WAITING_DETAILS_PICK,
+    WAITING_DETAILS_USE_FAVORITE,
     WAITING_DETAILS_USE_SAVED_LOCATION,
 }
 
 FORECAST_STATES = {
     WAITING_FORECAST_CITY,
     WAITING_FORECAST_PICK,
+    WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
 }
 

@@ -4,6 +4,9 @@ class SessionStore:
     def __init__(self) -> None:
         self.user_states: dict[int, str] = {}
         self.compare_drafts: dict[int, dict] = {}
+        self.current_favorite_drafts: dict[int, dict] = {}
+        self.details_favorite_drafts: dict[int, dict] = {}
+        self.forecast_favorite_drafts: dict[int, dict] = {}
         self.details_saved_drafts: dict[int, dict] = {}
         self.forecast_saved_drafts: dict[int, dict] = {}
         self.forecast_cache: dict[int, dict] = {}
@@ -46,6 +49,9 @@ class SessionStore:
         """Очищает всё runtime-состояние пользователя."""
         self.clear_state(user_id)
         self.compare_drafts.pop(user_id, None)
+        self.current_favorite_drafts.pop(user_id, None)
+        self.details_favorite_drafts.pop(user_id, None)
+        self.forecast_favorite_drafts.pop(user_id, None)
         self.details_saved_drafts.pop(user_id, None)
         self.forecast_saved_drafts.pop(user_id, None)
         self.forecast_cache.pop(user_id, None)

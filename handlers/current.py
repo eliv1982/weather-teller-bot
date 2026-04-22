@@ -1,6 +1,6 @@
 from telebot import types
 
-from .states import WAITING_CURRENT_WEATHER_CITY, WAITING_CURRENT_WEATHER_PICK
+from .states import WAITING_CURRENT_USE_FAVORITE, WAITING_CURRENT_WEATHER_CITY, WAITING_CURRENT_WEATHER_PICK
 from weather_app import get_locations
 
 
@@ -13,6 +13,40 @@ def handle_current_text(
     session_store,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария текущей погоды."""
+    if state == WAITING_CURRENT_USE_FAVORITE:
+        answer = (message.text or "").strip().lower()
+        yes_values = {"да", "д", "yes", "y"}
+        no_values = {"нет", "н", "no"}
+
+        if answer in yes_values:
+            draft = session_store.current_favorite_drafts.get(user_id)
+            location_item = draft.get("location") if isinstance(draft, dict) else None
+            if not isinstance(location_item, dict):
+                session_store.current_favorite_drafts.pop(user_id, None)
+                session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
+                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+                return True
+
+            ctx.complete_current_weather_from_location(
+                ctx.bot,
+                message.chat.id,
+                user_id,
+                location_item,
+                user_states=session_store.user_states,
+                current_location_choices=session_store.current_location_choices,
+            )
+            session_store.current_favorite_drafts.pop(user_id, None)
+            return True
+
+        if answer in no_values:
+            session_store.current_favorite_drafts.pop(user_id, None)
+            session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
+            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+            return True
+
+        ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
+        return True
+
     if state == WAITING_CURRENT_WEATHER_CITY:
         query = (message.text or "").strip()
         ctx.logger.info("Пользователь %s ввёл запрос для текущей погоды: %s", user_id, query)

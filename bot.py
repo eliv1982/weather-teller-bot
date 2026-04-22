@@ -32,6 +32,7 @@ from keyboards import (
     geo_request_menu,
     locations_menu,
     main_menu,
+    yes_no_menu,
 )
 from formatters import (
     format_alerts_status,
@@ -165,6 +166,7 @@ ctx = AppContext(
     locations_menu=locations_menu,
     add_saved_location_menu=add_saved_location_menu,
     geo_request_menu=geo_request_menu,
+    yes_no_menu=yes_no_menu,
     build_current_weather_location_keyboard=build_current_weather_location_keyboard,
     build_forecast_days_keyboard=build_forecast_days_keyboard,
     build_forecast_day_keyboard=build_forecast_day_keyboard,
@@ -599,6 +601,35 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
         _message_stub_for_chat=_message_stub_for_chat,
         send_forecast_by_coordinates=send_forecast_by_coordinates,
     )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("yn_"))
+def handle_yes_no_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает inline-кнопки Да/Нет/В меню для yes/no-сценариев."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    action = call.data
+
+    if action == "yn_yes":
+        text_value = "Да"
+    elif action == "yn_no":
+        text_value = "Нет"
+    else:
+        text_value = "⬅️ В меню"
+
+    stub_message = SimpleNamespace(
+        text=text_value,
+        chat=SimpleNamespace(id=chat_id),
+        from_user=SimpleNamespace(id=user_id),
+    )
+
+    bot.answer_callback_query(call.id)
+
+    if text_value == "⬅️ В меню":
+        handle_back_to_menu(stub_message)
+        return
+
+    handle_unknown_text(stub_message)
 
 
 @bot.message_handler(func=lambda message: True)

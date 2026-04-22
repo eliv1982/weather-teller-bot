@@ -18,6 +18,7 @@ class AppContext:
     locations_menu: Any
     add_saved_location_menu: Any
     geo_request_menu: Any
+    yes_no_menu: Any
     build_current_weather_location_keyboard: Any
     build_forecast_days_keyboard: Any
     build_forecast_day_keyboard: Any

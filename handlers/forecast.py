@@ -3,6 +3,7 @@ from telebot import types
 from .states import (
     WAITING_FORECAST_CITY,
     WAITING_FORECAST_PICK,
+    WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
 )
 from weather_app import get_locations
@@ -18,6 +19,59 @@ def handle_forecast_text(
     send_forecast_by_coordinates,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария прогноза."""
+    if state == WAITING_FORECAST_USE_FAVORITE:
+        answer = (message.text or "").strip().lower()
+        yes_values = {"да", "д", "yes", "y"}
+        no_values = {"нет", "н", "no"}
+
+        if answer in yes_values:
+            draft = session_store.forecast_favorite_drafts.get(user_id)
+            if not isinstance(draft, dict):
+                session_store.user_states[user_id] = WAITING_FORECAST_CITY
+                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+                return True
+
+            if send_forecast_by_coordinates(
+                message,
+                user_id,
+                draft["lat"],
+                draft["lon"],
+                draft["city"],
+                save_location=False,
+                preferred_city_label=draft["city"],
+            ):
+                ctx.logger.info("Успешно получен прогноз по основной локации для пользователя %s.", user_id)
+            session_store.forecast_favorite_drafts.pop(user_id, None)
+            return True
+
+        if answer in no_values:
+            session_store.forecast_favorite_drafts.pop(user_id, None)
+            user_data = ctx.load_user(user_id)
+            saved_city = user_data.get("city")
+            saved_lat = user_data.get("lat")
+            saved_lon = user_data.get("lon")
+            if saved_lat is not None and saved_lon is not None:
+                session_store.forecast_saved_drafts[user_id] = {
+                    "city": saved_city or "Сохранённая локация",
+                    "lat": saved_lat,
+                    "lon": saved_lon,
+                }
+                session_store.user_states[user_id] = WAITING_FORECAST_USE_SAVED_LOCATION
+                ctx.bot.send_message(
+                    message.chat.id,
+                    f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
+                    "Ответь: Да или Нет.",
+                    reply_markup=ctx.yes_no_menu(),
+                )
+                return True
+
+            session_store.user_states[user_id] = WAITING_FORECAST_CITY
+            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+            return True
+
+        ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
+        return True
+
     if state == WAITING_FORECAST_USE_SAVED_LOCATION:
         answer = (message.text or "").strip().lower()
         yes_values = {"да", "д", "yes", "y"}
@@ -53,7 +107,7 @@ def handle_forecast_text(
             ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
             return True
 
-        ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.")
+        ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
         return True
 
     if state == WAITING_FORECAST_CITY:

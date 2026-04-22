@@ -22,6 +22,17 @@ def geo_request_menu() -> types.ReplyKeyboardMarkup:
     return keyboard
 
 
+def yes_no_menu() -> types.ReplyKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора Да/Нет."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(
+        types.InlineKeyboardButton("Да", callback_data="yn_yes"),
+        types.InlineKeyboardButton("Нет", callback_data="yn_no"),
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ В меню", callback_data="yn_menu"))
+    return keyboard
+
+
 def alerts_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт меню раздела уведомлений."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
