@@ -17,6 +17,7 @@ class AppContext:
     alerts_add_location_menu: Any
     locations_menu: Any
     add_saved_location_menu: Any
+    location_input_menu: Any
     geo_request_menu: Any
     yes_no_menu: Any
     build_current_weather_location_keyboard: Any
@@ -34,6 +35,7 @@ class AppContext:
     format_saved_locations: Any
     format_weather_response: Any
     help_text: Any
+    alerts_subscription_service: Any
     ensure_notifications_defaults: Any
     ensure_alert_subscriptions_defaults: Any
     migrate_legacy_alert_to_subscriptions: Any

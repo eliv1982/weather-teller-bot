@@ -50,7 +50,17 @@ def alerts_add_location_menu() -> types.ReplyKeyboardMarkup:
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(types.KeyboardButton("Выбрать из сохранённых"))
     keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("Ввести координаты"))
     keyboard.row(types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def location_input_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора способа ввода локации для погодных сценариев."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("Ввести координаты"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 

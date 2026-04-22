@@ -1,6 +1,7 @@
 # Состояния сценария текущей погоды
 WAITING_CURRENT_WEATHER_CITY = "waiting_current_weather_city"
 WAITING_CURRENT_WEATHER_PICK = "waiting_current_weather_pick"
+WAITING_CURRENT_WEATHER_COORDS = "waiting_current_weather_coords"
 WAITING_CURRENT_USE_FAVORITE = "waiting_current_use_favorite"
 
 # Состояния сценария геолокации
@@ -9,12 +10,14 @@ WAITING_GEO_LOCATION = "waiting_geo_location"
 # Состояния сценария расширенных данных
 WAITING_DETAILS_CITY = "waiting_details_city"
 WAITING_DETAILS_PICK = "waiting_details_pick"
+WAITING_DETAILS_COORDS = "waiting_details_coords"
 WAITING_DETAILS_USE_FAVORITE = "waiting_details_use_favorite"
 WAITING_DETAILS_USE_SAVED_LOCATION = "waiting_details_use_saved_location"
 
 # Состояния сценария прогноза
 WAITING_FORECAST_CITY = "waiting_forecast_city"
 WAITING_FORECAST_PICK = "waiting_forecast_pick"
+WAITING_FORECAST_COORDS = "waiting_forecast_coords"
 WAITING_FORECAST_USE_FAVORITE = "waiting_forecast_use_favorite"
 WAITING_FORECAST_USE_SAVED_LOCATION = "waiting_forecast_use_saved_location"
 
@@ -30,6 +33,7 @@ WAITING_ALERTS_ADD_MENU = "waiting_alerts_add_menu"
 WAITING_ALERTS_ADD_TEXT = "waiting_alerts_add_text"
 WAITING_ALERTS_ADD_PICK = "waiting_alerts_add_pick"
 WAITING_ALERTS_ADD_GEO = "waiting_alerts_add_geo"
+WAITING_ALERTS_ADD_COORDS = "waiting_alerts_add_coords"
 WAITING_ALERTS_ADD_SAVED_PICK = "waiting_alerts_add_saved_pick"
 WAITING_ALERTS_TOGGLE_PICK = "waiting_alerts_toggle_pick"
 WAITING_ALERTS_INTERVAL_PICK = "waiting_alerts_interval_pick"
@@ -50,12 +54,14 @@ WAITING_RENAME_LOCATION_TITLE = "waiting_rename_location_title"
 CURRENT_STATES = {
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_CURRENT_WEATHER_PICK,
+    WAITING_CURRENT_WEATHER_COORDS,
     WAITING_CURRENT_USE_FAVORITE,
 }
 
 DETAILS_STATES = {
     WAITING_DETAILS_CITY,
     WAITING_DETAILS_PICK,
+    WAITING_DETAILS_COORDS,
     WAITING_DETAILS_USE_FAVORITE,
     WAITING_DETAILS_USE_SAVED_LOCATION,
 }
@@ -63,6 +69,7 @@ DETAILS_STATES = {
 FORECAST_STATES = {
     WAITING_FORECAST_CITY,
     WAITING_FORECAST_PICK,
+    WAITING_FORECAST_COORDS,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
 }
@@ -80,6 +87,7 @@ ALERTS_STATES = {
     WAITING_ALERTS_ADD_TEXT,
     WAITING_ALERTS_ADD_PICK,
     WAITING_ALERTS_ADD_GEO,
+    WAITING_ALERTS_ADD_COORDS,
     WAITING_ALERTS_ADD_SAVED_PICK,
     WAITING_ALERTS_TOGGLE_PICK,
     WAITING_ALERTS_INTERVAL_PICK,

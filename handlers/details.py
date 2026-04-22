@@ -2,10 +2,12 @@ from telebot import types
 
 from .states import (
     WAITING_DETAILS_CITY,
+    WAITING_DETAILS_COORDS,
     WAITING_DETAILS_PICK,
     WAITING_DETAILS_USE_FAVORITE,
     WAITING_DETAILS_USE_SAVED_LOCATION,
 )
+from coordinates_parser import parse_coordinates
 from weather_app import get_locations
 
 
@@ -28,7 +30,11 @@ def handle_details_text(
             draft = session_store.details_favorite_drafts.get(user_id)
             if not isinstance(draft, dict):
                 session_store.user_states[user_id] = WAITING_DETAILS_CITY
-                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Выбери способ ввода локации для расширенных данных:",
+                    reply_markup=ctx.location_input_menu(),
+                )
                 return True
 
             if send_details_by_coordinates(
@@ -65,7 +71,11 @@ def handle_details_text(
                 return True
 
             session_store.user_states[user_id] = WAITING_DETAILS_CITY
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ ввода локации для расширенных данных:",
+                reply_markup=ctx.location_input_menu(),
+            )
             return True
 
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
@@ -73,6 +83,33 @@ def handle_details_text(
 
     if state == WAITING_DETAILS_CITY:
         query = (message.text or "").strip()
+        if query == "Ввести населённый пункт":
+            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+            return True
+        if query == "Ввести координаты":
+            session_store.user_states[user_id] = WAITING_DETAILS_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+
+        parsed = parse_coordinates(query)
+        if parsed is not None:
+            lat, lon = parsed
+            location = ctx.get_location_by_coordinates(lat, lon)
+            city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+            send_details_by_coordinates(
+                message,
+                user_id,
+                float(lat),
+                float(lon),
+                city,
+                preferred_city_label=city,
+            )
+            return True
+
         ctx.logger.info("Пользователь %s ввёл населённый пункт для расширенных данных: %s", user_id, query)
         if not query:
             ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
@@ -130,6 +167,24 @@ def handle_details_text(
         )
         return True
 
+    if state == WAITING_DETAILS_COORDS:
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        location = ctx.get_location_by_coordinates(lat, lon)
+        city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        send_details_by_coordinates(
+            message,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            preferred_city_label=city,
+        )
+        return True
+
     if state == WAITING_DETAILS_PICK:
         if not session_store.details_location_choices.get(user_id):
             session_store.user_states.pop(user_id, None)
@@ -156,7 +211,11 @@ def handle_details_text(
             draft = session_store.details_saved_drafts.get(user_id)
             if not draft:
                 session_store.user_states[user_id] = WAITING_DETAILS_CITY
-                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Выбери способ ввода локации для расширенных данных:",
+                    reply_markup=ctx.location_input_menu(),
+                )
                 return True
 
             if send_details_by_coordinates(
@@ -177,7 +236,11 @@ def handle_details_text(
             ctx.logger.info("Пользователь %s выбрал: Нет (ввести новый населённый пункт).", user_id)
             session_store.details_saved_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_DETAILS_CITY
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ ввода локации для расширенных данных:",
+                reply_markup=ctx.location_input_menu(),
+            )
             return True
 
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())

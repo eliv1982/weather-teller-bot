@@ -46,7 +46,7 @@ def start_alerts_flow(message: types.Message, *, ctx, session_store) -> None:
     """Запускает раздел уведомлений."""
     user_id = message.from_user.id
     ctx.logger.info("Пользователь %s вошёл в раздел уведомлений.", user_id)
-    ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
+    ctx.alerts_subscription_service.ensure_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
     session_store.set_state(user_id, WAITING_ALERTS_SUBSCRIPTION_MENU)
     ctx.bot.send_message(
         message.chat.id,
@@ -91,7 +91,11 @@ def start_current_weather_flow(message: types.Message, *, ctx, session_store) ->
         return
 
     session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
-    ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери способ ввода локации:",
+        reply_markup=ctx.location_input_menu(),
+    )
 
 
 def start_geo_weather_flow(message: types.Message, *, ctx, session_store) -> None:
@@ -157,7 +161,11 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
         return
 
     session_store.user_states[user_id] = WAITING_DETAILS_CITY
-    ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери способ ввода локации для расширенных данных:",
+        reply_markup=ctx.location_input_menu(),
+    )
 
 
 def start_compare_flow(message: types.Message, *, ctx, session_store) -> None:
@@ -214,7 +222,11 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
         return
 
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
-    ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери способ ввода локации для прогноза на 5 дней:",
+        reply_markup=ctx.location_input_menu(),
+    )
 
 
 def show_forecast_days_message(message: types.Message, user_id: int, *, ctx, session_store) -> None:
@@ -419,8 +431,8 @@ def alerts_worker(*, ctx) -> None:
                 if not isinstance(user_data, dict):
                     continue
 
-                user_data = ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(user_data))
-                subscriptions = user_data.get("alert_subscriptions", [])
+                user_data = ctx.alerts_subscription_service.ensure_defaults(ctx.ensure_notifications_defaults(user_data))
+                subscriptions = ctx.alerts_subscription_service.list_subscriptions(user_data)
                 if not isinstance(subscriptions, list) or not subscriptions:
                     continue
 
@@ -451,14 +463,26 @@ def alerts_worker(*, ctx) -> None:
                     alerts = ctx.detect_weather_alerts(forecast_items)
                     if alerts:
                         title_or_label = sub.get("title") or sub.get("label") or "неизвестная локация"
+                        first_alert = str(alerts[0])
+                        location_id = str(sub.get("location_id") or "no_id")
+                        alert_signature = f"{location_id}|{first_alert}"
+                        previous_signature = str(sub.get("last_alert_signature") or "")
+
+                        if previous_signature == alert_signature:
+                            sub["last_check_ts"] = now_ts
+                            changed = True
+                            continue
+
                         alert_text = (
                             "🌤 Weather Teller\n"
                             f"Для локации {title_or_label} найдено изменение погоды:\n"
-                            f"• {alerts[0]}\n"
+                            f"• {first_alert}\n"
                             "Открой Weather Teller и посмотри подробный прогноз по этой локации."
                         )
                         try:
                             ctx.bot.send_message(int(user_id_str), alert_text)
+                            sub["last_alert_signature"] = alert_signature
+                            changed = True
                         except Exception:
                             ctx.logger.warning("Не удалось отправить уведомление пользователю %s.", user_id_str)
 

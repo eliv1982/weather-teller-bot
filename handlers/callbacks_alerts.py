@@ -10,9 +10,10 @@ def handle_alerts_location_callback(
     """Обрабатывает callback-сценарии раздела уведомлений."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
+    service = ctx.alerts_subscription_service
 
-    user_data = ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
-    subscriptions = user_data.get("alert_subscriptions", [])
+    user_data = service.ensure_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
+    subscriptions = service.list_subscriptions(user_data)
 
     if call.data == "alerts_add_cancel":
         session_store.alerts_location_choices.pop(user_id, None)
@@ -59,10 +60,13 @@ def handle_alerts_location_callback(
             ctx.bot.send_message(chat_id, "Не удалось определить локацию. Попробуй снова.", reply_markup=ctx.alerts_menu())
             return
 
-        user_data, added = ctx.add_alert_subscription(
+        user_data, added = service.add_subscription(
             user_data,
-            location_id=f"geo_{int(float(lat) * 10000)}_{int(float(lon) * 10000)}",
-            title=label,
+            location_id=service.build_subscription_id(float(lat), float(lon)),
+            title=(
+                str(location_item.get("local_name") or location_item.get("name") or "").strip()
+                or label
+            ),
             label=label,
             lat=float(lat),
             lon=float(lon),
@@ -126,7 +130,7 @@ def handle_alerts_location_callback(
             )
             return
 
-        user_data, added = ctx.add_alert_subscription(
+        user_data, added = service.add_subscription(
             user_data,
             location_id=str(selected_item.get("id") or location_id),
             title=str(selected_item.get("title") or label),
@@ -154,12 +158,11 @@ def handle_alerts_location_callback(
 
     if call.data.startswith("alerts_sub_toggle:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
-        target = next((item for item in subscriptions if item.get("location_id") == subscription_id), None)
         ctx.bot.answer_callback_query(call.id)
-        if not isinstance(target, dict):
+        user_data, toggled = service.toggle_subscription(user_data, subscription_id)
+        if not toggled:
             ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
             return
-        target["enabled"] = not bool(target.get("enabled", True))
         ctx.save_user(user_id, user_data)
         session_store.user_states[user_id] = ALERTS_MENU
         ctx.bot.send_message(chat_id, "✅ Статус подписки обновлён.", reply_markup=ctx.alerts_menu())
@@ -168,9 +171,9 @@ def handle_alerts_location_callback(
 
     if call.data.startswith("alerts_sub_interval:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
-        target = next((item for item in subscriptions if item.get("location_id") == subscription_id), None)
         ctx.bot.answer_callback_query(call.id)
-        if not isinstance(target, dict):
+        target = service.get_subscription(user_data, subscription_id)
+        if target is None:
             ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
             return
         session_store.alerts_subscription_drafts[user_id] = {"location_id": subscription_id}
@@ -186,11 +189,10 @@ def handle_alerts_location_callback(
     if call.data.startswith("alerts_sub_delete:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         ctx.bot.answer_callback_query(call.id)
-        new_subscriptions = [item for item in subscriptions if item.get("location_id") != subscription_id]
-        if len(new_subscriptions) == len(subscriptions):
+        user_data, deleted = service.delete_subscription(user_data, subscription_id)
+        if not deleted:
             ctx.bot.send_message(chat_id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
             return
-        user_data["alert_subscriptions"] = new_subscriptions
         ctx.save_user(user_id, user_data)
         session_store.user_states[user_id] = ALERTS_MENU
         ctx.bot.send_message(chat_id, "✅ Подписка удалена.", reply_markup=ctx.alerts_menu())

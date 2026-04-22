@@ -2,6 +2,7 @@ from telebot import types
 
 from .states import (
     ALERTS_MENU,
+    WAITING_ALERTS_ADD_COORDS,
     WAITING_ALERTS_ADD_GEO,
     WAITING_ALERTS_ADD_MENU,
     WAITING_ALERTS_ADD_PICK,
@@ -13,6 +14,7 @@ from .states import (
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_ALERTS_TOGGLE_PICK,
 )
+from coordinates_parser import parse_coordinates
 
 
 def _show_subscriptions_status(chat_id: int, *, ctx, user_data: dict) -> None:
@@ -37,9 +39,10 @@ def _add_subscription_and_reply(
     session_store,
 ) -> None:
     """Пытается добавить подписку и отправляет результат пользователю."""
+    service = ctx.alerts_subscription_service
     user_data = ctx.ensure_notifications_defaults(ctx.load_user(user_id))
-    user_data = ctx.ensure_alert_subscriptions_defaults(user_data)
-    user_data, added = ctx.add_alert_subscription(
+    user_data = service.ensure_defaults(user_data)
+    user_data, added = service.add_subscription(
         user_data,
         location_id=location_id,
         title=title,
@@ -58,17 +61,6 @@ def _add_subscription_and_reply(
         ctx.bot.send_message(chat_id, "Такая подписка уже существует.", reply_markup=ctx.alerts_menu())
 
     _show_subscriptions_status(chat_id, ctx=ctx, user_data=user_data)
-
-
-def _build_geocode_subscription_id(lat: float, lon: float) -> str:
-    """Формирует стабильный id подписки по нормализованным координатам."""
-    lat_n = round(float(lat), 5)
-    lon_n = round(float(lon), 5)
-    lat_part = f"{abs(lat_n):.5f}".replace(".", "")
-    lon_part = f"{abs(lon_n):.5f}".replace(".", "")
-    lat_prefix = "n" if lat_n >= 0 else "s"
-    lon_prefix = "e" if lon_n >= 0 else "w"
-    return f"geo_{lat_prefix}{lat_part}_{lon_prefix}{lon_part}"
 
 
 def handle_alerts_text(
@@ -121,7 +113,7 @@ def handle_alerts_text(
             _add_subscription_and_reply(
                 message.chat.id,
                 user_id,
-                location_id=_build_geocode_subscription_id(float(lat), float(lon)),
+                location_id=ctx.alerts_subscription_service.build_subscription_id(float(lat), float(lon)),
                 title=(
                     str(location_item.get("local_name") or location_item.get("name") or "").strip()
                     or label
@@ -163,6 +155,31 @@ def handle_alerts_text(
         )
         return True
 
+    if state == WAITING_ALERTS_ADD_COORDS:
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        location = ctx.get_location_by_coordinates(lat, lon)
+        label = (
+            ctx.build_location_label(location, show_coords=False)
+            if location
+            else f"Координаты: {lat:.4f}, {lon:.4f}"
+        )
+        _add_subscription_and_reply(
+            message.chat.id,
+            user_id,
+            location_id=ctx.alerts_subscription_service.build_subscription_id(float(lat), float(lon)),
+            title=label,
+            label=label,
+            lat=float(lat),
+            lon=float(lon),
+            ctx=ctx,
+            session_store=session_store,
+        )
+        return True
+
     if state == WAITING_ALERTS_ADD_MENU:
         if message.text == "Выбрать из сохранённых":
             user_data = ctx.load_user(user_id)
@@ -201,6 +218,15 @@ def handle_alerts_text(
             )
             return True
 
+        if message.text == "Ввести координаты":
+            session_store.user_states[user_id] = WAITING_ALERTS_ADD_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+
         ctx.bot.send_message(
             message.chat.id,
             "Выбери действие кнопкой ниже или нажми «⬅️ В меню».",
@@ -219,8 +245,9 @@ def handle_alerts_text(
             return True
 
     if state in {ALERTS_MENU, WAITING_ALERTS_SUBSCRIPTION_MENU}:
+        service = ctx.alerts_subscription_service
         user_data = ctx.ensure_notifications_defaults(ctx.load_user(user_id))
-        user_data = ctx.ensure_alert_subscriptions_defaults(user_data)
+        user_data = service.ensure_defaults(user_data)
 
         if message.text == "Показать подписки":
             session_store.user_states[user_id] = ALERTS_MENU
@@ -238,7 +265,7 @@ def handle_alerts_text(
             )
             return True
 
-        subscriptions = user_data.get("alert_subscriptions", [])
+        subscriptions = service.list_subscriptions(user_data)
         if message.text == "Включить/выключить подписку":
             if not subscriptions:
                 ctx.bot.send_message(message.chat.id, "Подписок на уведомления пока нет.", reply_markup=ctx.alerts_menu())
@@ -296,17 +323,15 @@ def handle_alerts_text(
             ctx.bot.send_message(message.chat.id, "⚠️ Введите положительное число часов.", reply_markup=ctx.alerts_menu())
             return True
 
-        user_data = ctx.ensure_alert_subscriptions_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
-        subscriptions = user_data["alert_subscriptions"]
-        target = next((item for item in subscriptions if item.get("location_id") == subscription_id), None)
-        if not isinstance(target, dict):
+        service = ctx.alerts_subscription_service
+        user_data = service.ensure_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
+        user_data, updated = service.update_interval(user_data, subscription_id, interval)
+        if not updated:
             session_store.alerts_subscription_drafts.pop(user_id, None)
             session_store.user_states[user_id] = ALERTS_MENU
             ctx.bot.send_message(message.chat.id, "⚠️ Подписка не найдена.", reply_markup=ctx.alerts_menu())
             return True
 
-        target["interval_h"] = interval
-        target["last_check_ts"] = 0
         ctx.save_user(user_id, user_data)
         session_store.alerts_subscription_drafts.pop(user_id, None)
         session_store.user_states[user_id] = ALERTS_MENU

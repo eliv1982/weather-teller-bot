@@ -2,10 +2,12 @@ from telebot import types
 
 from .states import (
     WAITING_FORECAST_CITY,
+    WAITING_FORECAST_COORDS,
     WAITING_FORECAST_PICK,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
 )
+from coordinates_parser import parse_coordinates
 from weather_app import get_locations
 
 
@@ -28,7 +30,11 @@ def handle_forecast_text(
             draft = session_store.forecast_favorite_drafts.get(user_id)
             if not isinstance(draft, dict):
                 session_store.user_states[user_id] = WAITING_FORECAST_CITY
-                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Выбери способ ввода локации для прогноза на 5 дней:",
+                    reply_markup=ctx.location_input_menu(),
+                )
                 return True
 
             if send_forecast_by_coordinates(
@@ -66,7 +72,11 @@ def handle_forecast_text(
                 return True
 
             session_store.user_states[user_id] = WAITING_FORECAST_CITY
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ ввода локации для прогноза на 5 дней:",
+                reply_markup=ctx.location_input_menu(),
+            )
             return True
 
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
@@ -82,7 +92,11 @@ def handle_forecast_text(
             draft = session_store.forecast_saved_drafts.get(user_id)
             if not draft:
                 session_store.user_states[user_id] = WAITING_FORECAST_CITY
-                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Выбери способ ввода локации для прогноза на 5 дней:",
+                    reply_markup=ctx.location_input_menu(),
+                )
                 return True
 
             if send_forecast_by_coordinates(
@@ -104,7 +118,11 @@ def handle_forecast_text(
             ctx.logger.info("Пользователь %s выбрал: Нет (ввести населённый пункт для прогноза).", user_id)
             session_store.forecast_saved_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_FORECAST_CITY
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ ввода локации для прогноза на 5 дней:",
+                reply_markup=ctx.location_input_menu(),
+            )
             return True
 
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
@@ -112,6 +130,34 @@ def handle_forecast_text(
 
     if state == WAITING_FORECAST_CITY:
         query = (message.text or "").strip()
+        if query == "Ввести населённый пункт":
+            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+            return True
+        if query == "Ввести координаты":
+            session_store.user_states[user_id] = WAITING_FORECAST_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+
+        parsed = parse_coordinates(query)
+        if parsed is not None:
+            lat, lon = parsed
+            location = ctx.get_location_by_coordinates(lat, lon)
+            city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+            send_forecast_by_coordinates(
+                message,
+                user_id,
+                float(lat),
+                float(lon),
+                city,
+                save_location=True,
+                preferred_city_label=city,
+            )
+            return True
+
         ctx.logger.info("Пользователь %s ввёл населённый пункт для прогноза: %s", user_id, query)
         if not query:
             ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
@@ -162,6 +208,25 @@ def handle_forecast_text(
             message.chat.id,
             "Найдено несколько вариантов. Выбери нужный населённый пункт:",
             reply_markup=ctx.build_scenario_location_choice_keyboard(locations, "forecast"),
+        )
+        return True
+
+    if state == WAITING_FORECAST_COORDS:
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        location = ctx.get_location_by_coordinates(lat, lon)
+        city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        send_forecast_by_coordinates(
+            message,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            save_location=True,
+            preferred_city_label=city,
         )
         return True
 

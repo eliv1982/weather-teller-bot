@@ -1,6 +1,12 @@
 from telebot import types
 
-from .states import WAITING_CURRENT_USE_FAVORITE, WAITING_CURRENT_WEATHER_CITY, WAITING_CURRENT_WEATHER_PICK
+from .states import (
+    WAITING_CURRENT_USE_FAVORITE,
+    WAITING_CURRENT_WEATHER_CITY,
+    WAITING_CURRENT_WEATHER_COORDS,
+    WAITING_CURRENT_WEATHER_PICK,
+)
+from coordinates_parser import parse_coordinates
 from weather_app import get_locations
 
 
@@ -41,7 +47,11 @@ def handle_current_text(
         if answer in no_values:
             session_store.current_favorite_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ ввода локации:",
+                reply_markup=ctx.location_input_menu(),
+            )
             return True
 
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
@@ -49,6 +59,46 @@ def handle_current_text(
 
     if state == WAITING_CURRENT_WEATHER_CITY:
         query = (message.text or "").strip()
+        if query == "Ввести населённый пункт":
+            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+            return True
+        if query == "Ввести координаты":
+            session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+
+        coords = parse_coordinates(query)
+        if coords is not None:
+            lat, lon = coords
+            weather = ctx.get_current_weather(lat, lon)
+            if not weather:
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Не удалось получить данные о погоде по координатам. Попробуй позже.",
+                    reply_markup=ctx.main_menu(),
+                )
+                session_store.user_states.pop(user_id, None)
+                return True
+
+            location = ctx.get_location_by_coordinates(lat, lon)
+            city_label = (
+                ctx.build_location_label(location, show_coords=False)
+                if location
+                else f"Координаты: {lat:.4f}, {lon:.4f}"
+            )
+            user_data = ctx.load_user(user_id)
+            user_data["city"] = city_label
+            user_data["lat"] = lat
+            user_data["lon"] = lon
+            ctx.save_user(user_id, user_data)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
+            return True
+
         ctx.logger.info("Пользователь %s ввёл запрос для текущей погоды: %s", user_id, query)
         if not query:
             ctx.logger.info("Пустой ввод для текущей погоды: пользователь %s.", user_id)
@@ -89,6 +139,36 @@ def handle_current_text(
             "Найдено несколько вариантов. Выбери нужный населённый пункт:",
             reply_markup=ctx.build_current_weather_location_keyboard(locations),
         )
+        return True
+
+    if state == WAITING_CURRENT_WEATHER_COORDS:
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        weather = ctx.get_current_weather(lat, lon)
+        if not weather:
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(
+                message.chat.id,
+                "Не удалось получить данные о погоде по координатам. Попробуй позже.",
+                reply_markup=ctx.main_menu(),
+            )
+            return True
+        location = ctx.get_location_by_coordinates(lat, lon)
+        city_label = (
+            ctx.build_location_label(location, show_coords=False)
+            if location
+            else f"Координаты: {lat:.4f}, {lon:.4f}"
+        )
+        user_data = ctx.load_user(user_id)
+        user_data["city"] = city_label
+        user_data["lat"] = lat
+        user_data["lon"] = lon
+        ctx.save_user(user_id, user_data)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
         return True
 
     if state == WAITING_CURRENT_WEATHER_PICK:

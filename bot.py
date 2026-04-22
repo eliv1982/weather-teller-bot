@@ -30,6 +30,7 @@ from keyboards import (
     build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard,
     geo_request_menu,
+    location_input_menu,
     locations_menu,
     main_menu,
     yes_no_menu,
@@ -44,9 +45,8 @@ from formatters import (
     help_text,
 )
 from forecast_service import group_forecast_by_day, format_forecast_day
+from alerts_subscription_service import AlertsSubscriptionService
 from alerts_service import (
-    add_alert_subscription,
-    ensure_alert_subscriptions_defaults,
     ensure_notifications_defaults,
     detect_weather_alerts,
     migrate_legacy_alert_to_subscriptions,
@@ -86,6 +86,7 @@ from handlers.states import (
     WAITING_ALERTS_ADD_GEO,
     WAITING_ALERTS_ADD_MENU,
     WAITING_ALERTS_ADD_PICK,
+    WAITING_ALERTS_ADD_COORDS,
     WAITING_ALERTS_ADD_SAVED_PICK,
     WAITING_ALERTS_ADD_TEXT,
     WAITING_ALERTS_DELETE_PICK,
@@ -97,10 +98,13 @@ from handlers.states import (
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
     WAITING_CURRENT_WEATHER_CITY,
+    WAITING_CURRENT_WEATHER_COORDS,
     WAITING_DETAILS_CITY,
+    WAITING_DETAILS_COORDS,
     WAITING_DETAILS_PICK,
     WAITING_DETAILS_USE_SAVED_LOCATION,
     WAITING_FORECAST_CITY,
+    WAITING_FORECAST_COORDS,
     WAITING_FORECAST_PICK,
     WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
@@ -152,6 +156,7 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN)
 session_store = SessionStore()
+alerts_subscription_service = AlertsSubscriptionService()
 
 ctx = AppContext(
     bot=bot,
@@ -165,6 +170,7 @@ ctx = AppContext(
     alerts_add_location_menu=alerts_add_location_menu,
     locations_menu=locations_menu,
     add_saved_location_menu=add_saved_location_menu,
+    location_input_menu=location_input_menu,
     geo_request_menu=geo_request_menu,
     yes_no_menu=yes_no_menu,
     build_current_weather_location_keyboard=build_current_weather_location_keyboard,
@@ -182,10 +188,11 @@ ctx = AppContext(
     format_saved_locations=format_saved_locations,
     format_weather_response=format_weather_response,
     help_text=help_text,
+    alerts_subscription_service=alerts_subscription_service,
     ensure_notifications_defaults=ensure_notifications_defaults,
-    ensure_alert_subscriptions_defaults=ensure_alert_subscriptions_defaults,
+    ensure_alert_subscriptions_defaults=alerts_subscription_service.ensure_defaults,
     migrate_legacy_alert_to_subscriptions=migrate_legacy_alert_to_subscriptions,
-    add_alert_subscription=add_alert_subscription,
+    add_alert_subscription=alerts_subscription_service.add_subscription,
     detect_weather_alerts=detect_weather_alerts,
     save_saved_location_item=save_saved_location_item,
     complete_current_weather_from_location=complete_current_weather_from_location,
@@ -356,6 +363,7 @@ def handle_back_to_menu(message: types.Message) -> None:
         WAITING_ALERTS_ADD_TEXT,
         WAITING_ALERTS_ADD_PICK,
         WAITING_ALERTS_ADD_GEO,
+        WAITING_ALERTS_ADD_COORDS,
         WAITING_ALERTS_ADD_SAVED_PICK,
         WAITING_ALERTS_TOGGLE_PICK,
         WAITING_ALERTS_INTERVAL_PICK,
@@ -365,7 +373,7 @@ def handle_back_to_menu(message: types.Message) -> None:
         session_store.alerts_location_choices.pop(user_id, None)
         session_store.alerts_subscription_drafts.pop(user_id, None)
         session_store.user_states[user_id] = ALERTS_MENU
-        user_data = ensure_alert_subscriptions_defaults(ensure_notifications_defaults(load_user(user_id)))
+        user_data = alerts_subscription_service.ensure_defaults(ensure_notifications_defaults(load_user(user_id)))
         bot.send_message(
             message.chat.id,
             format_alert_subscriptions(user_data),
@@ -395,10 +403,10 @@ def handle_location_message(message: types.Message) -> None:
         else:
             label = "Выбранная геолокация"
 
-        user_data = ensure_alert_subscriptions_defaults(ensure_notifications_defaults(load_user(user_id)))
-        user_data, added = add_alert_subscription(
+        user_data = alerts_subscription_service.ensure_defaults(ensure_notifications_defaults(load_user(user_id)))
+        user_data, added = alerts_subscription_service.add_subscription(
             user_data,
-            location_id=f"geo_{int(lat * 10000)}_{int(lon * 10000)}",
+            location_id=alerts_subscription_service.build_subscription_id(float(lat), float(lon)),
             title=label,
             label=label,
             lat=float(lat),
