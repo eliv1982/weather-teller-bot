@@ -4,11 +4,11 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 
 try:
-    import psycopg2  # type: ignore[reportMissingModuleSource]
-    from psycopg2.extras import RealDictCursor  # type: ignore[reportMissingModuleSource]
+    import psycopg  # type: ignore[reportMissingModuleSource]
+    from psycopg.rows import dict_row  # type: ignore[reportMissingModuleSource]
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError(
-        "Не найден драйвер PostgreSQL. Установи пакет psycopg2-binary: pip install psycopg2-binary"
+        "Не найден драйвер PostgreSQL. Установи пакет psycopg[binary]: pip install \"psycopg[binary]\""
     ) from exc
 
 
@@ -66,7 +66,7 @@ def get_connection():
         )
 
     try:
-        return psycopg2.connect(
+        return psycopg.connect(
             host=host,
             port=int(port),
             dbname=dbname,
@@ -84,7 +84,7 @@ def _cursor(commit: bool = False):
     """
     conn = get_connection()
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
             yield cur
         if commit:
             conn.commit()

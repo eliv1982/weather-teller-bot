@@ -40,6 +40,8 @@ def handle_current_text(
                 location_item,
                 user_states=session_store.user_states,
                 current_location_choices=session_store.current_location_choices,
+                load_user_fn=ctx.load_user,
+                save_user_fn=ctx.save_user,
             )
             session_store.current_favorite_drafts.pop(user_id, None)
             return True
@@ -123,6 +125,8 @@ def handle_current_text(
                 locations[0],
                 user_states=session_store.user_states,
                 current_location_choices=session_store.current_location_choices,
+                load_user_fn=ctx.load_user,
+                save_user_fn=ctx.save_user,
             )
             return True
 

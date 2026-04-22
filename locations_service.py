@@ -4,7 +4,7 @@ import time
 from alerts_service import ensure_notifications_defaults
 from formatters import format_alerts_status, format_weather_response
 from keyboards import alerts_menu, main_menu
-from storage import load_user, save_user
+from postgres_storage import load_user, save_user
 from weather_app import build_location_label, get_current_weather
 
 
@@ -51,7 +51,13 @@ def save_saved_location_item(user_id: int, title: str, label: str, lat: float, l
     save_user(user_id, user_data)
 
 
-def save_user_location_from_geocode_item(user_id: int, location_item: dict) -> bool:
+def save_user_location_from_geocode_item(
+    user_id: int,
+    location_item: dict,
+    *,
+    load_user_fn=load_user,
+    save_user_fn=save_user,
+) -> bool:
     """Сохраняет city, lat, lon из элемента геокодинга в данные пользователя. Возвращает True при успехе."""
     lat = location_item.get("lat")
     lon = location_item.get("lon")
@@ -60,11 +66,11 @@ def save_user_location_from_geocode_item(user_id: int, location_item: dict) -> b
     if lat is None or lon is None:
         return False
 
-    user_data = load_user(user_id)
+    user_data = load_user_fn(user_id)
     user_data["city"] = city_label
     user_data["lat"] = lat
     user_data["lon"] = lon
-    save_user(user_id, user_data)
+    save_user_fn(user_id, user_data)
     return True
 
 
@@ -76,6 +82,8 @@ def complete_current_weather_from_location(
     *,
     user_states: dict,
     current_location_choices: dict,
+    load_user_fn=load_user,
+    save_user_fn=save_user,
 ) -> None:
     """Загружает текущую погоду по выбранной локации, сохраняет данные и отправляет ответ."""
     lat = location_item.get("lat")
@@ -110,7 +118,12 @@ def complete_current_weather_from_location(
         )
         return
 
-    if not save_user_location_from_geocode_item(user_id, location_item):
+    if not save_user_location_from_geocode_item(
+        user_id,
+        location_item,
+        load_user_fn=load_user_fn,
+        save_user_fn=save_user_fn,
+    ):
         user_states.pop(user_id, None)
         current_location_choices.pop(user_id, None)
         bot.send_message(
@@ -143,9 +156,16 @@ def complete_alerts_location_from_item(
     alerts_location_choices: dict,
     enable_notifications: bool = False,
     success_text: str = "✅ Локация для уведомлений обновлена.",
+    load_user_fn=load_user,
+    save_user_fn=save_user,
 ) -> None:
     """Сохраняет локацию из геокодинга для уведомлений и показывает статус."""
-    if not save_user_location_from_geocode_item(user_id, location_item):
+    if not save_user_location_from_geocode_item(
+        user_id,
+        location_item,
+        load_user_fn=load_user_fn,
+        save_user_fn=save_user_fn,
+    ):
         logger.warning("Не удалось сохранить локацию уведомлений для пользователя %s.", user_id)
         alerts_location_choices.pop(user_id, None)
         user_states[user_id] = "alerts_menu"
@@ -158,10 +178,10 @@ def complete_alerts_location_from_item(
 
     alerts_location_choices.pop(user_id, None)
     user_states[user_id] = "alerts_menu"
-    user_data = ensure_notifications_defaults(load_user(user_id))
+    user_data = ensure_notifications_defaults(load_user_fn(user_id))
     if enable_notifications:
         user_data["notifications"]["enabled"] = True
-        save_user(user_id, user_data)
+        save_user_fn(user_id, user_data)
     bot.send_message(
         chat_id,
         success_text + "\n\n" + format_alerts_status(user_data),

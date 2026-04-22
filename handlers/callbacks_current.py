@@ -56,6 +56,8 @@ def handle_current_weather_callback(
             location_item,
             user_states=session_store.user_states,
             current_location_choices=session_store.current_location_choices,
+            load_user_fn=ctx.load_user,
+            save_user_fn=ctx.save_user,
         )
         return
 
