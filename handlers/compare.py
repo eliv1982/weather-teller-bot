@@ -5,11 +5,7 @@ from .states import (
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
 )
-from weather_app import (
-    build_geocode_item_with_disambiguated_label,
-    build_location_label,
-    get_locations,
-)
+from weather_app import get_locations
 
 
 def handle_compare_text(
@@ -17,105 +13,100 @@ def handle_compare_text(
     user_id: int,
     state: str | None,
     *,
-    bot,
-    logger,
-    user_states: dict,
-    compare_drafts: dict,
-    compare_location_choices: dict,
+    ctx,
+    session_store,
     complete_compare_two_locations,
-    main_menu,
-    build_scenario_location_choice_keyboard,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария сравнения."""
     if state == WAITING_COMPARE_CITY_1:
         query = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл первый населённый пункт для сравнения: %s", user_id, query)
+        ctx.logger.info("Пользователь %s ввёл первый населённый пункт для сравнения: %s", user_id, query)
         if not query:
-            bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
         locations = get_locations(query, limit=5)
         if not locations:
-            bot.send_message(
+            ctx.bot.send_message(
                 message.chat.id,
                 "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
             )
             return True
 
         if len(locations) == 1:
-            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            loc = ctx.build_geocode_item_with_disambiguated_label(locations, 0)
             lat = loc.get("lat")
             lon = loc.get("lon")
-            label = loc.get("label") or build_location_label(loc, show_coords=False)
+            label = loc.get("label") or ctx.build_location_label(loc, show_coords=False)
             if lat is None or lon is None:
-                bot.send_message(
+                ctx.bot.send_message(
                     message.chat.id,
                     "Не удалось получить данные для сравнения. Попробуй позже.",
-                    reply_markup=main_menu(),
+                    reply_markup=ctx.main_menu(),
                 )
                 return True
-            compare_drafts[user_id] = {
+            session_store.compare_drafts[user_id] = {
                 "coordinates_1": (float(lat), float(lon)),
                 "city_1_input": label,
                 "city_1_label": label,
             }
-            user_states[user_id] = WAITING_COMPARE_CITY_2
-            bot.send_message(message.chat.id, "Теперь введи второй населённый пункт.")
+            session_store.user_states[user_id] = WAITING_COMPARE_CITY_2
+            ctx.bot.send_message(message.chat.id, "Теперь введи второй населённый пункт.")
             return True
 
-        compare_location_choices[user_id] = {"step": 1, "locations": locations}
-        user_states[user_id] = WAITING_COMPARE_LOCATION_PICK
-        logger.info(
+        session_store.compare_location_choices[user_id] = {"step": 1, "locations": locations}
+        session_store.user_states[user_id] = WAITING_COMPARE_LOCATION_PICK
+        ctx.logger.info(
             "Найдено несколько вариантов (%s) для первого населённого пункта у пользователя %s: %s",
             len(locations),
             user_id,
             query,
         )
-        bot.send_message(
+        ctx.bot.send_message(
             message.chat.id,
             "Найдено несколько вариантов. Выбери нужный населённый пункт:",
-            reply_markup=build_scenario_location_choice_keyboard(locations, "compare", compare_step=1),
+            reply_markup=ctx.build_scenario_location_choice_keyboard(locations, "compare", compare_step=1),
         )
         return True
 
     if state == WAITING_COMPARE_CITY_2:
         query = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл второй населённый пункт для сравнения: %s", user_id, query)
+        ctx.logger.info("Пользователь %s ввёл второй населённый пункт для сравнения: %s", user_id, query)
         if not query:
-            bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
-        draft = compare_drafts.get(user_id)
+        draft = session_store.compare_drafts.get(user_id)
         if not draft or "coordinates_1" not in draft:
-            user_states.pop(user_id, None)
-            compare_drafts.pop(user_id, None)
-            bot.send_message(
+            session_store.user_states.pop(user_id, None)
+            session_store.compare_drafts.pop(user_id, None)
+            ctx.bot.send_message(
                 message.chat.id,
                 "Не удалось получить данные для сравнения. Попробуй позже.",
-                reply_markup=main_menu(),
+                reply_markup=ctx.main_menu(),
             )
             return True
 
         locations = get_locations(query, limit=5)
         if not locations:
-            bot.send_message(
+            ctx.bot.send_message(
                 message.chat.id,
                 "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
             )
             return True
 
         if len(locations) == 1:
-            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            loc = ctx.build_geocode_item_with_disambiguated_label(locations, 0)
             lat_2 = loc.get("lat")
             lon_2 = loc.get("lon")
-            city_label_2 = loc.get("label") or build_location_label(loc, show_coords=False)
+            city_label_2 = loc.get("label") or ctx.build_location_label(loc, show_coords=False)
             if lat_2 is None or lon_2 is None:
-                user_states.pop(user_id, None)
-                compare_drafts.pop(user_id, None)
-                bot.send_message(
+                session_store.user_states.pop(user_id, None)
+                session_store.compare_drafts.pop(user_id, None)
+                ctx.bot.send_message(
                     message.chat.id,
                     "Не удалось получить данные для сравнения. Попробуй позже.",
-                    reply_markup=main_menu(),
+                    reply_markup=ctx.main_menu(),
                 )
                 return True
             lat_1, lon_1 = draft["coordinates_1"]
@@ -132,32 +123,32 @@ def handle_compare_text(
             )
             return True
 
-        compare_location_choices[user_id] = {"step": 2, "locations": locations}
-        user_states[user_id] = WAITING_COMPARE_LOCATION_PICK
-        logger.info(
+        session_store.compare_location_choices[user_id] = {"step": 2, "locations": locations}
+        session_store.user_states[user_id] = WAITING_COMPARE_LOCATION_PICK
+        ctx.logger.info(
             "Найдено несколько вариантов (%s) для второго населённого пункта у пользователя %s: %s",
             len(locations),
             user_id,
             query,
         )
-        bot.send_message(
+        ctx.bot.send_message(
             message.chat.id,
             "Найдено несколько вариантов. Выбери нужный населённый пункт:",
-            reply_markup=build_scenario_location_choice_keyboard(locations, "compare", compare_step=2),
+            reply_markup=ctx.build_scenario_location_choice_keyboard(locations, "compare", compare_step=2),
         )
         return True
 
     if state == WAITING_COMPARE_LOCATION_PICK:
-        if not compare_location_choices.get(user_id):
-            user_states.pop(user_id, None)
-            compare_drafts.pop(user_id, None)
-            bot.send_message(
+        if not session_store.compare_location_choices.get(user_id):
+            session_store.user_states.pop(user_id, None)
+            session_store.compare_drafts.pop(user_id, None)
+            ctx.bot.send_message(
                 message.chat.id,
                 "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
+                reply_markup=ctx.main_menu(),
             )
             return True
-        bot.send_message(
+        ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
         )

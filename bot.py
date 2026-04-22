@@ -124,10 +124,6 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN)
 session_store = SessionStore()
 user_states = session_store.user_states
-compare_drafts = session_store.compare_drafts
-details_saved_drafts = session_store.details_saved_drafts
-forecast_saved_drafts = session_store.forecast_saved_drafts
-forecast_cache = session_store.forecast_cache
 # Варианты локаций для сценария «Текущая погода» (несколько совпадений геокодинга)
 current_location_choices = session_store.current_location_choices
 # Варианты локаций при смене локации для уведомлений (несколько совпадений геокодинга)
@@ -330,7 +326,7 @@ def start_details_flow(message: types.Message) -> None:
             saved_lat,
             saved_lon,
         )
-        details_saved_drafts[user_id] = {
+        session_store.details_saved_drafts[user_id] = {
             "city": saved_city or "Сохранённая локация",
             "lat": saved_lat,
             "lon": saved_lon,
@@ -369,7 +365,7 @@ def send_details_by_coordinates(
             lon,
         )
         user_states.pop(user_id, None)
-        details_saved_drafts.pop(user_id, None)
+        session_store.details_saved_drafts.pop(user_id, None)
         details_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -395,7 +391,7 @@ def send_details_by_coordinates(
 
     answer = format_details_response(city_label, weather, air_components)
     user_states.pop(user_id, None)
-    details_saved_drafts.pop(user_id, None)
+    session_store.details_saved_drafts.pop(user_id, None)
     details_location_choices.pop(user_id, None)
     bot.send_message(message.chat.id, answer, reply_markup=main_menu())
     return True
@@ -405,7 +401,7 @@ def start_compare_flow(message: types.Message) -> None:
     """Запускает сценарий сравнения двух населённых пунктов."""
     user_id = message.from_user.id
     logger.info("Запущен сценарий сравнения населённых пунктов для пользователя %s.", user_id)
-    compare_drafts.pop(user_id, None)
+    session_store.compare_drafts.pop(user_id, None)
     compare_location_choices.pop(user_id, None)
     user_states[user_id] = WAITING_COMPARE_CITY_1
     bot.send_message(message.chat.id, "Введи первый населённый пункт для сравнения.")
@@ -423,7 +419,7 @@ def start_forecast_flow(message: types.Message) -> None:
     saved_lon = user_data.get("lon")
 
     if saved_lat is not None and saved_lon is not None:
-        forecast_saved_drafts[user_id] = {
+        session_store.forecast_saved_drafts[user_id] = {
             "city": saved_city or "Сохранённая локация",
             "lat": saved_lat,
             "lon": saved_lon,
@@ -442,7 +438,7 @@ def start_forecast_flow(message: types.Message) -> None:
 
 def show_forecast_days_message(message: types.Message, user_id: int) -> None:
     """Показывает сообщение со списком дней прогноза."""
-    cache = forecast_cache.get(user_id)
+    cache = session_store.forecast_cache.get(user_id)
     if not cache:
         bot.send_message(
             message.chat.id,
@@ -481,8 +477,8 @@ def send_forecast_by_coordinates(
             lon,
         )
         user_states.pop(user_id, None)
-        forecast_saved_drafts.pop(user_id, None)
-        forecast_cache.pop(user_id, None)
+        session_store.forecast_saved_drafts.pop(user_id, None)
+        session_store.forecast_cache.pop(user_id, None)
         forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -503,8 +499,8 @@ def send_forecast_by_coordinates(
     if not grouped:
         logger.warning("Прогноз пришёл пустым после группировки для пользователя %s.", user_id)
         user_states.pop(user_id, None)
-        forecast_saved_drafts.pop(user_id, None)
-        forecast_cache.pop(user_id, None)
+        session_store.forecast_saved_drafts.pop(user_id, None)
+        session_store.forecast_cache.pop(user_id, None)
         forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
@@ -520,9 +516,9 @@ def send_forecast_by_coordinates(
         user_data["lon"] = lon
         save_user(user_id, user_data)
 
-    forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
+    session_store.forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
     user_states.pop(user_id, None)
-    forecast_saved_drafts.pop(user_id, None)
+    session_store.forecast_saved_drafts.pop(user_id, None)
     forecast_location_choices.pop(user_id, None)
     show_forecast_days_message(message, user_id)
     return True
@@ -550,7 +546,7 @@ def complete_compare_two_locations(
     if not weather_1 or not weather_2:
         logger.warning("Не удалось получить данные для сравнения у пользователя %s.", user_id)
         user_states.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
+        session_store.compare_drafts.pop(user_id, None)
         compare_location_choices.pop(user_id, None)
         bot.send_message(
             chat_id,
@@ -567,7 +563,7 @@ def complete_compare_two_locations(
         city_label_2,
     )
     user_states.pop(user_id, None)
-    compare_drafts.pop(user_id, None)
+    session_store.compare_drafts.pop(user_id, None)
     compare_location_choices.pop(user_id, None)
     bot.send_message(chat_id, answer, reply_markup=main_menu())
 
@@ -845,17 +841,9 @@ def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации для уведомлений (inline) или отмену."""
     handle_alerts_callback_logic(
         call,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        alerts_location_choices=alerts_location_choices,
+        ctx=ctx,
+        session_store=session_store,
         ALERTS_MENU=ALERTS_MENU,
-        load_user=load_user,
-        ensure_notifications_defaults=ensure_notifications_defaults,
-        format_alerts_status=format_alerts_status,
-        alerts_menu=alerts_menu,
-        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
-        complete_alerts_location_from_item=complete_alerts_location_from_item,
     )
 
 
@@ -939,16 +927,10 @@ def handle_compare_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор населённого пункта при сравнении (inline) или отмену."""
     handle_compare_callback_logic(
         call,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        compare_drafts=compare_drafts,
-        compare_location_choices=compare_location_choices,
+        ctx=ctx,
+        session_store=session_store,
         WAITING_COMPARE_CITY_2=WAITING_COMPARE_CITY_2,
-        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
-        build_location_label=build_location_label,
         complete_compare_two_locations=complete_compare_two_locations,
-        main_menu=main_menu,
     )
 
 
@@ -957,14 +939,9 @@ def handle_favorite_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор основной локации из списка сохранённых."""
     handle_favorite_callback_logic(
         call,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
+        ctx=ctx,
+        session_store=session_store,
         LOCATIONS_MENU=LOCATIONS_MENU,
-        load_user=load_user,
-        save_user=save_user,
-        format_saved_locations=format_saved_locations,
-        locations_menu=locations_menu,
     )
 
 
@@ -973,14 +950,9 @@ def handle_delete_location_pick_callback(call: types.CallbackQuery) -> None:
     """Удаляет выбранную сохранённую локацию."""
     handle_delete_location_callback_logic(
         call,
-        bot=bot,
-        user_states=user_states,
-        rename_location_drafts=rename_location_drafts,
+        ctx=ctx,
+        session_store=session_store,
         LOCATIONS_MENU=LOCATIONS_MENU,
-        load_user=load_user,
-        save_user=save_user,
-        format_saved_locations=format_saved_locations,
-        locations_menu=locations_menu,
     )
 
 
@@ -989,13 +961,10 @@ def handle_rename_location_pick_callback(call: types.CallbackQuery) -> None:
     """Запоминает выбранную локацию и запрашивает новое имя."""
     handle_rename_location_callback_logic(
         call,
-        bot=bot,
-        user_states=user_states,
-        rename_location_drafts=rename_location_drafts,
+        ctx=ctx,
+        session_store=session_store,
         LOCATIONS_MENU=LOCATIONS_MENU,
         WAITING_RENAME_LOCATION_TITLE=WAITING_RENAME_LOCATION_TITLE,
-        load_user=load_user,
-        locations_menu=locations_menu,
         types=types,
     )
 
@@ -1005,14 +974,10 @@ def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации при добавлении новой сохранённой локации."""
     handle_saved_location_callback_logic(
         call,
-        bot=bot,
-        user_states=user_states,
-        saved_location_drafts=saved_location_drafts,
+        ctx=ctx,
+        session_store=session_store,
         LOCATIONS_MENU=LOCATIONS_MENU,
         WAITING_NEW_SAVED_LOCATION_TITLE=WAITING_NEW_SAVED_LOCATION_TITLE,
-        build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
-        build_location_label=build_location_label,
-        locations_menu=locations_menu,
         types=types,
     )
 
@@ -1057,14 +1022,9 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        details_saved_drafts=details_saved_drafts,
-        details_location_choices=details_location_choices,
+        ctx=ctx,
+        session_store=session_store,
         send_details_by_coordinates=send_details_by_coordinates,
-        main_menu=main_menu,
-        build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     ):
         return
 
@@ -1072,14 +1032,9 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        forecast_saved_drafts=forecast_saved_drafts,
-        forecast_location_choices=forecast_location_choices,
+        ctx=ctx,
+        session_store=session_store,
         send_forecast_by_coordinates=send_forecast_by_coordinates,
-        main_menu=main_menu,
-        build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     ):
         return
 
@@ -1096,14 +1051,9 @@ def handle_unknown_text(message: types.Message) -> None:
         message,
         user_id,
         state,
-        bot=bot,
-        logger=logger,
-        user_states=user_states,
-        compare_drafts=compare_drafts,
-        compare_location_choices=compare_location_choices,
+        ctx=ctx,
+        session_store=session_store,
         complete_compare_two_locations=complete_compare_two_locations,
-        main_menu=main_menu,
-        build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     ):
         return
 
@@ -1112,14 +1062,8 @@ def handle_unknown_text(message: types.Message) -> None:
         user_id,
         state,
         WAITING_GEO_LOCATION=WAITING_GEO_LOCATION,
-        bot=bot,
-        user_states=user_states,
-        compare_drafts=compare_drafts,
-        details_location_choices=details_location_choices,
-        forecast_location_choices=forecast_location_choices,
-        compare_location_choices=compare_location_choices,
-        main_menu=main_menu,
-        geo_request_menu=geo_request_menu,
+        ctx=ctx,
+        session_store=session_store,
     ):
         return
 
