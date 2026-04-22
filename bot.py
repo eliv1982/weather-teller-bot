@@ -97,6 +97,7 @@ from handlers.states import (
     WAITING_RENAME_LOCATION_TITLE,
 )
 from storage import load_user, save_user, load_all_users, save_all_users
+from session_store import SessionStore
 
 
 logging.basicConfig(
@@ -120,24 +121,25 @@ if not BOT_TOKEN:
 
 
 bot = telebot.TeleBot(BOT_TOKEN)
-user_states = {}
-compare_drafts = {}
-details_saved_drafts = {}
-forecast_saved_drafts = {}
-forecast_cache = {}
+session_store = SessionStore()
+user_states = session_store.user_states
+compare_drafts = session_store.compare_drafts
+details_saved_drafts = session_store.details_saved_drafts
+forecast_saved_drafts = session_store.forecast_saved_drafts
+forecast_cache = session_store.forecast_cache
 # Варианты локаций для сценария «Текущая погода» (несколько совпадений геокодинга)
-current_location_choices = {}
+current_location_choices = session_store.current_location_choices
 # Варианты локаций при смене локации для уведомлений (несколько совпадений геокодинга)
-alerts_location_choices = {}
+alerts_location_choices = session_store.alerts_location_choices
 # Варианты локаций для расширенных данных / прогноза / сравнения (несколько совпадений геокодинга)
-details_location_choices = {}
-forecast_location_choices = {}
+details_location_choices = session_store.details_location_choices
+forecast_location_choices = session_store.forecast_location_choices
 # Для сравнения: {"step": 1|2, "locations": list[dict]}
-compare_location_choices = {}
+compare_location_choices = session_store.compare_location_choices
 # Черновики и варианты для сценария «Добавить новую локацию» в разделе «Мои локации»
-saved_location_drafts = {}
+saved_location_drafts = session_store.saved_location_drafts
 # Черновик для сценария «Переименовать локацию»: хранит выбранный location_id
-rename_location_drafts = {}
+rename_location_drafts = session_store.rename_location_drafts
 
 MENU_BUTTONS = [
     "Текущая погода",
@@ -167,7 +169,7 @@ def start_alerts_flow(message: types.Message) -> None:
         )
         return
 
-    user_states[user_id] = ALERTS_MENU
+    session_store.set_state(user_id, ALERTS_MENU)
     bot.send_message(message.chat.id, format_alerts_status(user_data), reply_markup=alerts_menu())
 
 
@@ -175,9 +177,8 @@ def start_locations_flow(message: types.Message) -> None:
     """Открывает раздел управления сохранёнными локациями."""
     user_id = message.from_user.id
     logger.info("Пользователь %s вошёл в раздел сохранённых локаций.", user_id)
-    saved_location_drafts.pop(user_id, None)
-    rename_location_drafts.pop(user_id, None)
-    user_states[user_id] = LOCATIONS_MENU
+    session_store.clear_saved_location_flows(user_id)
+    session_store.set_state(user_id, LOCATIONS_MENU)
     bot.send_message(
         message.chat.id,
         "Раздел сохранённых локаций.\nВыбери действие:",
@@ -252,14 +253,14 @@ def start_current_weather_flow(message: types.Message) -> None:
     """Запускает сценарий ввода населённого пункта для текущей погоды."""
     user_id = message.from_user.id
     current_location_choices.pop(user_id, None)
-    user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
+    session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
     bot.send_message(message.chat.id, "Введи название населённого пункта.")
 
 
 def start_geo_weather_flow(message: types.Message) -> None:
     """Запускает сценарий получения погоды по геолокации."""
     logger.info("Запущен сценарий геолокации для пользователя %s.", message.from_user.id)
-    user_states[message.from_user.id] = WAITING_GEO_LOCATION
+    session_store.set_state(message.from_user.id, WAITING_GEO_LOCATION)
     bot.send_message(
         message.chat.id,
         "Отправь геолокацию через кнопку ниже.\n"
@@ -653,7 +654,7 @@ def handle_menu_buttons(message: types.Message) -> None:
 def handle_back_to_menu(message: types.Message) -> None:
     """Возвращает пользователя в меню уведомлений или в главное меню."""
     user_id = message.from_user.id
-    state = user_states.get(user_id)
+    state = session_store.get_state(user_id)
 
     if state in {
         WAITING_ALERTS_LOCATION_MENU,
@@ -671,18 +672,7 @@ def handle_back_to_menu(message: types.Message) -> None:
         )
         return
 
-    user_states.pop(user_id, None)
-    compare_drafts.pop(user_id, None)
-    details_saved_drafts.pop(user_id, None)
-    forecast_saved_drafts.pop(user_id, None)
-    forecast_cache.pop(user_id, None)
-    current_location_choices.pop(user_id, None)
-    alerts_location_choices.pop(user_id, None)
-    details_location_choices.pop(user_id, None)
-    forecast_location_choices.pop(user_id, None)
-    compare_location_choices.pop(user_id, None)
-    saved_location_drafts.pop(user_id, None)
-    rename_location_drafts.pop(user_id, None)
+    session_store.clear_all_user_runtime(user_id)
     bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
 
 
@@ -690,7 +680,7 @@ def handle_back_to_menu(message: types.Message) -> None:
 def handle_location_message(message: types.Message) -> None:
     """Обрабатывает геолокацию от пользователя."""
     user_id = message.from_user.id
-    state = user_states.get(user_id)
+    state = session_store.get_state(user_id)
 
     if state == WAITING_ALERTS_LOCATION_GEO:
         alerts_location_choices.pop(user_id, None)
@@ -747,10 +737,7 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
-    current_location_choices.pop(user_id, None)
-    details_location_choices.pop(user_id, None)
-    forecast_location_choices.pop(user_id, None)
-    compare_location_choices.pop(user_id, None)
+    session_store.clear_location_choices(user_id)
     location_data = message.location
     lat = location_data.latitude
     lon = location_data.longitude
@@ -1019,7 +1006,7 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
 def handle_unknown_text(message: types.Message) -> None:
     """Маршрутизирует текст в сценарный обработчик по текущему состоянию."""
     user_id = message.from_user.id
-    state = user_states.get(user_id)
+    state = session_store.get_state(user_id)
 
     if state in LOCATIONS_STATES and handle_locations_text(
         message,
