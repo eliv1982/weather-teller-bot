@@ -3,7 +3,6 @@ import logging
 import time
 import threading
 from types import SimpleNamespace
-from datetime import datetime
 from dotenv import load_dotenv
 import telebot
 from telebot import types
@@ -40,6 +39,8 @@ from formatters import (
     format_weather_response,
     help_text,
 )
+from forecast_service import group_forecast_by_day, format_forecast_day
+from alerts_service import ensure_notifications_defaults, detect_weather_alerts
 from storage import load_user, save_user, load_all_users, save_all_users
 
 
@@ -133,51 +134,6 @@ def save_saved_location_item(user_id: int, title: str, label: str, lat: float, l
 
     user_data["saved_locations"] = saved_locations
     save_user(user_id, user_data)
-
-
-def detect_weather_alerts(forecast_items: list[dict]) -> list[str]:
-    """Ищет в прогнозе ближайшие заметные ухудшения погоды."""
-    keywords = ("дожд", "ливень", "гроза", "снег", "метель", "туман")
-    alerts: list[str] = []
-
-    for item in forecast_items[:8]:
-        description = item.get("weather", [{}])[0].get("description", "")
-        lowered = description.lower()
-        if any(keyword in lowered for keyword in keywords):
-            dt_txt = item.get("dt_txt", "")
-            if " " in dt_txt:
-                date_part, time_part = dt_txt.split(" ", 1)
-                try:
-                    date_fmt = datetime.strptime(date_part, "%Y-%m-%d").strftime("%d.%m")
-                except ValueError:
-                    date_fmt = date_part
-                short = f"{date_fmt} {time_part[:5]} — {description}"
-            else:
-                short = f"{dt_txt} — {description}"
-            alerts.append(short)
-
-    return alerts
-
-
-def ensure_notifications_defaults(user_data: dict) -> dict:
-    """Гарантирует корректную структуру notifications в данных пользователя."""
-    notifications = user_data.get("notifications", {})
-    if not isinstance(notifications, dict):
-        notifications = {}
-
-    interval_h = notifications.get("interval_h", 2)
-    if not isinstance(interval_h, int) or interval_h <= 0:
-        interval_h = 2
-
-    last_check_ts = notifications.get("last_check_ts", 0)
-    if not isinstance(last_check_ts, (int, float)):
-        last_check_ts = 0
-
-    notifications["enabled"] = bool(notifications.get("enabled", False))
-    notifications["interval_h"] = interval_h
-    notifications["last_check_ts"] = int(last_check_ts)
-    user_data["notifications"] = notifications
-    return user_data
 
 
 def start_alerts_flow(message: types.Message) -> None:
@@ -424,83 +380,6 @@ def start_forecast_flow(message: types.Message) -> None:
 
     user_states[user_id] = "waiting_forecast_city"
     bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
-
-
-def group_forecast_by_day(forecast_items: list[dict]) -> dict[str, list[dict]]:
-    """Группирует прогноз по календарным дням в формате ДД.ММ."""
-    grouped: dict[str, list[dict]] = {}
-    for item in forecast_items:
-        dt_txt = item.get("dt_txt", "")
-        if not dt_txt:
-            continue
-        date_part = dt_txt.split(" ")[0]
-        try:
-            day_key = datetime.strptime(date_part, "%Y-%m-%d").strftime("%d.%m")
-        except ValueError:
-            continue
-        grouped.setdefault(day_key, []).append(item)
-    return grouped
-
-
-def _forecast_min_temp(day_items: list[dict]) -> float | None:
-    """Возвращает минимальную температуру за день."""
-    temps = [
-        item.get("main", {}).get("temp")
-        for item in day_items
-        if isinstance(item.get("main", {}).get("temp"), (int, float))
-    ]
-    return min(temps) if temps else None
-
-
-def _forecast_max_temp(day_items: list[dict]) -> float | None:
-    """Возвращает максимальную температуру за день."""
-    temps = [
-        item.get("main", {}).get("temp")
-        for item in day_items
-        if isinstance(item.get("main", {}).get("temp"), (int, float))
-    ]
-    return max(temps) if temps else None
-
-
-def _forecast_main_description(day_items: list[dict]) -> str:
-    """Определяет самое частое описание погоды за день."""
-    descriptions: dict[str, int] = {}
-    for item in day_items:
-        description = item.get("weather", [{}])[0].get("description", "без описания")
-        descriptions[description] = descriptions.get(description, 0) + 1
-
-    if not descriptions:
-        return "без описания"
-
-    return max(descriptions, key=descriptions.get)
-
-
-def format_forecast_day(day: str, day_items: list[dict], city_label: str) -> str:
-    """Красиво форматирует прогноз одного дня по интервалам 3 часа."""
-    min_temp = _forecast_min_temp(day_items)
-    max_temp = _forecast_max_temp(day_items)
-    main_description = _forecast_main_description(day_items)
-
-    min_text = f"{min_temp:.1f}" if min_temp is not None else "н/д"
-    max_text = f"{max_temp:.1f}" if max_temp is not None else "н/д"
-
-    lines = [
-        f"📅 Прогноз на {day} для {city_label}",
-        "",
-        f"🌡 Минимум: {min_text} °C",
-        f"🌡 Максимум: {max_text} °C",
-        f"☁️ Чаще всего: {main_description}",
-        "",
-        "🕒 По времени:",
-    ]
-    for item in day_items:
-        dt_txt = item.get("dt_txt", "")
-        time_part = dt_txt.split(" ")[1][:5] if " " in dt_txt else "--:--"
-        temp = item.get("main", {}).get("temp")
-        description = item.get("weather", [{}])[0].get("description", "без описания")
-        temp_text = f"{temp:.1f}" if isinstance(temp, (int, float)) else "н/д"
-        lines.append(f"• {time_part} — {temp_text}°C, {description}")
-    return "\n".join(lines)
 
 
 def show_forecast_days_message(message: types.Message, user_id: int) -> None:
