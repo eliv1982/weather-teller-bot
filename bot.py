@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import threading
+from types import SimpleNamespace
 from datetime import datetime
 from dotenv import load_dotenv
 import telebot
@@ -51,6 +52,11 @@ forecast_cache = {}
 current_location_choices = {}
 # Варианты локаций при смене локации для уведомлений (несколько совпадений геокодинга)
 alerts_location_choices = {}
+# Варианты локаций для расширенных данных / прогноза / сравнения (несколько совпадений геокодинга)
+details_location_choices = {}
+forecast_location_choices = {}
+# Для сравнения: {"step": 1|2, "locations": list[dict]}
+compare_location_choices = {}
 
 MENU_BUTTONS = [
     "Текущая погода",
@@ -281,6 +287,7 @@ def start_details_flow(message: types.Message) -> None:
     """Запускает сценарий получения расширенных данных по населённому пункту."""
     user_id = message.from_user.id
     logger.info("Запущен сценарий расширенных данных для пользователя %s.", user_id)
+    details_location_choices.pop(user_id, None)
 
     user_data = load_user(user_id)
     saved_city = user_data.get("city")
@@ -318,6 +325,8 @@ def send_details_by_coordinates(
     lat: float,
     lon: float,
     city_fallback: str,
+    *,
+    preferred_city_label: str | None = None,
 ) -> bool:
     """Получает и отправляет расширенные данные по известным координатам."""
     weather = get_current_weather(lat, lon)
@@ -333,6 +342,7 @@ def send_details_by_coordinates(
         )
         user_states.pop(user_id, None)
         details_saved_drafts.pop(user_id, None)
+        details_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить расширенные данные. Попробуй позже.",
@@ -340,11 +350,14 @@ def send_details_by_coordinates(
         )
         return False
 
-    location = get_location_by_coordinates(lat, lon)
-    if location:
-        city_label = build_location_label(location, show_coords=False)
+    if preferred_city_label:
+        city_label = preferred_city_label
     else:
-        city_label = city_fallback
+        location = get_location_by_coordinates(lat, lon)
+        if location:
+            city_label = build_location_label(location, show_coords=False)
+        else:
+            city_label = city_fallback
 
     user_data = load_user(user_id)
     user_data["city"] = city_label
@@ -355,6 +368,7 @@ def send_details_by_coordinates(
     answer = format_details_response(city_label, weather, air_components)
     user_states.pop(user_id, None)
     details_saved_drafts.pop(user_id, None)
+    details_location_choices.pop(user_id, None)
     bot.send_message(message.chat.id, answer, reply_markup=main_menu())
     return True
 
@@ -364,6 +378,7 @@ def start_compare_flow(message: types.Message) -> None:
     user_id = message.from_user.id
     logger.info("Запущен сценарий сравнения населённых пунктов для пользователя %s.", user_id)
     compare_drafts.pop(user_id, None)
+    compare_location_choices.pop(user_id, None)
     user_states[user_id] = "waiting_compare_city_1"
     bot.send_message(message.chat.id, "Введи первый населённый пункт для сравнения.")
 
@@ -372,6 +387,7 @@ def start_forecast_flow(message: types.Message) -> None:
     """Запускает сценарий прогноза на 5 дней."""
     user_id = message.from_user.id
     logger.info("Запущен сценарий прогноза на 5 дней для пользователя %s.", user_id)
+    forecast_location_choices.pop(user_id, None)
 
     user_data = load_user(user_id)
     saved_city = user_data.get("city")
@@ -530,6 +546,7 @@ def send_forecast_by_coordinates(
     city_fallback: str,
     *,
     save_location: bool,
+    preferred_city_label: str | None = None,
 ) -> bool:
     """Получает прогноз, сохраняет данные в кэш и показывает дни."""
     forecast_items = get_forecast_5d3h(lat, lon)
@@ -544,6 +561,7 @@ def send_forecast_by_coordinates(
         user_states.pop(user_id, None)
         forecast_saved_drafts.pop(user_id, None)
         forecast_cache.pop(user_id, None)
+        forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить прогноз. Попробуй позже.",
@@ -551,14 +569,18 @@ def send_forecast_by_coordinates(
         )
         return False
 
-    location = get_location_by_coordinates(lat, lon)
-    city_label = build_location_label(location, show_coords=False) if location else city_fallback
+    if preferred_city_label:
+        city_label = preferred_city_label
+    else:
+        location = get_location_by_coordinates(lat, lon)
+        city_label = build_location_label(location, show_coords=False) if location else city_fallback
     grouped = group_forecast_by_day(forecast_items)
     if not grouped:
         logger.warning("Прогноз пришёл пустым после группировки для пользователя %s.", user_id)
         user_states.pop(user_id, None)
         forecast_saved_drafts.pop(user_id, None)
         forecast_cache.pop(user_id, None)
+        forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить прогноз. Попробуй позже.",
@@ -576,8 +598,14 @@ def send_forecast_by_coordinates(
     forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
     user_states.pop(user_id, None)
     forecast_saved_drafts.pop(user_id, None)
+    forecast_location_choices.pop(user_id, None)
     show_forecast_days_message(message, user_id)
     return True
+
+
+def _message_stub_for_chat(chat_id: int) -> SimpleNamespace:
+    """Заглушка сообщения с chat.id для вызовов send_* из обработчиков callback."""
+    return SimpleNamespace(chat=SimpleNamespace(id=chat_id))
 
 
 def _weather_snapshot(weather: dict) -> dict:
@@ -637,6 +665,8 @@ def build_location_pick_keyboard(
     locations: list[dict],
     pick_callback_prefix: str,
     cancel_callback_data: str,
+    *,
+    compare_step: int | None = None,
 ) -> types.InlineKeyboardMarkup:
     """
     Универсальная inline-клавиатура выбора населённого пункта из списка геокодинга.
@@ -644,8 +674,9 @@ def build_location_pick_keyboard(
     Подписи на кнопках строятся через build_disambiguated_location_labels: при одинаковых
     названиях к дублям добавляются координаты.
 
-    pick_callback_prefix — префикс callback_data, например «current_pick» или «alerts_pick».
+    pick_callback_prefix — префикс callback_data, например «details_pick» или «compare_pick».
     cancel_callback_data — полное значение callback для кнопки «Отмена».
+    compare_step — для сравнения: шаг 1 или 2, тогда callback_data вида «compare_pick:1:0».
     """
     keyboard = types.InlineKeyboardMarkup()
     labels = build_disambiguated_location_labels(locations)
@@ -653,14 +684,45 @@ def build_location_pick_keyboard(
         label = labels[index]
         if len(label) > 64:
             label = label[:61] + "..."
+        if compare_step is not None:
+            callback_data = f"{pick_callback_prefix}:{compare_step}:{index}"
+        else:
+            callback_data = f"{pick_callback_prefix}:{index}"
         keyboard.add(
             types.InlineKeyboardButton(
                 text=label,
-                callback_data=f"{pick_callback_prefix}:{index}",
+                callback_data=callback_data,
             )
         )
     keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data=cancel_callback_data))
     return keyboard
+
+
+def build_scenario_location_choice_keyboard(
+    locations: list[dict],
+    scenario: str,
+    *,
+    compare_step: int | None = None,
+) -> types.InlineKeyboardMarkup:
+    """
+    Inline-клавиатура выбора локации для сценария details / forecast / compare.
+
+    scenario: «details», «forecast» или «compare»; для compare обязательно передай compare_step (1 или 2).
+    """
+    if scenario == "details":
+        return build_location_pick_keyboard(locations, "details_pick", "details_cancel")
+    if scenario == "forecast":
+        return build_location_pick_keyboard(locations, "forecast_pick", "forecast_cancel")
+    if scenario == "compare":
+        if compare_step not in (1, 2):
+            raise ValueError("Для сценария compare нужен compare_step равный 1 или 2.")
+        return build_location_pick_keyboard(
+            locations,
+            "compare_pick",
+            "compare_cancel",
+            compare_step=compare_step,
+        )
+    raise ValueError(f"Неизвестный сценарий: {scenario}")
 
 
 def build_current_weather_location_keyboard(locations: list[dict]) -> types.InlineKeyboardMarkup:
@@ -816,6 +878,45 @@ def format_compare_response(city_1: str, weather_1: dict, city_2: str, weather_2
     )
 
 
+def complete_compare_two_locations(
+    chat_id: int,
+    user_id: int,
+    lat_1: float,
+    lon_1: float,
+    city_label_1: str,
+    lat_2: float,
+    lon_2: float,
+    city_label_2: str,
+) -> None:
+    """Загружает погоду по двум точкам и отправляет текст сравнения."""
+    weather_1 = get_current_weather(lat_1, lon_1)
+    weather_2 = get_current_weather(lat_2, lon_2)
+
+    if not weather_1 or not weather_2:
+        logger.warning("Не удалось получить данные для сравнения у пользователя %s.", user_id)
+        user_states.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        compare_location_choices.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "Не удалось получить данные для сравнения. Попробуй позже.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    answer = format_compare_response(city_label_1, weather_1, city_label_2, weather_2)
+    logger.info(
+        "Успешно выполнено сравнение для пользователя %s: %s vs %s.",
+        user_id,
+        city_label_1,
+        city_label_2,
+    )
+    user_states.pop(user_id, None)
+    compare_drafts.pop(user_id, None)
+    compare_location_choices.pop(user_id, None)
+    bot.send_message(chat_id, answer, reply_markup=main_menu())
+
+
 def _format_hh_mm_from_unix(unix_ts: int | None) -> str:
     """Преобразует unix timestamp в формат ЧЧ:ММ."""
     if unix_ts is None:
@@ -932,6 +1033,9 @@ def handle_start(message: types.Message) -> None:
     user_states.pop(message.from_user.id, None)
     current_location_choices.pop(message.from_user.id, None)
     alerts_location_choices.pop(message.from_user.id, None)
+    details_location_choices.pop(message.from_user.id, None)
+    forecast_location_choices.pop(message.from_user.id, None)
+    compare_location_choices.pop(message.from_user.id, None)
     text = (
         "Привет! Я Weather Teller 🌤\n\n"
         "Помогу:\n"
@@ -1059,6 +1163,9 @@ def handle_back_to_menu(message: types.Message) -> None:
     forecast_cache.pop(user_id, None)
     current_location_choices.pop(user_id, None)
     alerts_location_choices.pop(user_id, None)
+    details_location_choices.pop(user_id, None)
+    forecast_location_choices.pop(user_id, None)
+    compare_location_choices.pop(user_id, None)
     bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
 
 
@@ -1101,6 +1208,9 @@ def handle_location_message(message: types.Message) -> None:
         return
 
     current_location_choices.pop(user_id, None)
+    details_location_choices.pop(user_id, None)
+    forecast_location_choices.pop(user_id, None)
+    compare_location_choices.pop(user_id, None)
     location_data = message.location
     lat = location_data.latitude
     lon = location_data.longitude
@@ -1258,10 +1368,287 @@ def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
     bot.answer_callback_query(call.id)
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("details_"))
+def handle_details_location_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает выбор локации для расширенных данных (inline) или отмену."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    if call.data == "details_cancel":
+        details_location_choices.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
+        return
+
+    if call.data.startswith("details_pick:"):
+        try:
+            index = int(call.data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            bot.answer_callback_query(call.id)
+            user_states.pop(user_id, None)
+            details_location_choices.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        choices = details_location_choices.get(user_id)
+        if not choices or index < 0 or index >= len(choices):
+            bot.answer_callback_query(call.id)
+            user_states.pop(user_id, None)
+            details_location_choices.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        location_item = build_geocode_item_with_disambiguated_label(choices, index)
+        logger.info(
+            "Пользователь %s выбрал локацию для расширенных данных #%s: %s",
+            user_id,
+            index,
+            location_item.get("label"),
+        )
+        bot.answer_callback_query(call.id)
+        stub = _message_stub_for_chat(chat_id)
+        city = location_item.get("label") or build_location_label(location_item, show_coords=False)
+        lat = location_item.get("lat")
+        lon = location_item.get("lon")
+        if lat is None or lon is None:
+            details_location_choices.pop(user_id, None)
+            user_states.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "Не удалось получить расширенные данные. Попробуй позже.",
+                reply_markup=main_menu(),
+            )
+            return
+        send_details_by_coordinates(
+            stub,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            preferred_city_label=city,
+        )
+        return
+
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith("compare_pick:") or call.data == "compare_cancel"
+)
+def handle_compare_location_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает выбор населённого пункта при сравнении (inline) или отмену."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    if call.data == "compare_cancel":
+        compare_location_choices.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
+        return
+
+    parts = call.data.split(":")
+    if len(parts) != 3 or parts[0] != "compare_pick":
+        bot.answer_callback_query(call.id)
+        return
+
+    try:
+        step = int(parts[1])
+        index = int(parts[2])
+    except ValueError:
+        bot.answer_callback_query(call.id)
+        compare_location_choices.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    meta = compare_location_choices.get(user_id)
+    if not meta or not isinstance(meta.get("locations"), list):
+        bot.answer_callback_query(call.id)
+        compare_location_choices.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    if meta.get("step") != step:
+        bot.answer_callback_query(call.id)
+        compare_location_choices.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    locations = meta["locations"]
+    if index < 0 or index >= len(locations):
+        bot.answer_callback_query(call.id)
+        compare_location_choices.pop(user_id, None)
+        compare_drafts.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    location_item = build_geocode_item_with_disambiguated_label(locations, index)
+    lat = location_item.get("lat")
+    lon = location_item.get("lon")
+    if lat is None or lon is None:
+        bot.answer_callback_query(call.id)
+        compare_location_choices.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.send_message(
+            chat_id,
+            "Не удалось получить данные для сравнения. Попробуй позже.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    city_label = location_item.get("label") or build_location_label(location_item, show_coords=False)
+    logger.info(
+        "Пользователь %s выбрал населённый пункт для сравнения (шаг %s) #%s: %s",
+        user_id,
+        step,
+        index,
+        city_label,
+    )
+    bot.answer_callback_query(call.id)
+
+    if step == 1:
+        compare_drafts[user_id] = {
+            "coordinates_1": (float(lat), float(lon)),
+            "city_1_input": city_label,
+            "city_1_label": city_label,
+        }
+        compare_location_choices.pop(user_id, None)
+        user_states[user_id] = "waiting_compare_city_2"
+        bot.send_message(chat_id, "Теперь введи второй населённый пункт.")
+        return
+
+    if step == 2:
+        draft = compare_drafts.get(user_id)
+        if not draft or "coordinates_1" not in draft:
+            compare_location_choices.pop(user_id, None)
+            compare_drafts.pop(user_id, None)
+            user_states.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        lat_1, lon_1 = draft["coordinates_1"]
+        city_label_1 = draft.get("city_1_label") or draft.get("city_1_input") or "Первый населённый пункт"
+        complete_compare_two_locations(
+            chat_id,
+            user_id,
+            lat_1,
+            lon_1,
+            city_label_1,
+            float(lat),
+            float(lon),
+            city_label,
+        )
+        return
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("forecast_"))
 def handle_forecast_callback(call: types.CallbackQuery) -> None:
-    """Обрабатывает inline-навигацию прогноза."""
+    """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
     user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    if call.data == "forecast_cancel":
+        forecast_location_choices.pop(user_id, None)
+        user_states.pop(user_id, None)
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
+        return
+
+    if call.data.startswith("forecast_pick:"):
+        try:
+            index = int(call.data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            bot.answer_callback_query(call.id)
+            user_states.pop(user_id, None)
+            forecast_location_choices.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        choices = forecast_location_choices.get(user_id)
+        if not choices or index < 0 or index >= len(choices):
+            bot.answer_callback_query(call.id)
+            user_states.pop(user_id, None)
+            forecast_location_choices.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        location_item = build_geocode_item_with_disambiguated_label(choices, index)
+        logger.info(
+            "Пользователь %s выбрал локацию для прогноза #%s: %s",
+            user_id,
+            index,
+            location_item.get("label"),
+        )
+        bot.answer_callback_query(call.id)
+        stub = _message_stub_for_chat(chat_id)
+        city = location_item.get("label") or build_location_label(location_item, show_coords=False)
+        lat = location_item.get("lat")
+        lon = location_item.get("lon")
+        if lat is None or lon is None:
+            forecast_location_choices.pop(user_id, None)
+            user_states.pop(user_id, None)
+            bot.send_message(
+                chat_id,
+                "Не удалось получить прогноз. Попробуй позже.",
+                reply_markup=main_menu(),
+            )
+            return
+        send_forecast_by_coordinates(
+            stub,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            save_location=True,
+            preferred_city_label=city,
+        )
+        return
+
     cache = forecast_cache.get(user_id)
     if not cache:
         bot.answer_callback_query(call.id, "Данные прогноза устарели.")
@@ -1451,6 +1838,9 @@ def handle_unknown_text(message: types.Message) -> None:
         if message.text == "⬅️ В меню":
             user_states.pop(user_id, None)
             compare_drafts.pop(user_id, None)
+            details_location_choices.pop(user_id, None)
+            forecast_location_choices.pop(user_id, None)
+            compare_location_choices.pop(user_id, None)
             bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
             return
 
@@ -1463,25 +1853,76 @@ def handle_unknown_text(message: types.Message) -> None:
         return
 
     if state == "waiting_details_city":
-        city = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл населённый пункт для расширенных данных: %s", user_id, city)
-        if not city:
+        query = (message.text or "").strip()
+        logger.info("Пользователь %s ввёл населённый пункт для расширенных данных: %s", user_id, query)
+        if not query:
             bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return
 
-        coordinates = get_coordinates(city)
-        if not coordinates:
-            logger.info("Населённый пункт не найден для расширенных данных у пользователя %s: %s", user_id, city)
-            bot.send_message(message.chat.id, "⚠️ Населённый пункт не найден. Попробуй ввести другое название.")
+        locations = get_locations(query, limit=5)
+        if not locations:
+            logger.info("Населённый пункт не найден для расширенных данных у пользователя %s: %s", user_id, query)
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+            )
             return
 
-        lat, lon = coordinates
-        if send_details_by_coordinates(message, user_id, lat, lon, city):
-            logger.info(
-                "Успешно получены расширенные данные для пользователя %s по введённому населённому пункту %s.",
+        if len(locations) == 1:
+            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            lat = loc.get("lat")
+            lon = loc.get("lon")
+            city = loc.get("label") or build_location_label(loc, show_coords=False)
+            if lat is None or lon is None:
+                bot.send_message(
+                    message.chat.id,
+                    "Не удалось получить расширенные данные. Попробуй позже.",
+                    reply_markup=main_menu(),
+                )
+                return
+            if send_details_by_coordinates(
+                message,
                 user_id,
+                float(lat),
+                float(lon),
                 city,
+                preferred_city_label=city,
+            ):
+                logger.info(
+                    "Успешно получены расширенные данные для пользователя %s по введённому населённому пункту %s.",
+                    user_id,
+                    query,
+                )
+            return
+
+        details_location_choices[user_id] = locations
+        user_states[user_id] = "waiting_details_pick"
+        logger.info(
+            "Найдено несколько вариантов (%s) для расширенных данных у пользователя %s: %s",
+            len(locations),
+            user_id,
+            query,
+        )
+        bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=build_scenario_location_choice_keyboard(locations, "details"),
+        )
+        return
+
+    if state == "waiting_details_pick":
+        if not details_location_choices.get(user_id):
+            user_states.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
             )
+            return
+        bot.send_message(
+            message.chat.id,
+            "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
         return
 
     if state == "waiting_details_use_saved_location":
@@ -1559,27 +2000,72 @@ def handle_unknown_text(message: types.Message) -> None:
         return
 
     if state == "waiting_forecast_city":
-        city = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл населённый пункт для прогноза: %s", user_id, city)
-        if not city:
+        query = (message.text or "").strip()
+        logger.info("Пользователь %s ввёл населённый пункт для прогноза: %s", user_id, query)
+        if not query:
             bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return
 
-        coordinates = get_coordinates(city)
-        if not coordinates:
-            bot.send_message(message.chat.id, "⚠️ Населённый пункт не найден. Попробуй ввести другое название.")
+        locations = get_locations(query, limit=5)
+        if not locations:
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом.",
+            )
             return
 
-        lat, lon = coordinates
-        if send_forecast_by_coordinates(
-            message,
+        if len(locations) == 1:
+            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            lat = loc.get("lat")
+            lon = loc.get("lon")
+            city = loc.get("label") or build_location_label(loc, show_coords=False)
+            if lat is None or lon is None:
+                bot.send_message(
+                    message.chat.id,
+                    "Не удалось получить прогноз. Попробуй позже.",
+                    reply_markup=main_menu(),
+                )
+                return
+            if send_forecast_by_coordinates(
+                message,
+                user_id,
+                float(lat),
+                float(lon),
+                city,
+                save_location=True,
+                preferred_city_label=city,
+            ):
+                logger.info("Успешно получен прогноз для пользователя %s по населённому пункту %s.", user_id, query)
+            return
+
+        forecast_location_choices[user_id] = locations
+        user_states[user_id] = "waiting_forecast_pick"
+        logger.info(
+            "Найдено несколько вариантов (%s) для прогноза у пользователя %s: %s",
+            len(locations),
             user_id,
-            lat,
-            lon,
-            city,
-            save_location=True,
-        ):
-            logger.info("Успешно получен прогноз для пользователя %s по населённому пункту %s.", user_id, city)
+            query,
+        )
+        bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=build_scenario_location_choice_keyboard(locations, "forecast"),
+        )
+        return
+
+    if state == "waiting_forecast_pick":
+        if not forecast_location_choices.get(user_id):
+            user_states.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+        bot.send_message(
+            message.chat.id,
+            "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
         return
 
     if state in {"alerts_menu", "waiting_alerts_interval"}:
@@ -1662,55 +2148,65 @@ def handle_unknown_text(message: types.Message) -> None:
         return
 
     if state == "waiting_compare_city_1":
-        city_1 = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл первый населённый пункт для сравнения: %s", user_id, city_1)
-        if not city_1:
+        query = (message.text or "").strip()
+        logger.info("Пользователь %s ввёл первый населённый пункт для сравнения: %s", user_id, query)
+        if not query:
             bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return
 
-        coordinates_1 = get_coordinates(city_1)
-        if not coordinates_1:
-            bot.send_message(message.chat.id, "⚠️ Населённый пункт не найден. Попробуй ввести другое название.")
+        locations = get_locations(query, limit=5)
+        if not locations:
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+            )
             return
 
-        compare_drafts[user_id] = {"city_1_input": city_1, "coordinates_1": coordinates_1}
-        user_states[user_id] = "waiting_compare_city_2"
-        bot.send_message(message.chat.id, "Теперь введи второй населённый пункт.")
+        if len(locations) == 1:
+            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            lat = loc.get("lat")
+            lon = loc.get("lon")
+            label = loc.get("label") or build_location_label(loc, show_coords=False)
+            if lat is None or lon is None:
+                bot.send_message(
+                    message.chat.id,
+                    "Не удалось получить данные для сравнения. Попробуй позже.",
+                    reply_markup=main_menu(),
+                )
+                return
+            compare_drafts[user_id] = {
+                "coordinates_1": (float(lat), float(lon)),
+                "city_1_input": label,
+                "city_1_label": label,
+            }
+            user_states[user_id] = "waiting_compare_city_2"
+            bot.send_message(message.chat.id, "Теперь введи второй населённый пункт.")
+            return
+
+        compare_location_choices[user_id] = {"step": 1, "locations": locations}
+        user_states[user_id] = "waiting_compare_location_pick"
+        logger.info(
+            "Найдено несколько вариантов (%s) для первого населённого пункта у пользователя %s: %s",
+            len(locations),
+            user_id,
+            query,
+        )
+        bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=build_scenario_location_choice_keyboard(locations, "compare", compare_step=1),
+        )
         return
 
     if state == "waiting_compare_city_2":
-        city_2 = (message.text or "").strip()
-        logger.info("Пользователь %s ввёл второй населённый пункт для сравнения: %s", user_id, city_2)
-        if not city_2:
+        query = (message.text or "").strip()
+        logger.info("Пользователь %s ввёл второй населённый пункт для сравнения: %s", user_id, query)
+        if not query:
             bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return
 
-        coordinates_2 = get_coordinates(city_2)
-        if not coordinates_2:
-            bot.send_message(message.chat.id, "⚠️ Населённый пункт не найден. Попробуй ввести другое название.")
-            return
-
         draft = compare_drafts.get(user_id)
-        if not draft:
-            user_states.pop(user_id, None)
-            bot.send_message(
-                message.chat.id,
-                "Не удалось получить данные для сравнения. Попробуй позже.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        lat_1, lon_1 = draft["coordinates_1"]
-        lat_2, lon_2 = coordinates_2
-
-        weather_1 = get_current_weather(lat_1, lon_1)
-        weather_2 = get_current_weather(lat_2, lon_2)
-
-        if not weather_1 or not weather_2:
-            logger.warning(
-                "Не удалось получить данные для сравнения у пользователя %s.",
-                user_id,
-            )
+        if not draft or "coordinates_1" not in draft:
             user_states.pop(user_id, None)
             compare_drafts.pop(user_id, None)
             bot.send_message(
@@ -1720,30 +2216,71 @@ def handle_unknown_text(message: types.Message) -> None:
             )
             return
 
-        location_1 = get_location_by_coordinates(lat_1, lon_1)
-        location_2 = get_location_by_coordinates(lat_2, lon_2)
+        locations = get_locations(query, limit=5)
+        if not locations:
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+            )
+            return
 
-        city_label_1 = (
-            build_location_label(location_1, show_coords=False)
-            if location_1
-            else draft["city_1_input"]
-        )
-        city_label_2 = (
-            build_location_label(location_2, show_coords=False)
-            if location_2
-            else city_2
-        )
+        if len(locations) == 1:
+            loc = build_geocode_item_with_disambiguated_label(locations, 0)
+            lat_2 = loc.get("lat")
+            lon_2 = loc.get("lon")
+            city_label_2 = loc.get("label") or build_location_label(loc, show_coords=False)
+            if lat_2 is None or lon_2 is None:
+                user_states.pop(user_id, None)
+                compare_drafts.pop(user_id, None)
+                bot.send_message(
+                    message.chat.id,
+                    "Не удалось получить данные для сравнения. Попробуй позже.",
+                    reply_markup=main_menu(),
+                )
+                return
+            lat_1, lon_1 = draft["coordinates_1"]
+            city_label_1 = draft.get("city_1_label") or draft.get("city_1_input") or "Первый населённый пункт"
+            complete_compare_two_locations(
+                message.chat.id,
+                user_id,
+                lat_1,
+                lon_1,
+                city_label_1,
+                float(lat_2),
+                float(lon_2),
+                city_label_2,
+            )
+            return
 
-        answer = format_compare_response(city_label_1, weather_1, city_label_2, weather_2)
+        compare_location_choices[user_id] = {"step": 2, "locations": locations}
+        user_states[user_id] = "waiting_compare_location_pick"
         logger.info(
-            "Успешно выполнено сравнение для пользователя %s: %s vs %s.",
+            "Найдено несколько вариантов (%s) для второго населённого пункта у пользователя %s: %s",
+            len(locations),
             user_id,
-            city_label_1,
-            city_label_2,
+            query,
         )
-        user_states.pop(user_id, None)
-        compare_drafts.pop(user_id, None)
-        bot.send_message(message.chat.id, answer, reply_markup=main_menu())
+        bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=build_scenario_location_choice_keyboard(locations, "compare", compare_step=2),
+        )
+        return
+
+    if state == "waiting_compare_location_pick":
+        if not compare_location_choices.get(user_id):
+            user_states.pop(user_id, None)
+            compare_drafts.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
+                reply_markup=main_menu(),
+            )
+            return
+        bot.send_message(
+            message.chat.id,
+            "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
         return
 
     bot.send_message(

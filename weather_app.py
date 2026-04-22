@@ -335,11 +335,11 @@ def get_region_name_ru(state: str | None) -> str | None:
 
     Порядок обработки:
     1. Словарь REGION_NAMES_RU (точное совпадение или без учёта регистра).
-    2. Осторожный шаблон «Republic of …» → «Республика …» (только если нет записи в словаре).
-       Для «X Oblast» и «X Krai» автоматического перевода нет: без словарной статьи
-       остаётся исходная строка из API — так не получается кривой русский текст.
-    3. Если state уже на кириллице — возвращается как есть.
-    4. Иначе возвращается исходная строка из API (латиница и т.д.), не None.
+    2. Если state уже на кириллице — возвращается как есть.
+    3. Иначе возвращается исходная строка из API (латиница и т.д.), не None.
+
+    Важно: неизвестные зарубежные регионы не переводятся автоматически, чтобы подпись
+    оставалась стабильной и без «угадываний».
     """
     if not state:
         return None
@@ -351,10 +351,6 @@ def get_region_name_ru(state: str | None) -> str | None:
     mapped = _lookup_region_dict(s)
     if mapped is not None:
         return mapped
-
-    republic = _pattern_republic_of_ru(s)
-    if republic is not None:
-        return republic
 
     if contains_cyrillic(s):
         return s
@@ -378,7 +374,7 @@ def build_location_label(location: dict, show_coords: bool = False) -> str:
     if country_name:
         details.append(country_name)
 
-    if region_name and region_name != city_name:
+    if region_name and region_name != city_name and region_name not in details:
         details.append(region_name)
 
     label = city_name
