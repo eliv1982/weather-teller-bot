@@ -57,6 +57,10 @@ details_location_choices = {}
 forecast_location_choices = {}
 # Для сравнения: {"step": 1|2, "locations": list[dict]}
 compare_location_choices = {}
+# Черновики и варианты для сценария «Добавить новую локацию» в разделе «Мои локации»
+saved_location_drafts = {}
+# Черновик для сценария «Переименовать локацию»: хранит выбранный location_id
+rename_location_drafts = {}
 
 MENU_BUTTONS = [
     "Текущая погода",
@@ -64,6 +68,7 @@ MENU_BUTTONS = [
     "Моя геолокация",
     "Сравнить города",
     "Расширенные данные",
+    "Мои локации",
     "Уведомления",
     "Помощь",
 ]
@@ -95,7 +100,8 @@ def help_text() -> str:
         "/geo — погода по геолокации\n"
         "/compare — сравнить города\n"
         "/details — расширенные данные\n"
-        "/alerts — уведомления"
+        "/alerts — уведомления\n"
+        "/locations — мои локации"
     )
 
 
@@ -116,6 +122,120 @@ def alerts_location_menu() -> types.ReplyKeyboardMarkup:
     keyboard.row(types.KeyboardButton("Отправить геолокацию"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
+
+
+def locations_menu() -> types.ReplyKeyboardMarkup:
+    """Создаёт меню управления сохранёнными локациями."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Сохранить текущую локацию"))
+    keyboard.row(types.KeyboardButton("Добавить новую локацию"))
+    keyboard.row(types.KeyboardButton("Показать мои локации"))
+    keyboard.row(types.KeyboardButton("Сделать основной"))
+    keyboard.row(types.KeyboardButton("Переименовать локацию"), types.KeyboardButton("Удалить локацию"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def add_saved_location_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора способа добавления новой локации."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def format_saved_locations(user_data: dict) -> str:
+    """Форматирует список сохранённых локаций пользователя."""
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list) or not saved_locations:
+        return "Сохранённых локаций пока нет."
+
+    favorite_id = user_data.get("favorite_location_id")
+    lines = ["Мои локации:"]
+    for item in saved_locations:
+        if not isinstance(item, dict):
+            continue
+        location_id = item.get("id")
+        title = (item.get("title") or "Без названия").strip()
+        label = (item.get("label") or "Без подписи").strip()
+        mark = "⭐ " if location_id == favorite_id else ""
+        lines.append(f"{mark}{title} — {label}")
+
+    if len(lines) == 1:
+        return "Сохранённых локаций пока нет."
+    return "\n".join(lines)
+
+
+def build_favorite_pick_keyboard(saved_locations: list[dict]) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора основной локации."""
+    return build_saved_locations_keyboard(saved_locations, "favorite_pick")
+
+
+def build_saved_locations_keyboard(
+    saved_locations: list[dict],
+    callback_prefix: str,
+) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора сохранённой локации по заданному префиксу callback."""
+    keyboard = types.InlineKeyboardMarkup()
+    for item in saved_locations:
+        if not isinstance(item, dict):
+            continue
+        location_id = item.get("id")
+        if not isinstance(location_id, str) or not location_id:
+            continue
+        title = (item.get("title") or "Без названия").strip()
+        label = (item.get("label") or "").strip()
+        button_text = f"{title} — {label}" if label else title
+        if len(button_text) > 64:
+            button_text = button_text[:61] + "..."
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"{callback_prefix}:{location_id}",
+            )
+        )
+    return keyboard
+
+
+def save_saved_location_item(user_id: int, title: str, label: str, lat: float, lon: float) -> None:
+    """Сохраняет локацию в список пользователя или обновляет title у дубля по координатам."""
+    user_data = load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list):
+        saved_locations = []
+
+    existing_location = None
+    for item in saved_locations:
+        if not isinstance(item, dict):
+            continue
+        item_lat = item.get("lat")
+        item_lon = item.get("lon")
+        if item_lat is None or item_lon is None:
+            continue
+        if abs(float(item_lat) - float(lat)) < 1e-6 and abs(float(item_lon) - float(lon)) < 1e-6:
+            existing_location = item
+            break
+
+    if existing_location is not None:
+        existing_location["title"] = title
+        existing_location["label"] = label
+        existing_location["lat"] = float(lat)
+        existing_location["lon"] = float(lon)
+    else:
+        location_id = f"loc_{int(time.time() * 1000)}_{len(saved_locations) + 1}"
+        saved_locations.append(
+            {
+                "id": location_id,
+                "title": title,
+                "label": label,
+                "lat": float(lat),
+                "lon": float(lon),
+            }
+        )
+
+    user_data["saved_locations"] = saved_locations
+    save_user(user_id, user_data)
 
 
 def format_alerts_status(user_data: dict) -> str:
@@ -198,6 +318,20 @@ def start_alerts_flow(message: types.Message) -> None:
 
     user_states[user_id] = "alerts_menu"
     bot.send_message(message.chat.id, format_alerts_status(user_data), reply_markup=alerts_menu())
+
+
+def start_locations_flow(message: types.Message) -> None:
+    """Открывает раздел управления сохранёнными локациями."""
+    user_id = message.from_user.id
+    logger.info("Пользователь %s вошёл в раздел сохранённых локаций.", user_id)
+    saved_location_drafts.pop(user_id, None)
+    rename_location_drafts.pop(user_id, None)
+    user_states[user_id] = "locations_menu"
+    bot.send_message(
+        message.chat.id,
+        "Раздел сохранённых локаций.\nВыбери действие:",
+        reply_markup=locations_menu(),
+    )
 
 
 def alerts_worker() -> None:
@@ -1013,7 +1147,8 @@ def main_menu() -> types.ReplyKeyboardMarkup:
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(types.KeyboardButton("Текущая погода"), types.KeyboardButton("Прогноз на 5 дней"))
     keyboard.row(types.KeyboardButton("Моя геолокация"), types.KeyboardButton("Сравнить города"))
-    keyboard.row(types.KeyboardButton("Расширенные данные"), types.KeyboardButton("Уведомления"))
+    keyboard.row(types.KeyboardButton("Расширенные данные"), types.KeyboardButton("Мои локации"))
+    keyboard.row(types.KeyboardButton("Уведомления"))
     keyboard.row(types.KeyboardButton("Помощь"))
     return keyboard
 
@@ -1036,6 +1171,8 @@ def handle_start(message: types.Message) -> None:
     details_location_choices.pop(message.from_user.id, None)
     forecast_location_choices.pop(message.from_user.id, None)
     compare_location_choices.pop(message.from_user.id, None)
+    saved_location_drafts.pop(message.from_user.id, None)
+    rename_location_drafts.pop(message.from_user.id, None)
     text = (
         "Привет! Я Weather Teller 🌤\n\n"
         "Помогу:\n"
@@ -1098,6 +1235,13 @@ def handle_alerts(message: types.Message) -> None:
     start_alerts_flow(message)
 
 
+@bot.message_handler(commands=["locations"])
+def handle_locations(message: types.Message) -> None:
+    """Открывает раздел сохранённых и любимых локаций."""
+    logger.info("Получена команда /locations от пользователя %s.", message.from_user.id)
+    start_locations_flow(message)
+
+
 @bot.message_handler(func=lambda message: message.text in MENU_BUTTONS)
 def handle_menu_buttons(message: types.Message) -> None:
     """Обрабатывает нажатия кнопок главного меню."""
@@ -1122,6 +1266,9 @@ def handle_menu_buttons(message: types.Message) -> None:
         return
     if section_name == "Сравнить города":
         start_compare_flow(message)
+        return
+    if section_name == "Мои локации":
+        start_locations_flow(message)
         return
     if section_name == "Уведомления":
         start_alerts_flow(message)
@@ -1166,6 +1313,8 @@ def handle_back_to_menu(message: types.Message) -> None:
     details_location_choices.pop(user_id, None)
     forecast_location_choices.pop(user_id, None)
     compare_location_choices.pop(user_id, None)
+    saved_location_drafts.pop(user_id, None)
+    rename_location_drafts.pop(user_id, None)
     bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
 
 
@@ -1204,6 +1353,29 @@ def handle_location_message(message: types.Message) -> None:
             message.chat.id,
             "✅ Локация для уведомлений обновлена.\n\n" + format_alerts_status(user_data),
             reply_markup=alerts_menu(),
+        )
+        return
+
+    if state == "waiting_new_saved_location_geo":
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        if location:
+            label = build_location_label(location, show_coords=False)
+        else:
+            label = "Выбранная геолокация"
+
+        saved_location_drafts[user_id] = {
+            "lat": float(lat),
+            "lon": float(lon),
+            "label": label,
+        }
+        user_states[user_id] = "waiting_new_saved_location_title"
+        bot.send_message(
+            message.chat.id,
+            "Введи название для этой локации, например: Дом",
+            reply_markup=types.ReplyKeyboardRemove(),
         )
         return
 
@@ -1578,6 +1750,206 @@ def handle_compare_location_callback(call: types.CallbackQuery) -> None:
         return
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_pick:"))
+def handle_favorite_pick_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает выбор основной локации из списка сохранённых."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+    if not location_id:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "⚠️ Не удалось выбрать основную локацию.", reply_markup=locations_menu())
+        return
+
+    user_data = load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list) or not saved_locations:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
+        return
+
+    location_exists = any(
+        isinstance(item, dict) and item.get("id") == location_id
+        for item in saved_locations
+    )
+    if not location_exists:
+        bot.answer_callback_query(call.id)
+        bot.send_message(
+            chat_id,
+            "⚠️ Выбранная локация не найдена. Попробуй снова.",
+            reply_markup=locations_menu(),
+        )
+        return
+
+    user_data["favorite_location_id"] = location_id
+    save_user(user_id, user_data)
+    user_states[user_id] = "locations_menu"
+    logger.info("Пользователь %s выбрал основную локацию: %s", user_id, location_id)
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        chat_id,
+        "✅ Основная локация обновлена.\n\n" + format_saved_locations(user_data),
+        reply_markup=locations_menu(),
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_location_pick:"))
+def handle_delete_location_pick_callback(call: types.CallbackQuery) -> None:
+    """Удаляет выбранную сохранённую локацию."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+
+    if not location_id:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "⚠️ Не удалось удалить локацию.", reply_markup=locations_menu())
+        return
+
+    user_data = load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list) or not saved_locations:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
+        return
+
+    filtered_locations = [
+        item
+        for item in saved_locations
+        if not (isinstance(item, dict) and item.get("id") == location_id)
+    ]
+
+    if len(filtered_locations) == len(saved_locations):
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "⚠️ Выбранная локация не найдена.", reply_markup=locations_menu())
+        return
+
+    user_data["saved_locations"] = filtered_locations
+    if user_data.get("favorite_location_id") == location_id:
+        user_data["favorite_location_id"] = None
+    save_user(user_id, user_data)
+    user_states[user_id] = "locations_menu"
+    rename_location_drafts.pop(user_id, None)
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        chat_id,
+        "✅ Локация удалена.\n\n" + format_saved_locations(user_data),
+        reply_markup=locations_menu(),
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rename_location_pick:"))
+def handle_rename_location_pick_callback(call: types.CallbackQuery) -> None:
+    """Запоминает выбранную локацию и запрашивает новое имя."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+
+    if not location_id:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "⚠️ Не удалось выбрать локацию.", reply_markup=locations_menu())
+        return
+
+    user_data = load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list) or not saved_locations:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Сохранённых локаций пока нет.", reply_markup=locations_menu())
+        return
+
+    location_exists = any(
+        isinstance(item, dict) and item.get("id") == location_id
+        for item in saved_locations
+    )
+    if not location_exists:
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "⚠️ Выбранная локация не найдена.", reply_markup=locations_menu())
+        return
+
+    rename_location_drafts[user_id] = {"location_id": location_id}
+    user_states[user_id] = "waiting_rename_location_title"
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        chat_id,
+        "Введи новое название для локации.",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("savedloc_"))
+def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает выбор локации при добавлении новой сохранённой локации."""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    if call.data == "savedloc_cancel":
+        saved_location_drafts.pop(user_id, None)
+        user_states[user_id] = "locations_menu"
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "Выбор отменён.", reply_markup=locations_menu())
+        return
+
+    if call.data.startswith("savedloc_pick:"):
+        try:
+            index = int(call.data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            saved_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Начни добавление заново.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        draft = saved_location_drafts.get(user_id)
+        locations = draft.get("locations") if isinstance(draft, dict) else None
+        if not isinstance(locations, list) or index < 0 or index >= len(locations):
+            saved_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                chat_id,
+                "⚠️ Список вариантов устарел. Начни добавление заново.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        location_item = build_geocode_item_with_disambiguated_label(locations, index)
+        lat = location_item.get("lat")
+        lon = location_item.get("lon")
+        label = location_item.get("label") or build_location_label(location_item, show_coords=False)
+        if lat is None or lon is None:
+            saved_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                chat_id,
+                "Не удалось определить локацию. Попробуй снова.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        saved_location_drafts[user_id] = {
+            "lat": float(lat),
+            "lon": float(lon),
+            "label": label,
+        }
+        user_states[user_id] = "waiting_new_saved_location_title"
+        bot.answer_callback_query(call.id)
+        bot.send_message(
+            chat_id,
+            "Введи название для этой локации, например: Дом",
+            reply_markup=types.ReplyKeyboardRemove(),
+        )
+        return
+
+    bot.answer_callback_query(call.id)
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("forecast_"))
 def handle_forecast_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
@@ -1706,6 +2078,341 @@ def handle_unknown_text(message: types.Message) -> None:
     """Обрабатывает неизвестный текст."""
     user_id = message.from_user.id
     state = user_states.get(user_id)
+
+    if state == "waiting_location_title":
+        title = (message.text or "").strip()
+        if not title:
+            bot.send_message(message.chat.id, "⚠️ Введи название локации, например: Дом")
+            return
+
+        user_data = load_user(user_id)
+        current_city = user_data.get("city")
+        current_lat = user_data.get("lat")
+        current_lon = user_data.get("lon")
+
+        if current_lat is None or current_lon is None or not current_city:
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "Сначала нужно получить погоду или выбрать локацию.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        save_saved_location_item(
+            user_id=user_id,
+            title=title,
+            label=current_city,
+            lat=float(current_lat),
+            lon=float(current_lon),
+        )
+        user_states[user_id] = "locations_menu"
+        logger.info("Пользователь %s сохранил локацию с title=%s.", user_id, title)
+        bot.send_message(message.chat.id, "✅ Локация сохранена.", reply_markup=locations_menu())
+        return
+
+    if state == "waiting_new_saved_location_title":
+        title = (message.text or "").strip()
+        if not title:
+            bot.send_message(message.chat.id, "⚠️ Введи название локации, например: Дом")
+            return
+
+        draft = saved_location_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Данные локации устарели. Начни добавление заново.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        lat = draft.get("lat")
+        lon = draft.get("lon")
+        label = draft.get("label")
+        if lat is None or lon is None or not label:
+            saved_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Данные локации устарели. Начни добавление заново.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        save_saved_location_item(
+            user_id=user_id,
+            title=title,
+            label=str(label),
+            lat=float(lat),
+            lon=float(lon),
+        )
+        saved_location_drafts.pop(user_id, None)
+        user_states[user_id] = "locations_menu"
+        logger.info("Пользователь %s добавил новую сохранённую локацию с title=%s.", user_id, title)
+        bot.send_message(
+            message.chat.id,
+            "✅ Локация сохранена.",
+            reply_markup=locations_menu(),
+        )
+        return
+
+    if state == "waiting_rename_location_title":
+        new_title = (message.text or "").strip()
+        if not new_title:
+            bot.send_message(message.chat.id, "⚠️ Введи новое название локации.")
+            return
+
+        draft = rename_location_drafts.get(user_id)
+        location_id = draft.get("location_id") if isinstance(draft, dict) else None
+        if not isinstance(location_id, str) or not location_id:
+            rename_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Данные для переименования устарели. Попробуй снова.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        user_data = load_user(user_id)
+        saved_locations = user_data.get("saved_locations", [])
+        if not isinstance(saved_locations, list) or not saved_locations:
+            rename_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "Сохранённых локаций пока нет.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        target_location = next(
+            (item for item in saved_locations if isinstance(item, dict) and item.get("id") == location_id),
+            None,
+        )
+        if not isinstance(target_location, dict):
+            rename_location_drafts.pop(user_id, None)
+            user_states[user_id] = "locations_menu"
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Выбранная локация не найдена.",
+                reply_markup=locations_menu(),
+            )
+            return
+
+        target_location["title"] = new_title
+        user_data["saved_locations"] = saved_locations
+        save_user(user_id, user_data)
+        rename_location_drafts.pop(user_id, None)
+        user_states[user_id] = "locations_menu"
+        bot.send_message(
+            message.chat.id,
+            "✅ Название локации обновлено.",
+            reply_markup=locations_menu(),
+        )
+        return
+
+    if state == "locations_menu":
+        if message.text == "Сохранить текущую локацию":
+            user_data = load_user(user_id)
+            city = user_data.get("city")
+            lat = user_data.get("lat")
+            lon = user_data.get("lon")
+            if lat is None or lon is None or not city:
+                bot.send_message(
+                    message.chat.id,
+                    "Сначала нужно получить погоду или выбрать локацию.",
+                    reply_markup=locations_menu(),
+                )
+                return
+
+            user_states[user_id] = "waiting_location_title"
+            bot.send_message(
+                message.chat.id,
+                "Введи название для этой локации, например: Дом",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return
+
+        if message.text == "Добавить новую локацию":
+            saved_location_drafts.pop(user_id, None)
+            rename_location_drafts.pop(user_id, None)
+            user_states[user_id] = "waiting_new_saved_location_menu"
+            bot.send_message(
+                message.chat.id,
+                "Выбери способ добавления новой локации:",
+                reply_markup=add_saved_location_menu(),
+            )
+            return
+
+        if message.text == "Показать мои локации":
+            user_data = load_user(user_id)
+            bot.send_message(
+                message.chat.id,
+                format_saved_locations(user_data),
+                reply_markup=locations_menu(),
+            )
+            return
+
+        if message.text == "Сделать основной":
+            user_data = load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                bot.send_message(
+                    message.chat.id,
+                    "Сохранённых локаций пока нет.",
+                    reply_markup=locations_menu(),
+                )
+                return
+
+            bot.send_message(
+                message.chat.id,
+                "Выбери основную локацию:",
+                reply_markup=build_favorite_pick_keyboard(saved_locations),
+            )
+            return
+
+        if message.text == "Удалить локацию":
+            user_data = load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                bot.send_message(
+                    message.chat.id,
+                    "Сохранённых локаций пока нет.",
+                    reply_markup=locations_menu(),
+                )
+                return
+            bot.send_message(
+                message.chat.id,
+                "Выбери локацию для удаления:",
+                reply_markup=build_saved_locations_keyboard(saved_locations, "delete_location_pick"),
+            )
+            return
+
+        if message.text == "Переименовать локацию":
+            user_data = load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                bot.send_message(
+                    message.chat.id,
+                    "Сохранённых локаций пока нет.",
+                    reply_markup=locations_menu(),
+                )
+                return
+            bot.send_message(
+                message.chat.id,
+                "Выбери локацию для переименования:",
+                reply_markup=build_saved_locations_keyboard(saved_locations, "rename_location_pick"),
+            )
+            return
+
+        bot.send_message(
+            message.chat.id,
+            "Выбери действие в разделе локаций или нажми «⬅️ В меню».",
+            reply_markup=locations_menu(),
+        )
+        return
+
+    if state == "waiting_new_saved_location_menu":
+        if message.text == "Ввести населённый пункт":
+            user_states[user_id] = "waiting_new_saved_location_text"
+            bot.send_message(
+                message.chat.id,
+                "Введи населённый пункт, который хочешь сохранить.",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return
+
+        if message.text == "Отправить геолокацию":
+            user_states[user_id] = "waiting_new_saved_location_geo"
+            bot.send_message(
+                message.chat.id,
+                "Отправь геолокацию, которую хочешь сохранить.",
+                reply_markup=geo_request_menu(),
+            )
+            return
+
+        bot.send_message(
+            message.chat.id,
+            "Выбери действие кнопкой ниже или нажми «⬅️ В меню».",
+            reply_markup=add_saved_location_menu(),
+        )
+        return
+
+    if state == "waiting_new_saved_location_text":
+        query = (message.text or "").strip()
+        if not query:
+            bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            return
+
+        locations = get_locations(query, limit=5)
+        if not locations:
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
+            )
+            return
+
+        if len(locations) == 1:
+            location_item = build_geocode_item_with_disambiguated_label(locations, 0)
+            lat = location_item.get("lat")
+            lon = location_item.get("lon")
+            label = location_item.get("label") or build_location_label(location_item, show_coords=False)
+            if lat is None or lon is None:
+                user_states[user_id] = "locations_menu"
+                bot.send_message(
+                    message.chat.id,
+                    "Не удалось определить локацию. Попробуй снова.",
+                    reply_markup=locations_menu(),
+                )
+                return
+            saved_location_drafts[user_id] = {
+                "lat": float(lat),
+                "lon": float(lon),
+                "label": label,
+            }
+            user_states[user_id] = "waiting_new_saved_location_title"
+            bot.send_message(
+                message.chat.id,
+                "Введи название для этой локации, например: Дом",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return
+
+        saved_location_drafts[user_id] = {"locations": locations}
+        user_states[user_id] = "waiting_new_saved_location_pick"
+        bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=build_location_pick_keyboard(locations, "savedloc_pick", "savedloc_cancel"),
+        )
+        return
+
+    if state == "waiting_new_saved_location_pick":
+        draft = saved_location_drafts.get(user_id)
+        if not isinstance(draft, dict) or not isinstance(draft.get("locations"), list):
+            user_states[user_id] = "locations_menu"
+            saved_location_drafts.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Список вариантов устарел. Начни добавление заново.",
+                reply_markup=locations_menu(),
+            )
+            return
+        bot.send_message(
+            message.chat.id,
+            "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return
+
+    if state == "waiting_new_saved_location_geo":
+        bot.send_message(
+            message.chat.id,
+            "Отправь геолокацию, которую хочешь сохранить.",
+            reply_markup=geo_request_menu(),
+        )
+        return
 
     if state == "waiting_current_weather_city":
         query = (message.text or "").strip()

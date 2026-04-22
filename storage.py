@@ -12,6 +12,8 @@ def _default_user_data() -> dict:
         "city": "",
         "lat": None,
         "lon": None,
+        "saved_locations": [],
+        "favorite_location_id": None,
         "notifications": {
             "enabled": False,
             "interval_h": 2,
@@ -78,10 +80,21 @@ def load_user(user_id: int) -> dict:
 
     # Объединяем с дефолтом, чтобы гарантировать все нужные поля
     default_data = _default_user_data()
+    saved_locations_raw = user_data.get("saved_locations")
+    if isinstance(saved_locations_raw, list):
+        saved_locations = [item for item in saved_locations_raw if isinstance(item, dict)]
+    else:
+        saved_locations = []
+
+    favorite_location_id_raw = user_data.get("favorite_location_id")
+    favorite_location_id = favorite_location_id_raw if isinstance(favorite_location_id_raw, str) else None
+
     result = {
         "city": user_data.get("city", default_data["city"]),
         "lat": user_data.get("lat", default_data["lat"]),
         "lon": user_data.get("lon", default_data["lon"]),
+        "saved_locations": saved_locations,
+        "favorite_location_id": favorite_location_id,
         "notifications": {
             "enabled": (
                 user_data.get("notifications", {}).get(
