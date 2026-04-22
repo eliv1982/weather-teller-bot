@@ -56,6 +56,7 @@ from handlers.geo import handle_geo_text
 from handlers.callbacks_current import handle_current_weather_callback
 from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
 from handlers.callbacks_compare import handle_compare_location_callback as handle_compare_callback_logic
+from handlers.callbacks_details import handle_details_location_callback as handle_details_callback_logic
 from handlers.callbacks_locations import (
     handle_delete_location_pick_callback as handle_delete_location_callback_logic,
     handle_favorite_pick_callback as handle_favorite_callback_logic,
@@ -123,20 +124,6 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN)
 session_store = SessionStore()
-user_states = session_store.user_states
-# Варианты локаций для сценария «Текущая погода» (несколько совпадений геокодинга)
-current_location_choices = session_store.current_location_choices
-# Варианты локаций при смене локации для уведомлений (несколько совпадений геокодинга)
-alerts_location_choices = session_store.alerts_location_choices
-# Варианты локаций для расширенных данных / прогноза / сравнения (несколько совпадений геокодинга)
-details_location_choices = session_store.details_location_choices
-forecast_location_choices = session_store.forecast_location_choices
-# Для сравнения: {"step": 1|2, "locations": list[dict]}
-compare_location_choices = session_store.compare_location_choices
-# Черновики и варианты для сценария «Добавить новую локацию» в разделе «Мои локации»
-saved_location_drafts = session_store.saved_location_drafts
-# Черновик для сценария «Переименовать локацию»: хранит выбранный location_id
-rename_location_drafts = session_store.rename_location_drafts
 
 ctx = AppContext(
     bot=bot,
@@ -290,7 +277,7 @@ def alerts_worker() -> None:
 def start_current_weather_flow(message: types.Message) -> None:
     """Запускает сценарий ввода населённого пункта для текущей погоды."""
     user_id = message.from_user.id
-    current_location_choices.pop(user_id, None)
+    session_store.current_location_choices.pop(user_id, None)
     session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
     bot.send_message(message.chat.id, "Введи название населённого пункта.")
 
@@ -311,7 +298,7 @@ def start_details_flow(message: types.Message) -> None:
     """Запускает сценарий получения расширенных данных по населённому пункту."""
     user_id = message.from_user.id
     logger.info("Запущен сценарий расширенных данных для пользователя %s.", user_id)
-    details_location_choices.pop(user_id, None)
+    session_store.details_location_choices.pop(user_id, None)
 
     user_data = load_user(user_id)
     saved_city = user_data.get("city")
@@ -331,7 +318,7 @@ def start_details_flow(message: types.Message) -> None:
             "lat": saved_lat,
             "lon": saved_lon,
         }
-        user_states[user_id] = WAITING_DETAILS_USE_SAVED_LOCATION
+        session_store.user_states[user_id] = WAITING_DETAILS_USE_SAVED_LOCATION
         bot.send_message(
             message.chat.id,
             f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
@@ -339,7 +326,7 @@ def start_details_flow(message: types.Message) -> None:
         )
         return
 
-    user_states[user_id] = WAITING_DETAILS_CITY
+    session_store.user_states[user_id] = WAITING_DETAILS_CITY
     bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
 
 
@@ -364,9 +351,9 @@ def send_details_by_coordinates(
             lat,
             lon,
         )
-        user_states.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
         session_store.details_saved_drafts.pop(user_id, None)
-        details_location_choices.pop(user_id, None)
+        session_store.details_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить расширенные данные. Попробуй позже.",
@@ -390,9 +377,9 @@ def send_details_by_coordinates(
     save_user(user_id, user_data)
 
     answer = format_details_response(city_label, weather, air_components)
-    user_states.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
     session_store.details_saved_drafts.pop(user_id, None)
-    details_location_choices.pop(user_id, None)
+    session_store.details_location_choices.pop(user_id, None)
     bot.send_message(message.chat.id, answer, reply_markup=main_menu())
     return True
 
@@ -402,8 +389,8 @@ def start_compare_flow(message: types.Message) -> None:
     user_id = message.from_user.id
     logger.info("Запущен сценарий сравнения населённых пунктов для пользователя %s.", user_id)
     session_store.compare_drafts.pop(user_id, None)
-    compare_location_choices.pop(user_id, None)
-    user_states[user_id] = WAITING_COMPARE_CITY_1
+    session_store.compare_location_choices.pop(user_id, None)
+    session_store.user_states[user_id] = WAITING_COMPARE_CITY_1
     bot.send_message(message.chat.id, "Введи первый населённый пункт для сравнения.")
 
 
@@ -411,7 +398,7 @@ def start_forecast_flow(message: types.Message) -> None:
     """Запускает сценарий прогноза на 5 дней."""
     user_id = message.from_user.id
     logger.info("Запущен сценарий прогноза на 5 дней для пользователя %s.", user_id)
-    forecast_location_choices.pop(user_id, None)
+    session_store.forecast_location_choices.pop(user_id, None)
 
     user_data = load_user(user_id)
     saved_city = user_data.get("city")
@@ -424,7 +411,7 @@ def start_forecast_flow(message: types.Message) -> None:
             "lat": saved_lat,
             "lon": saved_lon,
         }
-        user_states[user_id] = WAITING_FORECAST_USE_SAVED_LOCATION
+        session_store.user_states[user_id] = WAITING_FORECAST_USE_SAVED_LOCATION
         bot.send_message(
             message.chat.id,
             f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
@@ -432,7 +419,7 @@ def start_forecast_flow(message: types.Message) -> None:
         )
         return
 
-    user_states[user_id] = WAITING_FORECAST_CITY
+    session_store.user_states[user_id] = WAITING_FORECAST_CITY
     bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
 
 
@@ -476,10 +463,10 @@ def send_forecast_by_coordinates(
             lat,
             lon,
         )
-        user_states.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
         session_store.forecast_saved_drafts.pop(user_id, None)
         session_store.forecast_cache.pop(user_id, None)
-        forecast_location_choices.pop(user_id, None)
+        session_store.forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить прогноз. Попробуй позже.",
@@ -498,10 +485,10 @@ def send_forecast_by_coordinates(
     grouped = group_forecast_by_day(forecast_items)
     if not grouped:
         logger.warning("Прогноз пришёл пустым после группировки для пользователя %s.", user_id)
-        user_states.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
         session_store.forecast_saved_drafts.pop(user_id, None)
         session_store.forecast_cache.pop(user_id, None)
-        forecast_location_choices.pop(user_id, None)
+        session_store.forecast_location_choices.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить прогноз. Попробуй позже.",
@@ -517,9 +504,9 @@ def send_forecast_by_coordinates(
         save_user(user_id, user_data)
 
     session_store.forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
-    user_states.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
     session_store.forecast_saved_drafts.pop(user_id, None)
-    forecast_location_choices.pop(user_id, None)
+    session_store.forecast_location_choices.pop(user_id, None)
     show_forecast_days_message(message, user_id)
     return True
 
@@ -545,9 +532,9 @@ def complete_compare_two_locations(
 
     if not weather_1 or not weather_2:
         logger.warning("Не удалось получить данные для сравнения у пользователя %s.", user_id)
-        user_states.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
         session_store.compare_drafts.pop(user_id, None)
-        compare_location_choices.pop(user_id, None)
+        session_store.compare_location_choices.pop(user_id, None)
         bot.send_message(
             chat_id,
             "Не удалось получить данные для сравнения. Попробуй позже.",
@@ -562,9 +549,9 @@ def complete_compare_two_locations(
         city_label_1,
         city_label_2,
     )
-    user_states.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
     session_store.compare_drafts.pop(user_id, None)
-    compare_location_choices.pop(user_id, None)
+    session_store.compare_location_choices.pop(user_id, None)
     bot.send_message(chat_id, answer, reply_markup=main_menu())
 
 
@@ -572,14 +559,7 @@ def complete_compare_two_locations(
 def handle_start(message: types.Message) -> None:
     """Обрабатывает команду /start."""
     logger.info("Получена команда /start от пользователя %s.", message.from_user.id)
-    user_states.pop(message.from_user.id, None)
-    current_location_choices.pop(message.from_user.id, None)
-    alerts_location_choices.pop(message.from_user.id, None)
-    details_location_choices.pop(message.from_user.id, None)
-    forecast_location_choices.pop(message.from_user.id, None)
-    compare_location_choices.pop(message.from_user.id, None)
-    saved_location_drafts.pop(message.from_user.id, None)
-    rename_location_drafts.pop(message.from_user.id, None)
+    session_store.clear_all_user_runtime(message.from_user.id)
     text = (
         "Привет! Я Weather Teller 🌤\n\n"
         "Помогу:\n"
@@ -700,8 +680,8 @@ def handle_back_to_menu(message: types.Message) -> None:
         WAITING_ALERTS_LOCATION_PICK,
         WAITING_ALERTS_LOCATION_GEO,
     }:
-        alerts_location_choices.pop(user_id, None)
-        user_states[user_id] = ALERTS_MENU
+        session_store.alerts_location_choices.pop(user_id, None)
+        session_store.user_states[user_id] = ALERTS_MENU
         user_data = ensure_notifications_defaults(load_user(user_id))
         bot.send_message(
             message.chat.id,
@@ -721,7 +701,7 @@ def handle_location_message(message: types.Message) -> None:
     state = session_store.get_state(user_id)
 
     if state == WAITING_ALERTS_LOCATION_GEO:
-        alerts_location_choices.pop(user_id, None)
+        session_store.alerts_location_choices.pop(user_id, None)
         location_data = message.location
         lat = location_data.latitude
         lon = location_data.longitude
@@ -743,7 +723,7 @@ def handle_location_message(message: types.Message) -> None:
         user_data["lon"] = lon
         save_user(user_id, user_data)
 
-        user_states[user_id] = ALERTS_MENU
+        session_store.user_states[user_id] = ALERTS_MENU
         user_data = ensure_notifications_defaults(load_user(user_id))
         bot.send_message(
             message.chat.id,
@@ -762,12 +742,12 @@ def handle_location_message(message: types.Message) -> None:
         else:
             label = "Выбранная геолокация"
 
-        saved_location_drafts[user_id] = {
+        session_store.saved_location_drafts[user_id] = {
             "lat": float(lat),
             "lon": float(lon),
             "label": label,
         }
-        user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
+        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
         bot.send_message(
             message.chat.id,
             "Введи название для этой локации, например: Дом",
@@ -794,7 +774,7 @@ def handle_location_message(message: types.Message) -> None:
             lat,
             lon,
         )
-        user_states.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
         bot.send_message(
             message.chat.id,
             "Не удалось получить данные о погоде по геолокации. Попробуй позже.",
@@ -822,7 +802,7 @@ def handle_location_message(message: types.Message) -> None:
         lat,
         lon,
     )
-    user_states.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
     bot.send_message(message.chat.id, answer, reply_markup=main_menu())
 
 
@@ -850,74 +830,13 @@ def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
 @bot.callback_query_handler(func=lambda call: call.data.startswith("details_"))
 def handle_details_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации для расширенных данных (inline) или отмену."""
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-
-    if call.data == "details_cancel":
-        details_location_choices.pop(user_id, None)
-        user_states.pop(user_id, None)
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "Выбор отменён.", reply_markup=main_menu())
-        return
-
-    if call.data.startswith("details_pick:"):
-        try:
-            index = int(call.data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            details_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        choices = details_location_choices.get(user_id)
-        if not choices or index < 0 or index >= len(choices):
-            bot.answer_callback_query(call.id)
-            user_states.pop(user_id, None)
-            details_location_choices.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        location_item = build_geocode_item_with_disambiguated_label(choices, index)
-        logger.info(
-            "Пользователь %s выбрал локацию для расширенных данных #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
-        )
-        bot.answer_callback_query(call.id)
-        stub = _message_stub_for_chat(chat_id)
-        city = location_item.get("label") or build_location_label(location_item, show_coords=False)
-        lat = location_item.get("lat")
-        lon = location_item.get("lon")
-        if lat is None or lon is None:
-            details_location_choices.pop(user_id, None)
-            user_states.pop(user_id, None)
-            bot.send_message(
-                chat_id,
-                "Не удалось получить расширенные данные. Попробуй позже.",
-                reply_markup=main_menu(),
-            )
-            return
-        send_details_by_coordinates(
-            stub,
-            user_id,
-            float(lat),
-            float(lon),
-            city,
-            preferred_city_label=city,
-        )
-        return
-
-    bot.answer_callback_query(call.id)
+    handle_details_callback_logic(
+        call,
+        ctx=ctx,
+        session_store=session_store,
+        send_details_by_coordinates=send_details_by_coordinates,
+        _message_stub_for_chat=_message_stub_for_chat,
+    )
 
 
 @bot.callback_query_handler(
