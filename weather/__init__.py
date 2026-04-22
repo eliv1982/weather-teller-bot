@@ -1,14 +1,6 @@
-"""
-Фасад совместимости для старых импортов weather_app.
+"""Пакет погодных модулей: API, локации и качество воздуха."""
 
-Основная логика разнесена по модулям:
-- weather.api
-- weather.locations
-- weather.air_quality
-"""
-
-from weather.air_quality import analyze_air_pollution
-from weather.api import (
+from .api import (
     LAST_ERROR_TYPE,
     OW_API_KEY,
     get_air_pollution,
@@ -19,7 +11,8 @@ from weather.api import (
     get_locations,
     safe_request,
 )
-from weather.locations import (
+from .air_quality import analyze_air_pollution
+from .locations import (
     build_disambiguated_location_labels,
     build_geocode_item_with_disambiguated_label,
     build_location_label,
@@ -31,17 +24,6 @@ from weather.locations import (
     location_label_with_coords,
     rank_locations,
 )
-
-
-def format_weather(weather: dict) -> str:
-    """Форматирует короткую строку текущей погоды для пользователя."""
-    location_name = weather.get("_display_location") or weather.get("name") or "неизвестный город"
-    temp = weather.get("main", {}).get("temp")
-    description = weather.get("weather", [{}])[0].get("description", "без описания")
-    if temp is None:
-        return f"Погода в городе {location_name}: данные о температуре недоступны."
-    return f"Погода в городе {location_name}: {temp:.1f}°C, {description}"
-
 
 __all__ = [
     "OW_API_KEY",
@@ -61,7 +43,6 @@ __all__ = [
     "get_location_by_coordinates",
     "get_current_weather",
     "get_coordinates",
-    "format_weather",
     "get_forecast_5d3h",
     "get_air_pollution",
     "analyze_air_pollution",
