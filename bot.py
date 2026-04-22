@@ -116,7 +116,13 @@ from handlers.states import (
     WAITING_NEW_SAVED_LOCATION_TITLE,
     WAITING_RENAME_LOCATION_TITLE,
 )
-from storage import load_user, save_user, load_all_users, save_all_users
+from postgres_storage import (
+    init_postgres_db,
+    load_all_users,
+    load_user,
+    save_all_users,
+    save_user,
+)
 from session_store import SessionStore
 from app_context import AppContext
 from flows import (
@@ -725,6 +731,13 @@ if __name__ == "__main__":
         process_id = os.getpid()
         # Если появляются дубли ответов, сначала проверь, не запущены ли два экземпляра бота одновременно.
         logger.info("Запуск бота. PID процесса: %s", process_id)
+        try:
+            init_postgres_db()
+            logger.info("Инициализация PostgreSQL выполнена успешно.")
+        except Exception:
+            logger.exception("Ошибка инициализации PostgreSQL. Проверь параметры подключения и доступность БД.")
+            raise SystemExit(1)
+
         alerts_thread = threading.Thread(target=alerts_worker, daemon=True)
         alerts_thread.start()
         logger.info("Фоновый поток alerts_worker запущен (PID=%s).", process_id)
