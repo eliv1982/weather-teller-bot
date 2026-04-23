@@ -460,12 +460,18 @@ def alerts_worker(*, ctx) -> None:
                         changed = True
                         continue
 
-                    alerts = ctx.detect_weather_alerts(forecast_items)
+                    alerts = ctx.detect_weather_alerts(
+                        forecast_items,
+                        now_ts=now_ts,
+                        horizon_hours=24,
+                    )
                     if alerts:
                         title_or_label = sub.get("title") or sub.get("label") or "неизвестная локация"
-                        first_alert = str(alerts[0])
+                        first_alert = alerts[0]
+                        first_alert_text = str(first_alert.get("text") or "")
+                        first_alert_slot_utc = int(first_alert.get("slot_ts_utc") or 0)
                         location_id = str(sub.get("location_id") or "no_id")
-                        alert_signature = f"{location_id}|{first_alert}"
+                        alert_signature = f"{location_id}|{first_alert_slot_utc}|{first_alert_text}"
                         previous_signature = str(sub.get("last_alert_signature") or "")
 
                         if previous_signature == alert_signature:
@@ -476,7 +482,7 @@ def alerts_worker(*, ctx) -> None:
                         alert_text = (
                             "🌤 Weather Teller\n"
                             f"Для локации {title_or_label} найдено изменение погоды:\n"
-                            f"• {first_alert}\n"
+                            f"• {first_alert_text}\n"
                             "Открой Weather Teller и посмотри подробный прогноз по этой локации."
                         )
                         try:

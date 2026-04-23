@@ -183,11 +183,20 @@ def get_forecast_5d3h(lat: float, lon: float) -> list[dict] | None:
     try:
         data = response.json()
         items = data.get("list")
+        city = data.get("city") if isinstance(data, dict) else {}
+        tz_offset = city.get("timezone", 0) if isinstance(city, dict) else 0
     except ValueError:
         return None
     if not isinstance(items, list):
         return None
-    return items
+    enriched: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        row["_timezone_offset"] = int(tz_offset) if isinstance(tz_offset, (int, float)) else 0
+        enriched.append(row)
+    return enriched
 
 
 def get_air_pollution(lat: float, lon: float) -> dict | None:
