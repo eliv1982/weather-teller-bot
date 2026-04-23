@@ -166,6 +166,9 @@ docker compose -f docker-compose.postgres.yml down
 ## Запуск всего проекта в Docker
 
 Этот режим поднимает оба сервиса: `postgres` и `weather_bot`.
+В `docker-compose.yml` для PostgreSQL включён `healthcheck` (`pg_isready`), а `weather_bot`
+запускается после статуса `service_healthy`.
+Дополнительно в коде бота сохранена retry-логика подключения к БД как запасной уровень устойчивости.
 
 ### 1) Подготовить docker-совместимый `.env`
 
