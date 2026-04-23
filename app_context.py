@@ -28,6 +28,7 @@ class AppContext:
     build_saved_locations_keyboard: Any
     build_scenario_location_choice_keyboard: Any
     build_favorite_pick_keyboard: Any
+    build_ai_action_keyboard: Any
     format_alerts_status: Any
     format_alert_subscriptions: Any
     format_compare_response: Any
@@ -36,6 +37,7 @@ class AppContext:
     format_weather_response: Any
     help_text: Any
     alerts_subscription_service: Any
+    ai_weather_service: Any
     ensure_notifications_defaults: Any
     ensure_alert_subscriptions_defaults: Any
     migrate_legacy_alert_to_subscriptions: Any

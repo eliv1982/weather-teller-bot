@@ -1,3 +1,4 @@
+import time
 from telebot import types
 
 from .states import (
@@ -40,6 +41,9 @@ def handle_current_text(
                 location_item,
                 user_states=session_store.user_states,
                 current_location_choices=session_store.current_location_choices,
+                ai_current_snapshots=session_store.ai_current_snapshots,
+                create_ai_snapshot_id_fn=session_store.generate_ai_snapshot_id,
+                cleanup_ai_snapshots_fn=session_store.cleanup_ai_snapshots,
                 load_user_fn=ctx.load_user,
                 save_user_fn=ctx.save_user,
             )
@@ -98,7 +102,23 @@ def handle_current_text(
             user_data["lon"] = lon
             ctx.save_user(user_id, user_data)
             session_store.user_states.pop(user_id, None)
+            snapshot_id = session_store.generate_ai_snapshot_id(user_id)
+            session_store.ai_current_snapshots[snapshot_id] = {
+                "user_id": user_id,
+                "city_label": city_label,
+                "weather": weather,
+                "created_at": time.time(),
+            }
+            session_store.cleanup_ai_snapshots()
             ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
+            ctx.bot.send_message(
+                message.chat.id,
+                "✨ Хочешь короткий и понятный разбор?",
+                reply_markup=ctx.build_ai_action_keyboard(
+                    "✨ Объяснить по-человечески",
+                    f"ai_current_explain:{snapshot_id}",
+                ),
+            )
             return True
 
         ctx.logger.info("Пользователь %s ввёл запрос для текущей погоды: %s", user_id, query)
@@ -125,6 +145,9 @@ def handle_current_text(
                 locations[0],
                 user_states=session_store.user_states,
                 current_location_choices=session_store.current_location_choices,
+                ai_current_snapshots=session_store.ai_current_snapshots,
+                create_ai_snapshot_id_fn=session_store.generate_ai_snapshot_id,
+                cleanup_ai_snapshots_fn=session_store.cleanup_ai_snapshots,
                 load_user_fn=ctx.load_user,
                 save_user_fn=ctx.save_user,
             )
@@ -172,7 +195,23 @@ def handle_current_text(
         user_data["lon"] = lon
         ctx.save_user(user_id, user_data)
         session_store.user_states.pop(user_id, None)
+        snapshot_id = session_store.generate_ai_snapshot_id(user_id)
+        session_store.ai_current_snapshots[snapshot_id] = {
+            "user_id": user_id,
+            "city_label": city_label,
+            "weather": weather,
+            "created_at": time.time(),
+        }
+        session_store.cleanup_ai_snapshots()
         ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
+        ctx.bot.send_message(
+            message.chat.id,
+            "✨ Хочешь короткий и понятный разбор?",
+            reply_markup=ctx.build_ai_action_keyboard(
+                "✨ Объяснить по-человечески",
+                f"ai_current_explain:{snapshot_id}",
+            ),
+        )
         return True
 
     if state == WAITING_CURRENT_WEATHER_PICK:

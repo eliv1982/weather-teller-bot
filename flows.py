@@ -301,7 +301,24 @@ def send_details_by_coordinates(
     session_store.user_states.pop(user_id, None)
     session_store.details_saved_drafts.pop(user_id, None)
     session_store.details_location_choices.pop(user_id, None)
+    snapshot_id = session_store.generate_ai_snapshot_id(user_id)
+    session_store.ai_details_snapshots[snapshot_id] = {
+        "user_id": user_id,
+        "city_label": city_label,
+        "weather": weather,
+        "air_components": air_components,
+        "created_at": time.time(),
+    }
+    session_store.cleanup_ai_snapshots()
     ctx.bot.send_message(message.chat.id, answer, reply_markup=ctx.main_menu())
+    ctx.bot.send_message(
+        message.chat.id,
+        "💡 Хочешь простое пояснение данных?",
+        reply_markup=ctx.build_ai_action_keyboard(
+            "💡 Пояснить данные",
+            f"ai_details_explain:{snapshot_id}",
+        ),
+    )
     return True
 
 

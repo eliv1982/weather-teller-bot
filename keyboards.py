@@ -133,6 +133,12 @@ def build_forecast_day_keyboard(days: list[str], current_day: str) -> types.Inli
     """Создаёт inline-кнопки для выбранного дня прогноза."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton(text="📅 К дням", callback_data="forecast_back"))
+    keyboard.add(
+        types.InlineKeyboardButton(
+            text="🪄 Краткая рекомендация",
+            callback_data=f"ai_forecast_day:{current_day}",
+        )
+    )
 
     index = days.index(current_day)
     nav_buttons = []
@@ -146,6 +152,13 @@ def build_forecast_day_keyboard(days: list[str], current_day: str) -> types.Inli
         keyboard.row(*nav_buttons)
     keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="forecast_menu"))
 
+    return keyboard
+
+
+def build_ai_action_keyboard(button_text: str, callback_data: str) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру с одной AI-кнопкой действия."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text=button_text, callback_data=callback_data))
     return keyboard
 
 

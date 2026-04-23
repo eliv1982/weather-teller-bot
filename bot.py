@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+import time
 from functools import partial
 from types import SimpleNamespace
 from dotenv import load_dotenv
@@ -29,12 +30,14 @@ from keyboards import (
     build_location_pick_keyboard,
     build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard,
+    build_ai_action_keyboard,
     geo_request_menu,
     location_input_menu,
     locations_menu,
     main_menu,
     yes_no_menu,
 )
+from ai_weather_service import AiWeatherService
 from formatters import (
     format_alerts_status,
     format_alert_subscriptions,
@@ -74,6 +77,7 @@ from handlers.callbacks_locations import (
     handle_saved_location_pick_callback as handle_saved_location_callback_logic,
 )
 from handlers.callbacks_forecast import handle_forecast_callback as handle_forecast_callback_logic
+from handlers.callbacks_ai import handle_ai_callback as handle_ai_callback_logic
 from handlers.states import (
     ALERTS_STATES,
     COMPARE_STATES,
@@ -163,6 +167,7 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN)
 session_store = SessionStore()
 alerts_subscription_service = AlertsSubscriptionService()
+ai_weather_service = AiWeatherService()
 
 ctx = AppContext(
     bot=bot,
@@ -187,6 +192,7 @@ ctx = AppContext(
     build_saved_locations_keyboard=build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
+    build_ai_action_keyboard=build_ai_action_keyboard,
     format_alerts_status=format_alerts_status,
     format_alert_subscriptions=format_alert_subscriptions,
     format_compare_response=format_compare_response,
@@ -195,6 +201,7 @@ ctx = AppContext(
     format_weather_response=format_weather_response,
     help_text=help_text,
     alerts_subscription_service=alerts_subscription_service,
+    ai_weather_service=ai_weather_service,
     ensure_notifications_defaults=ensure_notifications_defaults,
     ensure_alert_subscriptions_defaults=alerts_subscription_service.ensure_defaults,
     migrate_legacy_alert_to_subscriptions=migrate_legacy_alert_to_subscriptions,
@@ -252,12 +259,14 @@ def handle_start(message: types.Message) -> None:
     text = (
         "Привет! Я Weather Teller 🌤\n\n"
         "Помогу:\n"
-        "• узнать текущую погоду\n"
+        "• быстро узнать текущую погоду\n"
         "• посмотреть прогноз на 5 дней\n"
-        "• получить погоду по геолокации\n"
-        "• сравнить города\n"
-        "• посмотреть расширенные данные и качество воздуха\n\n"
-        "Выбери действие ниже или используй команды через Menu."
+        "• проверить качество воздуха и расширенные данные\n"
+        "• сравнить погоду в разных городах\n"
+        "• сохранить важные локации\n"
+        "• получать уведомления об изменениях\n"
+        "• объяснить погоду по-человечески ✨\n\n"
+        "Выбери действие ниже — и поехали."
     )
     bot.send_message(message.chat.id, text, reply_markup=main_menu())
 
@@ -505,7 +514,23 @@ def handle_location_message(message: types.Message) -> None:
         lon,
     )
     session_store.user_states.pop(user_id, None)
+    snapshot_id = session_store.generate_ai_snapshot_id(user_id)
+    session_store.ai_current_snapshots[snapshot_id] = {
+        "user_id": user_id,
+        "city_label": city_label,
+        "weather": weather,
+        "created_at": time.time(),
+    }
+    session_store.cleanup_ai_snapshots()
     bot.send_message(message.chat.id, answer, reply_markup=main_menu())
+    bot.send_message(
+        message.chat.id,
+        "✨ Хочешь короткий и понятный разбор?",
+        reply_markup=build_ai_action_keyboard(
+            "✨ Объяснить по-человечески",
+            f"ai_current_explain:{snapshot_id}",
+        ),
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("current_"))
@@ -644,6 +669,16 @@ def handle_yes_no_callback(call: types.CallbackQuery) -> None:
         return
 
     handle_unknown_text(stub_message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("ai_"))
+def handle_ai_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает AI-действия для текущей погоды, прогноза и расширенных данных."""
+    handle_ai_callback_logic(
+        call,
+        ctx=ctx,
+        session_store=session_store,
+    )
 
 
 @bot.message_handler(func=lambda message: True)

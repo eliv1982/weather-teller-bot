@@ -4,6 +4,7 @@ Weather Teller is a Telegram weather bot built with Python and OpenWeather API.
 It provides current weather, 5-day forecast, geolocation weather, detailed metrics, air quality, and city comparison.  
 The bot supports saved/favorite locations, multi-location alert subscriptions, and manual coordinate input.  
 Current architecture uses PostgreSQL as the main storage and is ready for Docker-based local/server deployment.  
+The bot also includes an optional AI overlay for human-friendly weather explanations via OpenAI API with safe fallback mode.  
 The project can run both as local Python app and as a full Docker Compose stack.
 
 ## Описание проекта
@@ -22,6 +23,7 @@ Weather Teller — Telegram-бот для получения и монитори
 - ручной ввод координат;
 - хранение данных в PostgreSQL;
 - запуск в Docker / Docker Compose.
+- AI-объяснения погоды (опционально, через OpenAI API, с fallback без API).
 
 ## Функциональность
 
@@ -34,6 +36,9 @@ Weather Teller — Telegram-бот для получения и монитори
 - **Основная локация**: быстрый выбор любимой локации в сценариях погоды/прогноза/деталей.
 - **Уведомления по нескольким локациям**: подписки с интервалом проверки, включение/выключение, удаление.
 - **Ввод координат вручную**: поддержка форматов `lat, lon` и `lat lon`.
+- **AI-объяснение текущей погоды**: кнопка с кратким human-friendly разбором после ответа по текущей погоде.
+- **AI-рекомендация по прогнозу дня**: кнопка в карточке дня с краткой рекомендацией по выходу и осадкам.
+- **AI-пояснение расширенных данных**: кнопка с простым пояснением влажности, ветра, видимости и воздуха.
 
 ## Стек
 
@@ -44,6 +49,7 @@ Weather Teller — Telegram-бот для получения и монитори
 - Docker / Docker Compose
 - python-dotenv
 - psycopg v3 (`psycopg[binary]`)
+- OpenAI SDK (`openai`)
 
 ## Структура проекта
 
@@ -90,12 +96,15 @@ PGPORT=5432
 PGDATABASE=weather_teller
 PGUSER=weather_user
 PGPASSWORD=change_me_strong_password
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 Важно:
 
 - для локального запуска вне Docker обычно `PGHOST=localhost`;
 - для запуска в Docker Compose (когда бот в контейнере) должен быть `PGHOST=postgres`.
+- если `OPENAI_API_KEY` не задан, бот продолжает работать в fallback-режиме без падений.
 
 ## Локальный запуск
 

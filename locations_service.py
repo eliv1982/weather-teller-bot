@@ -3,7 +3,7 @@ import time
 
 from alerts_service import ensure_notifications_defaults
 from formatters import format_alerts_status, format_weather_response
-from keyboards import alerts_menu, main_menu
+from keyboards import alerts_menu, build_ai_action_keyboard, main_menu
 from postgres_storage import load_user, save_user
 from weather_app import build_location_label, get_current_weather
 
@@ -82,6 +82,9 @@ def complete_current_weather_from_location(
     *,
     user_states: dict,
     current_location_choices: dict,
+    ai_current_snapshots: dict | None = None,
+    create_ai_snapshot_id_fn=None,
+    cleanup_ai_snapshots_fn=None,
     load_user_fn=load_user,
     save_user_fn=save_user,
 ) -> None:
@@ -143,7 +146,24 @@ def complete_current_weather_from_location(
     )
     user_states.pop(user_id, None)
     current_location_choices.pop(user_id, None)
+    callback_data = "ai_current_explain"
+    if ai_current_snapshots is not None and callable(create_ai_snapshot_id_fn):
+        snapshot_id = str(create_ai_snapshot_id_fn(user_id))
+        ai_current_snapshots[snapshot_id] = {
+            "user_id": user_id,
+            "city_label": city_label,
+            "weather": weather,
+            "created_at": time.time(),
+        }
+        if callable(cleanup_ai_snapshots_fn):
+            cleanup_ai_snapshots_fn()
+        callback_data = f"ai_current_explain:{snapshot_id}"
     bot.send_message(chat_id, answer, reply_markup=main_menu())
+    bot.send_message(
+        chat_id,
+        "✨ Хочешь короткий и понятный разбор?",
+        reply_markup=build_ai_action_keyboard("✨ Объяснить по-человечески", callback_data),
+    )
 
 
 def complete_alerts_location_from_item(

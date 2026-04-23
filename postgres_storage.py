@@ -1,5 +1,6 @@
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
@@ -163,6 +164,18 @@ def init_postgres_db() -> None:
     CREATE INDEX IF NOT EXISTS idx_alert_subscriptions_user_id ON alert_subscriptions(user_id);
     CREATE INDEX IF NOT EXISTS idx_alert_subscriptions_user_enabled ON alert_subscriptions(user_id, enabled);
     """
+    ai_response_cache_sql = """
+    CREATE TABLE IF NOT EXISTS ai_response_cache (
+        cache_key TEXT PRIMARY KEY,
+        scenario TEXT NOT NULL,
+        response_text TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NULL
+    );
+    """
+    ai_response_cache_indexes_sql = """
+    CREATE INDEX IF NOT EXISTS idx_ai_response_cache_expires_at ON ai_response_cache(expires_at);
+    """
 
     with _cursor(commit=True) as cur:
         cur.execute(users_sql)
@@ -171,6 +184,65 @@ def init_postgres_db() -> None:
         cur.execute(alert_subscriptions_sql)
         cur.execute(saved_locations_indexes_sql)
         cur.execute(alert_subscriptions_indexes_sql)
+        cur.execute(ai_response_cache_sql)
+        cur.execute(ai_response_cache_indexes_sql)
+
+
+def get_ai_cached_response(cache_key: str) -> str | None:
+    """Возвращает кэшированный AI-ответ по ключу, если он не протух."""
+    if not cache_key:
+        return None
+
+    with _cursor(commit=True) as cur:
+        cur.execute(
+            """
+            SELECT response_text, expires_at
+            FROM ai_response_cache
+            WHERE cache_key = %s;
+            """,
+            (cache_key,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        expires_at = row.get("expires_at")
+        if expires_at is not None and expires_at <= datetime.utcnow():
+            cur.execute("DELETE FROM ai_response_cache WHERE cache_key = %s;", (cache_key,))
+            return None
+
+        response_text = row.get("response_text")
+        return str(response_text) if response_text is not None else None
+
+
+def save_ai_cached_response(
+    cache_key: str,
+    scenario: str,
+    response_text: str,
+    *,
+    ttl_seconds: int | None = None,
+) -> None:
+    """Сохраняет AI-ответ в кэш PostgreSQL с TTL."""
+    if not cache_key or not scenario or not response_text:
+        return
+
+    expires_at = None
+    if isinstance(ttl_seconds, int) and ttl_seconds > 0:
+        expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+
+    with _cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO ai_response_cache (cache_key, scenario, response_text, expires_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (cache_key) DO UPDATE SET
+                scenario = EXCLUDED.scenario,
+                response_text = EXCLUDED.response_text,
+                expires_at = EXCLUDED.expires_at,
+                created_at = CURRENT_TIMESTAMP;
+            """,
+            (cache_key, scenario, response_text, expires_at),
+        )
 
 
 def _load_saved_locations(cur, user_id: int) -> list[dict]:

@@ -56,6 +56,9 @@ def handle_current_weather_callback(
             location_item,
             user_states=session_store.user_states,
             current_location_choices=session_store.current_location_choices,
+            ai_current_snapshots=session_store.ai_current_snapshots,
+            create_ai_snapshot_id_fn=session_store.generate_ai_snapshot_id,
+            cleanup_ai_snapshots_fn=session_store.cleanup_ai_snapshots,
             load_user_fn=ctx.load_user,
             save_user_fn=ctx.save_user,
         )
