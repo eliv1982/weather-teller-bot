@@ -3,6 +3,7 @@ from telebot import types
 from .states import (
     WAITING_FORECAST_CITY,
     WAITING_FORECAST_COORDS,
+    WAITING_FORECAST_GEO,
     WAITING_FORECAST_PICK,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
@@ -141,6 +142,14 @@ def handle_forecast_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
+        if query == "Отправить геолокацию":
+            session_store.user_states[user_id] = WAITING_FORECAST_GEO
+            ctx.bot.send_message(
+                message.chat.id,
+                "Отправь геолокацию через кнопку ниже.",
+                reply_markup=ctx.geo_request_menu(),
+            )
+            return True
 
         parsed = parse_coordinates(query)
         if parsed is not None:
@@ -164,7 +173,7 @@ def handle_forecast_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
@@ -242,6 +251,14 @@ def handle_forecast_text(
         ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state == WAITING_FORECAST_GEO:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Отправь геолокацию через кнопку ниже.",
+            reply_markup=ctx.geo_request_menu(),
         )
         return True
 

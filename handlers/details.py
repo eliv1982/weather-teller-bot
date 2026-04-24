@@ -3,6 +3,7 @@ from telebot import types
 from .states import (
     WAITING_DETAILS_CITY,
     WAITING_DETAILS_COORDS,
+    WAITING_DETAILS_GEO,
     WAITING_DETAILS_PICK,
     WAITING_DETAILS_USE_FAVORITE,
     WAITING_DETAILS_USE_SAVED_LOCATION,
@@ -94,6 +95,14 @@ def handle_details_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
+        if query == "Отправить геолокацию":
+            session_store.user_states[user_id] = WAITING_DETAILS_GEO
+            ctx.bot.send_message(
+                message.chat.id,
+                "Отправь геолокацию через кнопку ниже.",
+                reply_markup=ctx.geo_request_menu(),
+            )
+            return True
 
         parsed = parse_coordinates(query)
         if parsed is not None:
@@ -116,7 +125,7 @@ def handle_details_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.logger.info("Населённый пункт не найден для расширенных данных у пользователя %s: %s", user_id, query)
             ctx.bot.send_message(
@@ -197,6 +206,14 @@ def handle_details_text(
         ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state == WAITING_DETAILS_GEO:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Отправь геолокацию через кнопку ниже.",
+            reply_markup=ctx.geo_request_menu(),
         )
         return True
 

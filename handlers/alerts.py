@@ -88,7 +88,7 @@ def handle_alerts_text(
             return True
 
         locations = ctx.get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,

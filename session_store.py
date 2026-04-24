@@ -21,9 +21,11 @@ class SessionStore:
         self.details_location_choices: dict[int, list] = {}
         self.forecast_location_choices: dict[int, list] = {}
         self.compare_location_choices: dict[int, dict] = {}
+        self.ai_compare_location_choices: dict[int, list] = {}
         self.saved_location_drafts: dict[int, dict] = {}
         self.rename_location_drafts: dict[int, dict] = {}
         self.alerts_subscription_drafts: dict[int, dict] = {}
+        self.ai_compare_drafts: dict[int, dict] = {}
 
     def get_state(self, user_id: int) -> str | None:
         """Возвращает текущее состояние пользователя."""
@@ -44,12 +46,14 @@ class SessionStore:
         self.details_location_choices.pop(user_id, None)
         self.forecast_location_choices.pop(user_id, None)
         self.compare_location_choices.pop(user_id, None)
+        self.ai_compare_location_choices.pop(user_id, None)
 
     def clear_saved_location_flows(self, user_id: int) -> None:
         """Очищает черновики сценариев раздела «Мои локации»."""
         self.saved_location_drafts.pop(user_id, None)
         self.rename_location_drafts.pop(user_id, None)
         self.alerts_subscription_drafts.pop(user_id, None)
+        self.ai_compare_drafts.pop(user_id, None)
 
     def generate_ai_snapshot_id(self, user_id: int) -> str:
         """Генерирует короткий уникальный snapshot_id для AI-кнопок."""

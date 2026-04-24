@@ -17,6 +17,8 @@ class AppContext:
     alerts_add_location_menu: Any
     locations_menu: Any
     add_saved_location_menu: Any
+    ai_compare_mode_menu: Any
+    ai_compare_location_method_menu: Any
     location_input_menu: Any
     geo_request_menu: Any
     yes_no_menu: Any
@@ -29,6 +31,8 @@ class AppContext:
     build_scenario_location_choice_keyboard: Any
     build_favorite_pick_keyboard: Any
     build_ai_action_keyboard: Any
+    build_ai_compare_saved_locations_keyboard: Any
+    build_ai_compare_days_keyboard: Any
     format_alerts_status: Any
     format_alert_subscriptions: Any
     format_compare_response: Any

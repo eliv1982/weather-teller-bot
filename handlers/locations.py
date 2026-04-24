@@ -1,7 +1,23 @@
 from telebot import types
+from datetime import datetime
+from math import asin, cos, radians, sin, sqrt
 
 from .states import (
     LOCATIONS_MENU,
+    WAITING_AI_COMPARE_DATE_PICK,
+    WAITING_AI_COMPARE_LOC1_COORDS,
+    WAITING_AI_COMPARE_LOC1_GEO,
+    WAITING_AI_COMPARE_LOC1_METHOD,
+    WAITING_AI_COMPARE_LOC1_PICK,
+    WAITING_AI_COMPARE_LOC1_SAVED_PICK,
+    WAITING_AI_COMPARE_LOC1_TEXT,
+    WAITING_AI_COMPARE_LOC2_COORDS,
+    WAITING_AI_COMPARE_LOC2_GEO,
+    WAITING_AI_COMPARE_LOC2_METHOD,
+    WAITING_AI_COMPARE_LOC2_PICK,
+    WAITING_AI_COMPARE_LOC2_SAVED_PICK,
+    WAITING_AI_COMPARE_LOC2_TEXT,
+    WAITING_AI_COMPARE_MODE,
     WAITING_LOCATION_TITLE,
     WAITING_NEW_SAVED_LOCATION_GEO,
     WAITING_NEW_SAVED_LOCATION_MENU,
@@ -10,7 +26,427 @@ from .states import (
     WAITING_NEW_SAVED_LOCATION_TITLE,
     WAITING_RENAME_LOCATION_TITLE,
 )
+from coordinates_parser import parse_coordinates
 from weather_app import get_locations
+
+
+def start_ai_compare_flow(message: types.Message, user_id: int, *, ctx, session_store) -> None:
+    """Запускает сценарий «Умное сравнение локаций»."""
+    _ai_compare_reset(user_id, session_store=session_store)
+    session_store.ai_compare_drafts[user_id] = {}
+    session_store.user_states[user_id] = WAITING_AI_COMPARE_MODE
+    ctx.bot.send_message(
+        message.chat.id,
+        "✨ Умное сравнение локаций\n\nВыбери режим:",
+        reply_markup=ctx.ai_compare_mode_menu(),
+    )
+
+
+def _ai_compare_reset(user_id: int, *, session_store) -> None:
+    """Очищает runtime-данные сценария AI-сравнения для пользователя."""
+    session_store.ai_compare_drafts.pop(user_id, None)
+    session_store.ai_compare_location_choices.pop(user_id, None)
+
+
+def _ai_compare_set_location(
+    message: types.Message,
+    user_id: int,
+    *,
+    step: int,
+    city_label: str,
+    lat: float,
+    lon: float,
+    ctx,
+    session_store,
+) -> bool:
+    """Сохраняет выбранную локацию шага и переводит к следующему шагу/финализации."""
+    # Сразу выходим из geo/text/pick-состояния шага, чтобы исключить повторный запрос
+    # при повторной доставке одного и того же update.
+    session_store.user_states.pop(user_id, None)
+    draft = session_store.ai_compare_drafts.get(user_id)
+    if not isinstance(draft, dict):
+        draft = {}
+        session_store.ai_compare_drafts[user_id] = draft
+
+    draft[f"loc_{step}"] = {
+        "city_label": city_label,
+        "lat": float(lat),
+        "lon": float(lon),
+    }
+
+    session_store.ai_compare_location_choices.pop(user_id, None)
+    if step == 1:
+        session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC2_METHOD
+        ctx.bot.send_message(
+            message.chat.id,
+            "Локация 1 сохранена. Теперь выбери способ задания второй локации:",
+            reply_markup=ctx.ai_compare_location_method_menu(),
+        )
+        return True
+
+    loc_1 = draft.get("loc_1")
+    loc_2 = draft.get("loc_2")
+    if isinstance(loc_1, dict) and isinstance(loc_2, dict):
+        duplicate_error = validate_second_compare_location(loc_1, loc_2)
+        if duplicate_error:
+            draft.pop("loc_2", None)
+            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC2_METHOD
+            city_label = str(loc_2.get("city_label") or "выбранная точка")
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Похоже, это та же самая локация: {city_label}.\n"
+                "Для сравнения нужна другая точка — выбери вторую локацию ещё раз.",
+                reply_markup=ctx.ai_compare_location_method_menu(),
+            )
+            return True
+
+    return _ai_compare_after_two_locations(message, user_id, ctx=ctx, session_store=session_store)
+
+
+def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta: dict | None = None) -> dict:
+    """Собирает payload текущей погоды для AI-сравнения."""
+    main_data = weather.get("main", {}) if isinstance(weather, dict) else {}
+    weather_item = weather.get("weather", [{}])[0] if isinstance(weather, dict) else {}
+    wind_data = weather.get("wind", {}) if isinstance(weather, dict) else {}
+    meta = location_meta if isinstance(location_meta, dict) else {}
+    return {
+        "city_label": city_label,
+        "lat": meta.get("lat"),
+        "lon": meta.get("lon"),
+        "country": meta.get("country"),
+        "state": meta.get("state"),
+        "temperature": main_data.get("temp"),
+        "feels_like": main_data.get("feels_like"),
+        "description": weather_item.get("description"),
+        "humidity": main_data.get("humidity"),
+        "wind_speed": wind_data.get("speed"),
+    }
+
+
+def _format_number(value: object, suffix: str = "") -> str:
+    """Форматирует числовое значение для краткой текстовой сводки."""
+    if isinstance(value, (int, float)):
+        return f"{float(value):.1f}{suffix}"
+    return "н/д"
+
+
+def _format_ai_compare_current_snapshot(payload: dict) -> str:
+    """Краткая сводка текущей погоды по одной локации."""
+    city = str(payload.get("city_label") or "Локация")
+    temperature = _format_number(payload.get("temperature"), "°C")
+    feels_like = _format_number(payload.get("feels_like"), "°C")
+    description = str(payload.get("description") or "без описания")
+    return (
+        f"• {city}: {temperature}, ощущается как {feels_like}, {description}"
+    )
+
+
+def _ai_compare_day_payload(
+    city_label: str,
+    selected_day: str,
+    day_items: list[dict],
+    *,
+    location_meta: dict | None = None,
+) -> dict:
+    """Собирает payload выбранного дня прогноза для AI-сравнения."""
+    temps: list[float] = []
+    desc_counter: dict[str, int] = {}
+    rain_slots = 0
+    intervals: list[str] = []
+    max_pop = 0.0
+    wind_speeds: list[float] = []
+
+    for item in day_items:
+        if not isinstance(item, dict):
+            continue
+        main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
+        temp = main_data.get("temp")
+        if isinstance(temp, (int, float)):
+            temps.append(float(temp))
+
+        weather_item = item.get("weather", [{}])[0] if isinstance(item.get("weather"), list) else {}
+        description = str(weather_item.get("description") or "без описания")
+        desc_counter[description] = desc_counter.get(description, 0) + 1
+        desc_l = description.lower()
+        if any(x in desc_l for x in ("дожд", "лив", "гроза", "снег")):
+            rain_slots += 1
+
+        pop_raw = item.get("pop")
+        if isinstance(pop_raw, (int, float)):
+            max_pop = max(max_pop, float(pop_raw))
+
+        wind_data = item.get("wind", {}) if isinstance(item.get("wind"), dict) else {}
+        wind_speed = wind_data.get("speed")
+        if isinstance(wind_speed, (int, float)):
+            wind_speeds.append(float(wind_speed))
+
+        dt_txt = str(item.get("dt_txt") or "")
+        if " " in dt_txt:
+            time_part = dt_txt.split(" ")[1][:5]
+            intervals.append(time_part)
+
+    dominant_description = max(desc_counter, key=desc_counter.get) if desc_counter else "без описания"
+    meta = location_meta if isinstance(location_meta, dict) else {}
+    return {
+        "city_label": city_label,
+        "lat": meta.get("lat"),
+        "lon": meta.get("lon"),
+        "country": meta.get("country"),
+        "state": meta.get("state"),
+        "selected_day": selected_day,
+        "min_temp": min(temps) if temps else None,
+        "max_temp": max(temps) if temps else None,
+        "dominant_description": dominant_description,
+        "precipitation_signal": {
+            "rain_slots": rain_slots,
+            "max_pop": max_pop,
+        },
+        "wind_signal": {
+            "avg_speed": (sum(wind_speeds) / len(wind_speeds)) if wind_speeds else None,
+            "max_speed": max(wind_speeds) if wind_speeds else None,
+        },
+        "key_day_intervals": intervals[:6],
+    }
+
+
+def _format_precipitation_summary(payload: dict) -> str:
+    """Формирует естественный краткий текст про осадки для day-summary."""
+    signal = payload.get("precipitation_signal") if isinstance(payload, dict) else {}
+    max_pop_raw = signal.get("max_pop") if isinstance(signal, dict) else None
+    max_pop = float(max_pop_raw) if isinstance(max_pop_raw, (int, float)) else None
+    description = str(payload.get("dominant_description") or "").strip().lower()
+
+    has_snow = "снег" in description
+    has_rain = any(x in description for x in ("дожд", "лив", "гроза"))
+
+    if max_pop is None:
+        if has_snow:
+            return "возможен снег"
+        if has_rain:
+            return "возможен дождь"
+        return "без существенных осадков"
+
+    if max_pop < 0.2:
+        if has_snow:
+            return "снег маловероятен"
+        if has_rain:
+            return "дождь маловероятен"
+        return "без существенных осадков"
+    if max_pop < 0.5:
+        if has_snow:
+            return "местами возможен снег"
+        if has_rain:
+            return "местами возможен дождь"
+        return "возможны осадки"
+    if max_pop < 0.8:
+        if has_snow:
+            return "возможен снег"
+        if has_rain:
+            return "возможен дождь"
+        return "возможны осадки"
+    if has_snow:
+        return "высокий шанс снега"
+    if has_rain:
+        return "высокий шанс дождя"
+    return "высокий шанс осадков"
+
+
+def format_ai_compare_day_summary(payload: dict) -> str:
+    """Краткая дневная сводка по одной локации для сценария compare by date."""
+    min_temp = _format_number(payload.get("min_temp"), "°C")
+    max_temp = _format_number(payload.get("max_temp"), "°C")
+    description = str(payload.get("dominant_description") or "").strip()
+    wind_signal = payload.get("wind_signal") if isinstance(payload, dict) else {}
+    avg_wind = wind_signal.get("avg_speed") if isinstance(wind_signal, dict) else None
+    max_wind = wind_signal.get("max_speed") if isinstance(wind_signal, dict) else None
+    precip = _format_precipitation_summary(payload)
+
+    lines = [f"• температура: от {min_temp} до {max_temp}"]
+    if description:
+        lines.append(f"• условия: {description}")
+    if isinstance(avg_wind, (int, float)) and isinstance(max_wind, (int, float)):
+        lines.append(f"• ветер: в среднем {_format_number(avg_wind, ' м/с')}, порывы до {_format_number(max_wind, ' м/с')}")
+    elif isinstance(avg_wind, (int, float)):
+        lines.append(f"• ветер: в среднем {_format_number(avg_wind, ' м/с')}")
+    elif isinstance(max_wind, (int, float)):
+        lines.append(f"• ветер: до {_format_number(max_wind, ' м/с')}")
+    lines.append(f"• осадки: {precip}")
+    return "\n".join(lines)
+
+
+def format_ai_compare_day_summary_message(payload: dict, selected_day: str, location_index: int) -> str:
+    """Возвращает детерминированную карточку сводки для конкретной локации."""
+    city = str(payload.get("city_label") or f"Локация {location_index}")
+    return (
+        f"📍 Локация {location_index}: {city}\n"
+        f"Сводка на {selected_day}:\n"
+        f"{format_ai_compare_day_summary(payload)}"
+    )
+
+
+def normalize_location_name(value: object) -> str:
+    """Нормализует имя локации для fallback-сравнения без координат."""
+    text = str(value or "").strip().lower().replace("ё", "е")
+    text = " ".join(text.split())
+    # Убираем служебные префиксы из сохранённых названий вида «Дом — Тольятти».
+    if "—" in text:
+        text = text.split("—")[-1].strip()
+    return text
+
+
+def calculate_distance_km(lat_1: float, lon_1: float, lat_2: float, lon_2: float) -> float:
+    """Считает расстояние по формуле гаверсинусов."""
+    earth_radius_km = 6371.0
+    d_lat = radians(lat_2 - lat_1)
+    d_lon = radians(lon_2 - lon_1)
+    a = sin(d_lat / 2) ** 2 + cos(radians(lat_1)) * cos(radians(lat_2)) * sin(d_lon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    return earth_radius_km * c
+
+
+def is_same_location(loc_1: dict, loc_2: dict, *, distance_threshold_km: float = 2.5) -> bool:
+    """Проверяет, что две локации по сути одинаковые."""
+    lat_1 = loc_1.get("lat")
+    lon_1 = loc_1.get("lon")
+    lat_2 = loc_2.get("lat")
+    lon_2 = loc_2.get("lon")
+    if all(isinstance(v, (int, float)) for v in (lat_1, lon_1, lat_2, lon_2)):
+        distance_km = calculate_distance_km(float(lat_1), float(lon_1), float(lat_2), float(lon_2))
+        if distance_km < distance_threshold_km:
+            return True
+
+    name_1 = normalize_location_name(loc_1.get("city_label"))
+    name_2 = normalize_location_name(loc_2.get("city_label"))
+    country_1 = normalize_location_name(loc_1.get("country"))
+    country_2 = normalize_location_name(loc_2.get("country"))
+    state_1 = normalize_location_name(loc_1.get("state"))
+    state_2 = normalize_location_name(loc_2.get("state"))
+
+    if name_1 and name_2 and name_1 == name_2:
+        if country_1 and country_2 and country_1 != country_2:
+            return False
+        if state_1 and state_2 and state_1 != state_2:
+            return False
+        return True
+    return False
+
+
+def validate_second_compare_location(loc_1: dict, loc_2: dict) -> str | None:
+    """Валидирует вторую локацию compare-сценария относительно первой."""
+    if is_same_location(loc_1, loc_2):
+        return "duplicate"
+    return None
+
+
+def _sorted_day_keys(day_keys: set[str]) -> list[str]:
+    """Сортирует ключи дней DD.MM по календарному порядку внутри года."""
+    def _to_date(value: str) -> datetime:
+        return datetime.strptime(value, "%d.%m")
+
+    try:
+        return sorted(day_keys, key=_to_date)
+    except Exception:
+        return sorted(day_keys)
+
+
+def _ai_compare_after_two_locations(message: types.Message, user_id: int, *, ctx, session_store) -> bool:
+    """Финализирует сравнение после выбора обеих локаций (сразу или через выбор даты)."""
+    draft = session_store.ai_compare_drafts.get(user_id)
+    if not isinstance(draft, dict):
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные сравнения устарели. Начни заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return True
+
+    loc_1 = draft.get("loc_1")
+    loc_2 = draft.get("loc_2")
+    mode = draft.get("mode")
+    if not isinstance(loc_1, dict) or not isinstance(loc_2, dict) or mode not in {"current", "date"}:
+        _ai_compare_reset(user_id, session_store=session_store)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные сравнения устарели. Начни заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return True
+
+    if mode == "current":
+        weather_1 = ctx.get_current_weather(loc_1["lat"], loc_1["lon"])
+        weather_2 = ctx.get_current_weather(loc_2["lat"], loc_2["lon"])
+        if not weather_1 or not weather_2:
+            _ai_compare_reset(user_id, session_store=session_store)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(
+                message.chat.id,
+                "Не удалось получить данные для умного сравнения. Попробуй позже.",
+                reply_markup=ctx.main_menu(),
+            )
+            return True
+
+        payload_1 = _ai_compare_current_payload(loc_1["city_label"], weather_1, location_meta=loc_1)
+        payload_2 = _ai_compare_current_payload(loc_2["city_label"], weather_2, location_meta=loc_2)
+        text = ctx.ai_weather_service.compare_two_locations_current_with_ai(payload_1, payload_2)
+        card_1 = ctx.format_weather_response(loc_1["city_label"], weather_1)
+        card_2 = ctx.format_weather_response(loc_2["city_label"], weather_2)
+
+        _ai_compare_reset(user_id, session_store=session_store)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            card_1,
+            reply_markup=ctx.main_menu(),
+        )
+        ctx.bot.send_message(
+            message.chat.id,
+            card_2,
+            reply_markup=ctx.main_menu(),
+        )
+        ctx.bot.send_message(
+            message.chat.id,
+            f"✨ Сравнить локации (сейчас)\n\n🪄 Вывод:\n{text}",
+            reply_markup=ctx.main_menu(),
+        )
+        return True
+
+    forecast_1 = ctx.get_forecast_5d3h(loc_1["lat"], loc_1["lon"])
+    forecast_2 = ctx.get_forecast_5d3h(loc_2["lat"], loc_2["lon"])
+    grouped_1 = ctx.group_forecast_by_day(forecast_1 or [])
+    grouped_2 = ctx.group_forecast_by_day(forecast_2 or [])
+    if not grouped_1 or not grouped_2:
+        _ai_compare_reset(user_id, session_store=session_store)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Не удалось подготовить сравнение на дату. Попробуй позже.",
+            reply_markup=ctx.main_menu(),
+        )
+        return True
+
+    common_days = set(grouped_1.keys()) & set(grouped_2.keys())
+    if not common_days:
+        _ai_compare_reset(user_id, session_store=session_store)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Для выбранных локаций нет общих доступных дат в ближайшие 5 дней.",
+            reply_markup=ctx.main_menu(),
+        )
+        return True
+
+    draft["grouped_1"] = grouped_1
+    draft["grouped_2"] = grouped_2
+    draft["available_days"] = _sorted_day_keys(common_days)
+    session_store.user_states[user_id] = WAITING_AI_COMPARE_DATE_PICK
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери дату для умного сравнения:",
+        reply_markup=ctx.build_ai_compare_days_keyboard(draft["available_days"]),
+    )
+    return True
 
 
 def handle_locations_text(
@@ -291,7 +727,7 @@ def handle_locations_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
@@ -356,6 +792,199 @@ def handle_locations_text(
             message.chat.id,
             "Отправь геолокацию, которую хочешь сохранить.",
             reply_markup=ctx.geo_request_menu(),
+        )
+        return True
+
+    if state == WAITING_AI_COMPARE_MODE:
+        choice = (message.text or "").strip()
+        if choice == "Сейчас":
+            draft = session_store.ai_compare_drafts.get(user_id)
+            if not isinstance(draft, dict):
+                draft = {}
+            draft["mode"] = "current"
+            session_store.ai_compare_drafts[user_id] = draft
+            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ задания первой локации:",
+                reply_markup=ctx.ai_compare_location_method_menu(),
+            )
+            return True
+        if choice == "На дату":
+            draft = session_store.ai_compare_drafts.get(user_id)
+            if not isinstance(draft, dict):
+                draft = {}
+            draft["mode"] = "date"
+            session_store.ai_compare_drafts[user_id] = draft
+            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери способ задания первой локации:",
+                reply_markup=ctx.ai_compare_location_method_menu(),
+            )
+            return True
+
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери режим кнопкой ниже или вернись в меню.",
+            reply_markup=ctx.ai_compare_mode_menu(),
+        )
+        return True
+
+    if state in {WAITING_AI_COMPARE_LOC1_METHOD, WAITING_AI_COMPARE_LOC2_METHOD}:
+        step = 1 if state == WAITING_AI_COMPARE_LOC1_METHOD else 2
+        choice = (message.text or "").strip()
+        if choice == "⬅️ Отмена":
+            _ai_compare_reset(user_id, session_store=session_store)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(message.chat.id, "Сравнение отменено.", reply_markup=ctx.main_menu())
+            return True
+        if choice == "Из сохранённых":
+            user_data = ctx.load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                ctx.bot.send_message(message.chat.id, "Сохранённых локаций пока нет.")
+                return True
+            session_store.user_states[user_id] = (
+                WAITING_AI_COMPARE_LOC1_SAVED_PICK if step == 1 else WAITING_AI_COMPARE_LOC2_SAVED_PICK
+            )
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Выбери {'первую' if step == 1 else 'вторую'} локацию из сохранённых:",
+                reply_markup=ctx.build_ai_compare_saved_locations_keyboard(saved_locations, step),
+            )
+            return True
+        if choice == "Ввести населённый пункт":
+            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_TEXT if step == 1 else WAITING_AI_COMPARE_LOC2_TEXT
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Введи {'первый' if step == 1 else 'второй'} населённый пункт:",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if choice == "Ввести координаты":
+            session_store.user_states[user_id] = (
+                WAITING_AI_COMPARE_LOC1_COORDS if step == 1 else WAITING_AI_COMPARE_LOC2_COORDS
+            )
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if choice == "Отправить геолокацию":
+            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_GEO if step == 1 else WAITING_AI_COMPARE_LOC2_GEO
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Отправь {'первую' if step == 1 else 'вторую'} геолокацию.",
+                reply_markup=ctx.geo_request_menu(),
+            )
+            return True
+
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери способ задания локации кнопкой ниже или нажми «⬅️ Отмена».",
+            reply_markup=ctx.ai_compare_location_method_menu(),
+        )
+        return True
+
+    if state in {WAITING_AI_COMPARE_LOC1_TEXT, WAITING_AI_COMPARE_LOC2_TEXT}:
+        step = 1 if state == WAITING_AI_COMPARE_LOC1_TEXT else 2
+        query = (message.text or "").strip()
+        if not query:
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи населённый пункт.")
+            return True
+        locations = get_locations(query, limit=5)
+        locations = ctx.rank_locations(query, locations)[:3]
+        if not locations:
+            ctx.bot.send_message(
+                message.chat.id,
+                "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
+            )
+            return True
+        if len(locations) == 1:
+            location_item = ctx.build_geocode_item_with_disambiguated_label(locations, 0)
+            lat = location_item.get("lat")
+            lon = location_item.get("lon")
+            if lat is None or lon is None:
+                ctx.bot.send_message(message.chat.id, "Не удалось определить локацию. Попробуй снова.")
+                return True
+            city_label = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
+            return _ai_compare_set_location(
+                message,
+                user_id,
+                step=step,
+                city_label=city_label,
+                lat=float(lat),
+                lon=float(lon),
+                ctx=ctx,
+                session_store=session_store,
+            )
+
+        session_store.ai_compare_location_choices[user_id] = locations
+        session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_PICK if step == 1 else WAITING_AI_COMPARE_LOC2_PICK
+        ctx.bot.send_message(
+            message.chat.id,
+            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+            reply_markup=ctx.build_location_pick_keyboard(
+                locations,
+                f"aicmp_geo_pick:{step}",
+                "aicmp_geo_cancel",
+            ),
+        )
+        return True
+
+    if state in {WAITING_AI_COMPARE_LOC1_COORDS, WAITING_AI_COMPARE_LOC2_COORDS}:
+        step = 1 if state == WAITING_AI_COMPARE_LOC1_COORDS else 2
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        location = ctx.get_location_by_coordinates(lat, lon)
+        city_label = (
+            ctx.build_location_label(location, show_coords=False)
+            if location
+            else f"Координаты: {lat:.4f}, {lon:.4f}"
+        )
+        return _ai_compare_set_location(
+            message,
+            user_id,
+            step=step,
+            city_label=city_label,
+            lat=lat,
+            lon=lon,
+            ctx=ctx,
+            session_store=session_store,
+        )
+
+    if state in {WAITING_AI_COMPARE_LOC1_PICK, WAITING_AI_COMPARE_LOC2_PICK}:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state in {WAITING_AI_COMPARE_LOC1_SAVED_PICK, WAITING_AI_COMPARE_LOC2_SAVED_PICK}:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери сохранённую локацию кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state in {WAITING_AI_COMPARE_LOC1_GEO, WAITING_AI_COMPARE_LOC2_GEO}:
+        step_label = "первую" if state == WAITING_AI_COMPARE_LOC1_GEO else "вторую"
+        ctx.bot.send_message(
+            message.chat.id,
+            f"Нажми кнопку и отправь {step_label} геолокацию.",
+            reply_markup=ctx.geo_request_menu(),
+        )
+        return True
+
+    if state == WAITING_AI_COMPARE_DATE_PICK:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери дату кнопкой ниже или нажми «⬅️ Отмена».",
         )
         return True
 

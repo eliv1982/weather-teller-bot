@@ -26,7 +26,7 @@ def handle_compare_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
@@ -89,7 +89,7 @@ def handle_compare_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,

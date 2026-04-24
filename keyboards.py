@@ -7,9 +7,8 @@ def main_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт главное меню бота."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(types.KeyboardButton("Текущая погода"), types.KeyboardButton("Прогноз на 5 дней"))
-    keyboard.row(types.KeyboardButton("Моя геолокация"), types.KeyboardButton("Сравнить города"))
-    keyboard.row(types.KeyboardButton("Расширенные данные"), types.KeyboardButton("Мои локации"))
-    keyboard.row(types.KeyboardButton("Уведомления"))
+    keyboard.row(types.KeyboardButton("Расширенные данные"), types.KeyboardButton("✨ Сравнить локации"))
+    keyboard.row(types.KeyboardButton("Мои локации"), types.KeyboardButton("Уведомления"))
     keyboard.row(types.KeyboardButton("Помощь"))
     return keyboard
 
@@ -36,22 +35,17 @@ def yes_no_menu() -> types.ReplyKeyboardMarkup:
 def alerts_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт меню раздела уведомлений."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Показать подписки"))
-    keyboard.row(types.KeyboardButton("Добавить локацию в уведомления"))
-    keyboard.row(types.KeyboardButton("Включить/выключить подписку"))
-    keyboard.row(types.KeyboardButton("Изменить интервал подписки"))
-    keyboard.row(types.KeyboardButton("Удалить подписку"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    keyboard.row(types.KeyboardButton("Показать подписки"), types.KeyboardButton("Добавить локацию в уведомления"))
+    keyboard.row(types.KeyboardButton("Включить/выключить подписку"), types.KeyboardButton("Изменить интервал подписки"))
+    keyboard.row(types.KeyboardButton("Удалить подписку"), types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
 
 def alerts_add_location_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа добавления локации в подписки уведомлений."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Выбрать из сохранённых"))
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
-    keyboard.row(types.KeyboardButton("Ввести координаты"))
-    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(types.KeyboardButton("Выбрать из сохранённых"), types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("Ввести координаты"), types.KeyboardButton("Отправить геолокацию"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -59,8 +53,8 @@ def alerts_add_location_menu() -> types.ReplyKeyboardMarkup:
 def location_input_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа ввода локации для погодных сценариев."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
-    keyboard.row(types.KeyboardButton("Ввести координаты"))
+    keyboard.row(types.KeyboardButton("Ввести населённый пункт"), types.KeyboardButton("Ввести координаты"))
+    keyboard.row(types.KeyboardButton("Отправить геолокацию", request_location=True))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -102,10 +96,8 @@ def build_alert_subscriptions_keyboard(subscriptions: list[dict], callback_prefi
 def locations_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт меню управления сохранёнными локациями."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Сохранить текущую локацию"))
-    keyboard.row(types.KeyboardButton("Добавить новую локацию"))
-    keyboard.row(types.KeyboardButton("Показать мои локации"))
-    keyboard.row(types.KeyboardButton("Сделать основной"))
+    keyboard.row(types.KeyboardButton("Сохранить текущую локацию"), types.KeyboardButton("Добавить новую локацию"))
+    keyboard.row(types.KeyboardButton("Показать мои локации"), types.KeyboardButton("Сделать основной"))
     keyboard.row(types.KeyboardButton("Переименовать локацию"), types.KeyboardButton("Удалить локацию"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
@@ -114,8 +106,7 @@ def locations_menu() -> types.ReplyKeyboardMarkup:
 def add_saved_location_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа добавления новой локации."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"))
-    keyboard.row(types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(types.KeyboardButton("Ввести населённый пункт"), types.KeyboardButton("Отправить геолокацию"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -159,6 +150,42 @@ def build_ai_action_keyboard(button_text: str, callback_data: str) -> types.Inli
     """Создаёт inline-клавиатуру с одной AI-кнопкой действия."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton(text=button_text, callback_data=callback_data))
+    return keyboard
+
+
+def ai_compare_mode_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора режима умного AI-сравнения локаций."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Сейчас"), types.KeyboardButton("На дату"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def ai_compare_location_method_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора способа задания локации для AI-сравнения."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("Из сохранённых"), types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(
+        types.KeyboardButton("Ввести координаты"),
+        types.KeyboardButton("Отправить геолокацию", request_location=True),
+    )
+    keyboard.row(types.KeyboardButton("⬅️ Отмена"))
+    return keyboard
+
+
+def build_ai_compare_saved_locations_keyboard(saved_locations: list[dict], step: int) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-выбор сохранённой локации для шага AI-сравнения."""
+    keyboard = build_saved_locations_keyboard(saved_locations, f"aicmp_saved_pick:{step}")
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="aicmp_saved_cancel"))
+    return keyboard
+
+
+def build_ai_compare_days_keyboard(days: list[str]) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора даты для AI-сравнения локаций."""
+    keyboard = types.InlineKeyboardMarkup()
+    for day in days:
+        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"aicmp_date_pick:{day}"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="aicmp_date_cancel"))
     return keyboard
 
 

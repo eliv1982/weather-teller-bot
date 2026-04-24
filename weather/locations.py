@@ -418,6 +418,27 @@ def _location_relevance_score(location: dict, query: str) -> float:
     return score
 
 
+def _spb_alias_boost(query: str, location: dict) -> float:
+    """Точечный boost для частого русского алиаса «питер»."""
+    normalized_query = (query or "").strip().lower()
+    if normalized_query not in {"питер"}:
+        return 0.0
+
+    city_name = get_city_name_ru(location).strip().lower()
+    raw_name = str(location.get("name") or "").strip().lower()
+    local_names = location.get("local_names") or {}
+    local_ru = str(local_names.get("ru") or "").strip().lower()
+    country_code = str(location.get("country") or "").strip().upper()
+
+    matches_spb = any(
+        candidate.startswith("санкт-петербург") or candidate.startswith("санкт петербург")
+        for candidate in (city_name, raw_name, local_ru)
+    )
+    if matches_spb and country_code == "RU":
+        return 3000.0
+    return 0.0
+
+
 def rank_locations(query: str, locations: list[dict]) -> list[dict]:
     """Сортирует список локаций по UX-эвристике для выбора пользователем."""
     if not locations:
@@ -431,6 +452,7 @@ def rank_locations(query: str, locations: list[dict]) -> list[dict]:
 
     def score(loc: dict) -> tuple[float, int, str]:
         total = float(_location_relevance_score(loc, q))
+        total += _spb_alias_boost(q, loc)
         local_name = str(loc.get("local_name") or get_city_name_ru(loc)).strip().lower()
         raw_name = str(loc.get("name") or "").strip().lower()
         if q_lower and (q_lower == local_name or q_lower == raw_name):

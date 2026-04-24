@@ -5,6 +5,7 @@ from .states import (
     WAITING_CURRENT_USE_FAVORITE,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_CURRENT_WEATHER_COORDS,
+    WAITING_CURRENT_WEATHER_GEO,
     WAITING_CURRENT_WEATHER_PICK,
 )
 from coordinates_parser import parse_coordinates
@@ -76,6 +77,14 @@ def handle_current_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
+        if query == "Отправить геолокацию":
+            session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_GEO
+            ctx.bot.send_message(
+                message.chat.id,
+                "Отправь геолокацию через кнопку ниже.",
+                reply_markup=ctx.geo_request_menu(),
+            )
+            return True
 
         coords = parse_coordinates(query)
         if coords is not None:
@@ -128,7 +137,7 @@ def handle_current_text(
             return True
 
         locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)
+        locations = ctx.rank_locations(query, locations)[:3]
         if not locations:
             ctx.logger.info("Населённый пункт не найден для пользователя %s: %s", user_id, query)
             ctx.bot.send_message(
@@ -226,6 +235,14 @@ def handle_current_text(
         ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state == WAITING_CURRENT_WEATHER_GEO:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Отправь геолокацию через кнопку ниже.",
+            reply_markup=ctx.geo_request_menu(),
         )
         return True
 

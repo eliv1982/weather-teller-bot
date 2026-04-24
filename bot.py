@@ -20,9 +20,13 @@ from weather_app import (
 )
 from keyboards import (
     add_saved_location_menu,
+    ai_compare_location_method_menu,
+    ai_compare_mode_menu,
     alerts_add_location_menu,
     alerts_menu,
     build_alert_subscriptions_keyboard,
+    build_ai_compare_days_keyboard,
+    build_ai_compare_saved_locations_keyboard,
     build_current_weather_location_keyboard,
     build_favorite_pick_keyboard,
     build_forecast_day_keyboard,
@@ -64,13 +68,14 @@ from handlers.details import handle_details_text
 from handlers.forecast import handle_forecast_text
 from handlers.compare import handle_compare_text
 from handlers.alerts import handle_alerts_text
-from handlers.locations import handle_locations_text
+from handlers.locations import handle_locations_text, _ai_compare_set_location, start_ai_compare_flow
 from handlers.geo import handle_geo_text
 from handlers.callbacks_current import handle_current_weather_callback
 from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
 from handlers.callbacks_compare import handle_compare_location_callback as handle_compare_callback_logic
 from handlers.callbacks_details import handle_details_location_callback as handle_details_callback_logic
 from handlers.callbacks_locations import (
+    handle_ai_compare_callback as handle_ai_compare_callback_logic,
     handle_delete_location_pick_callback as handle_delete_location_callback_logic,
     handle_favorite_pick_callback as handle_favorite_callback_logic,
     handle_rename_location_pick_callback as handle_rename_location_callback_logic,
@@ -98,17 +103,24 @@ from handlers.states import (
     WAITING_ALERTS_INTERVAL_VALUE,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_ALERTS_TOGGLE_PICK,
+    WAITING_AI_COMPARE_LOC1_GEO,
+    WAITING_AI_COMPARE_LOC1_METHOD,
+    WAITING_AI_COMPARE_LOC2_GEO,
+    WAITING_AI_COMPARE_LOC2_METHOD,
     WAITING_COMPARE_CITY_1,
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_CURRENT_WEATHER_COORDS,
+    WAITING_CURRENT_WEATHER_GEO,
     WAITING_DETAILS_CITY,
     WAITING_DETAILS_COORDS,
+    WAITING_DETAILS_GEO,
     WAITING_DETAILS_PICK,
     WAITING_DETAILS_USE_SAVED_LOCATION,
     WAITING_FORECAST_CITY,
     WAITING_FORECAST_COORDS,
+    WAITING_FORECAST_GEO,
     WAITING_FORECAST_PICK,
     WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
@@ -181,6 +193,8 @@ ctx = AppContext(
     alerts_add_location_menu=alerts_add_location_menu,
     locations_menu=locations_menu,
     add_saved_location_menu=add_saved_location_menu,
+    ai_compare_mode_menu=ai_compare_mode_menu,
+    ai_compare_location_method_menu=ai_compare_location_method_menu,
     location_input_menu=location_input_menu,
     geo_request_menu=geo_request_menu,
     yes_no_menu=yes_no_menu,
@@ -193,6 +207,8 @@ ctx = AppContext(
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
     build_ai_action_keyboard=build_ai_action_keyboard,
+    build_ai_compare_saved_locations_keyboard=build_ai_compare_saved_locations_keyboard,
+    build_ai_compare_days_keyboard=build_ai_compare_days_keyboard,
     format_alerts_status=format_alerts_status,
     format_alert_subscriptions=format_alert_subscriptions,
     format_compare_response=format_compare_response,
@@ -237,8 +253,7 @@ alerts_worker = partial(flow_alerts_worker, ctx=ctx)
 MENU_BUTTONS = [
     "Текущая погода",
     "Прогноз на 5 дней",
-    "Моя геолокация",
-    "Сравнить города",
+    "✨ Сравнить локации",
     "Расширенные данные",
     "Мои локации",
     "Уведомления",
@@ -261,12 +276,12 @@ def handle_start(message: types.Message) -> None:
         "Помогу:\n"
         "• быстро узнать текущую погоду\n"
         "• посмотреть прогноз на 5 дней\n"
-        "• проверить качество воздуха и расширенные данные\n"
+        "• проверить качество воздуха и расширенные погодные данные\n"
         "• сравнить погоду в разных городах\n"
         "• сохранить важные локации\n"
         "• получать уведомления об изменениях\n"
-        "• объяснить погоду по-человечески ✨\n\n"
-        "Выбери действие ниже — и поехали."
+        "• объяснить погоду простым языком ✨\n\n"
+        "Выбери действие ниже — и начнём."
     )
     bot.send_message(message.chat.id, text, reply_markup=main_menu())
 
@@ -308,9 +323,9 @@ def handle_details(message: types.Message) -> None:
 
 @bot.message_handler(commands=["compare"])
 def handle_compare(message: types.Message) -> None:
-    """Запускает сценарий сравнения населённых пунктов через slash-команду."""
+    """Запускает основной сценарий «Сравнить локации» через slash-команду."""
     logger.info("Получена команда /compare от пользователя %s.", message.from_user.id)
-    start_compare_flow(message)
+    start_ai_compare_flow(message, message.from_user.id, ctx=ctx, session_store=session_store)
 
 
 @bot.message_handler(commands=["alerts"])
@@ -343,14 +358,11 @@ def handle_menu_buttons(message: types.Message) -> None:
     if section_name == "Помощь":
         bot.send_message(message.chat.id, help_text(), reply_markup=main_menu())
         return
-    if section_name == "Моя геолокация":
-        start_geo_weather_flow(message)
-        return
     if section_name == "Расширенные данные":
         start_details_flow(message)
         return
-    if section_name == "Сравнить города":
-        start_compare_flow(message)
+    if section_name == "✨ Сравнить локации":
+        start_ai_compare_flow(message, message.from_user.id, ctx=ctx, session_store=session_store)
         return
     if section_name == "Мои локации":
         start_locations_flow(message)
@@ -368,34 +380,8 @@ def handle_menu_buttons(message: types.Message) -> None:
 
 @bot.message_handler(func=lambda message: message.text == "⬅️ В меню")
 def handle_back_to_menu(message: types.Message) -> None:
-    """Возвращает пользователя в меню уведомлений или в главное меню."""
+    """Сбрасывает сценарий и возвращает пользователя в главное меню."""
     user_id = message.from_user.id
-    state = session_store.get_state(user_id)
-
-    if state in {
-        WAITING_ALERTS_SUBSCRIPTION_MENU,
-        WAITING_ALERTS_ADD_MENU,
-        WAITING_ALERTS_ADD_TEXT,
-        WAITING_ALERTS_ADD_PICK,
-        WAITING_ALERTS_ADD_GEO,
-        WAITING_ALERTS_ADD_COORDS,
-        WAITING_ALERTS_ADD_SAVED_PICK,
-        WAITING_ALERTS_TOGGLE_PICK,
-        WAITING_ALERTS_INTERVAL_PICK,
-        WAITING_ALERTS_INTERVAL_VALUE,
-        WAITING_ALERTS_DELETE_PICK,
-    }:
-        session_store.alerts_location_choices.pop(user_id, None)
-        session_store.alerts_subscription_drafts.pop(user_id, None)
-        session_store.user_states[user_id] = ALERTS_MENU
-        user_data = alerts_subscription_service.ensure_defaults(ensure_notifications_defaults(load_user(user_id)))
-        bot.send_message(
-            message.chat.id,
-            format_alert_subscriptions(user_data),
-            reply_markup=alerts_menu(),
-        )
-        return
-
     session_store.clear_all_user_runtime(user_id)
     bot.send_message(message.chat.id, "Главное меню.", reply_markup=main_menu())
 
@@ -405,6 +391,109 @@ def handle_location_message(message: types.Message) -> None:
     """Обрабатывает геолокацию от пользователя."""
     user_id = message.from_user.id
     state = session_store.get_state(user_id)
+
+    if state in {WAITING_CURRENT_WEATHER_CITY, WAITING_CURRENT_WEATHER_GEO, WAITING_GEO_LOCATION}:
+        session_store.clear_location_choices(user_id)
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        logger.info(
+            "Получена геолокация от пользователя %s: lat=%s, lon=%s.",
+            user_id,
+            lat,
+            lon,
+        )
+
+        weather = get_current_weather(lat, lon)
+        if not weather:
+            logger.warning(
+                "Не удалось получить погоду по геолокации для пользователя %s (lat=%s, lon=%s).",
+                user_id,
+                lat,
+                lon,
+            )
+            session_store.user_states.pop(user_id, None)
+            bot.send_message(
+                message.chat.id,
+                "Не удалось получить данные о погоде по геолокации. Попробуй позже.",
+                reply_markup=main_menu(),
+            )
+            return
+
+        location = get_location_by_coordinates(lat, lon)
+        if location:
+            city_label = build_location_label(location, show_coords=False)
+        else:
+            city_label = "Выбранная геолокация"
+
+        user_data = load_user(user_id)
+        user_data["city"] = city_label
+        user_data["lat"] = lat
+        user_data["lon"] = lon
+        save_user(user_id, user_data)
+
+        answer = format_weather_response(city_label, weather)
+        logger.info(
+            "Успешно получена погода по геолокации для пользователя %s: %s (lat=%s, lon=%s).",
+            user_id,
+            city_label,
+            lat,
+            lon,
+        )
+        session_store.user_states.pop(user_id, None)
+        snapshot_id = session_store.generate_ai_snapshot_id(user_id)
+        session_store.ai_current_snapshots[snapshot_id] = {
+            "user_id": user_id,
+            "city_label": city_label,
+            "weather": weather,
+            "created_at": time.time(),
+        }
+        session_store.cleanup_ai_snapshots()
+        bot.send_message(message.chat.id, answer, reply_markup=main_menu())
+        bot.send_message(
+            message.chat.id,
+            "✨ Хочешь короткий и понятный разбор?",
+            reply_markup=build_ai_action_keyboard(
+                "✨ Объяснить по-человечески",
+                f"ai_current_explain:{snapshot_id}",
+            ),
+        )
+        return
+
+    if state in {WAITING_FORECAST_CITY, WAITING_FORECAST_GEO}:
+        session_store.forecast_location_choices.pop(user_id, None)
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        send_forecast_by_coordinates(
+            message,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            save_location=True,
+            preferred_city_label=city,
+        )
+        return
+
+    if state in {WAITING_DETAILS_CITY, WAITING_DETAILS_GEO}:
+        session_store.details_location_choices.pop(user_id, None)
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        send_details_by_coordinates(
+            message,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            preferred_city_label=city,
+        )
+        return
 
     if state == WAITING_ALERTS_ADD_GEO:
         session_store.alerts_location_choices.pop(user_id, None)
@@ -466,12 +555,63 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
+    if state in {WAITING_AI_COMPARE_LOC1_METHOD, WAITING_AI_COMPARE_LOC2_METHOD}:
+        step = 1 if state == WAITING_AI_COMPARE_LOC1_METHOD else 2
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        city_label = (
+            build_location_label(location, show_coords=False)
+            if location
+            else f"Координаты: {lat:.4f}, {lon:.4f}"
+        )
+        # Гео-кнопка в method-меню отправляет location сразу, без промежуточного geo-state.
+        session_store.user_states.pop(user_id, None)
+        _ai_compare_set_location(
+            message,
+            user_id,
+            step=step,
+            city_label=city_label,
+            lat=float(lat),
+            lon=float(lon),
+            ctx=ctx,
+            session_store=session_store,
+        )
+        return
+
+    if state in {WAITING_AI_COMPARE_LOC1_GEO, WAITING_AI_COMPARE_LOC2_GEO}:
+        step = 1 if state == WAITING_AI_COMPARE_LOC1_GEO else 2
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        city_label = (
+            build_location_label(location, show_coords=False)
+            if location
+            else f"Координаты: {lat:.4f}, {lon:.4f}"
+        )
+        # Снимаем geo-state до вызова бизнес-логики шага, чтобы исключить повторный geo-step
+        # при повторной доставке одного и того же location update.
+        session_store.user_states.pop(user_id, None)
+        _ai_compare_set_location(
+            message,
+            user_id,
+            step=step,
+            city_label=city_label,
+            lat=float(lat),
+            lon=float(lon),
+            ctx=ctx,
+            session_store=session_store,
+        )
+        return
+
     session_store.clear_location_choices(user_id)
     location_data = message.location
     lat = location_data.latitude
     lon = location_data.longitude
     logger.info(
-        "Получена геолокация от пользователя %s: lat=%s, lon=%s.",
+        "Получена геолокация от пользователя %s вне сценария: lat=%s, lon=%s.",
         user_id,
         lat,
         lon,
@@ -627,6 +767,16 @@ def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
         LOCATIONS_MENU=LOCATIONS_MENU,
         WAITING_NEW_SAVED_LOCATION_TITLE=WAITING_NEW_SAVED_LOCATION_TITLE,
         types=types,
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("aicmp_"))
+def handle_ai_compare_locations_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает callback-шаги умного AI-сравнения локаций."""
+    handle_ai_compare_callback_logic(
+        call,
+        ctx=ctx,
+        session_store=session_store,
     )
 
 
