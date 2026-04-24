@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 import hashlib
 import json
+import re
 
 from postgres_storage import get_ai_cached_response, save_ai_cached_response
 
@@ -154,7 +155,7 @@ class AiWeatherService:
         cached = self._get_cached(cache_key)
         if cached:
             logger.info("AI cache hit: scenario=ai_compare_forecast_day")
-            return cached
+            return self._postprocess_compare_forecast_day_text(cached, location_1_payload, location_2_payload)
         logger.info("AI cache miss: scenario=ai_compare_forecast_day")
 
         prompt = (
@@ -162,9 +163,12 @@ class AiWeatherService:
             "Требования: русский язык, 3-5 коротких предложений, дружелюбно, естественно и по делу, "
             "без канцелярита, без сарказма, без клоунады, без дисклеймеров и без воды.\n"
             "Фактическая сводка уже показана отдельно, поэтому не повторяй длинные цифры.\n"
-            "Дай практичный вывод: где холоднее или снежнее, где погода ровнее, и куда удобнее для прогулки или поездки.\n"
-            "Избегай фраз вроде «день неприятный», «чуть приятнее», «если выбирать из этих двух», «без лишних раздумий».\n"
-            "Если условия похожи, скажи это спокойно и предложи нейтральный выбор по задачам дня.\n\n"
+            "Опирайся строго на входные данные: температура, тип осадков, вероятность осадков, ветер.\n"
+            "Запрещены противоречия: не делай выводы, которые не подтверждаются этими данными.\n"
+            "Не используй субъективные слова «приятнее» и «спокойнее», если в данных нет явного подтверждения.\n"
+            "Не давай рекомендацию «выбирай X», если у X есть существенные минусы и они не упомянуты в тексте.\n"
+            "Если условия смешанные, явно напиши: «Однозначного победителя нет», затем коротко раскрой компромисс.\n"
+            "Заверши практичной рекомендацией отдельно для прогулки и отдельно для поездки.\n\n"
             f"Выбранная дата: {selected_day}\n"
             f"Локация 1: {location_1_payload}\n"
             f"Локация 2: {location_2_payload}"
@@ -172,9 +176,9 @@ class AiWeatherService:
         model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_default)
         if model_answer:
             self._save_cached(cache_key, "ai_compare_forecast_day", model_answer, ttl_seconds=self.ttl_forecast_seconds)
-            return model_answer
+            return self._postprocess_compare_forecast_day_text(model_answer, location_1_payload, location_2_payload)
         logger.info("AI fallback used: scenario=ai_compare_forecast_day")
-        return fallback
+        return self._postprocess_compare_forecast_day_text(fallback, location_1_payload, location_2_payload)
 
     def _call_model(self, prompt: str, *, max_output_tokens: int | None = None) -> str | None:
         """Вызывает OpenAI Responses API и возвращает текст ответа."""
@@ -359,6 +363,52 @@ class AiWeatherService:
         if not isinstance(value, (int, float)):
             return ""
         return f"{round(float(value), 3):.3f}"
+
+    def _postprocess_compare_forecast_day_text(self, text: str, payload_1: dict, payload_2: dict) -> str:
+        """Лёгкая нормализация тона и защита от одностороннего вывода в mixed-условиях."""
+        cleaned = " ".join(str(text or "").split())
+        if not cleaned:
+            return cleaned
+
+        # Убираем избыточно субъективные формулировки.
+        replacements = {
+            "приятнее": "практичнее",
+            "спокойнее": "ровнее",
+        }
+        for src, dst in replacements.items():
+            cleaned = re.sub(rf"\b{re.escape(src)}\b", dst, cleaned, flags=re.IGNORECASE)
+
+        pop_1 = (payload_1.get("precipitation_signal") or {}).get("max_pop")
+        pop_2 = (payload_2.get("precipitation_signal") or {}).get("max_pop")
+        max_1 = payload_1.get("max_temp")
+        max_2 = payload_2.get("max_temp")
+        city_1 = str(payload_1.get("city_label") or "локация 1")
+        city_2 = str(payload_2.get("city_label") or "локация 2")
+
+        mixed_conditions = False
+        if all(isinstance(v, (int, float)) for v in (pop_1, pop_2, max_1, max_2)):
+            # Смесь условий: одна локация теплее, другая суше.
+            warmer_is_1 = float(max_1) > float(max_2)
+            drier_is_1 = float(pop_1) < float(pop_2)
+            mixed_conditions = warmer_is_1 != drier_is_1 and abs(float(max_1) - float(max_2)) >= 0.7 and abs(float(pop_1) - float(pop_2)) >= 0.15
+
+        if mixed_conditions and "однозначного победителя нет" not in cleaned.lower():
+            cleaned = (
+                f"Однозначного победителя нет: в одной локации теплее, в другой ниже риск осадков. "
+                f"{cleaned}"
+            )
+
+        # Если есть сильная рекомендация, но не упомянуты риски осадков/ветра, добавляем нейтральный safety-tail.
+        strong_reco = any(x in cleaned.lower() for x in ("лучше", "выбирай", "удобнее"))
+        risk_mentioned = any(x in cleaned.lower() for x in ("осад", "дожд", "снег", "ветер"))
+        if strong_reco and not risk_mentioned:
+            cleaned = f"{cleaned} Перед выбором проверь риск осадков и ветер ближе к дате."
+
+        # Мягкая привязка к обеим локациям, если модель случайно потеряла одну из них.
+        if city_1.lower() not in cleaned.lower() or city_2.lower() not in cleaned.lower():
+            cleaned = f"{cleaned} Учитывай условия в {city_1} и {city_2} отдельно."
+
+        return cleaned
 
     def _normalize_location(self, value: object) -> str:
         """Нормализует подпись локации для устойчивого cache key."""
