@@ -33,7 +33,7 @@ def handle_forecast_text(
                 session_store.user_states[user_id] = WAITING_FORECAST_CITY
                 ctx.bot.send_message(
                     message.chat.id,
-                    "Выбери способ ввода локации для прогноза на 5 дней:",
+                    "Введи название населённого пункта или выбери другой способ ниже:",
                     reply_markup=ctx.location_input_menu(),
                 )
                 return True
@@ -75,7 +75,7 @@ def handle_forecast_text(
             session_store.user_states[user_id] = WAITING_FORECAST_CITY
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ ввода локации для прогноза на 5 дней:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.location_input_menu(),
             )
             return True
@@ -95,7 +95,7 @@ def handle_forecast_text(
                 session_store.user_states[user_id] = WAITING_FORECAST_CITY
                 ctx.bot.send_message(
                     message.chat.id,
-                    "Выбери способ ввода локации для прогноза на 5 дней:",
+                    "Введи название населённого пункта или выбери другой способ ниже:",
                     reply_markup=ctx.location_input_menu(),
                 )
                 return True
@@ -121,7 +121,7 @@ def handle_forecast_text(
             session_store.user_states[user_id] = WAITING_FORECAST_CITY
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ ввода локации для прогноза на 5 дней:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.location_input_menu(),
             )
             return True
@@ -134,7 +134,7 @@ def handle_forecast_text(
         if query == "Ввести населённый пункт":
             ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
             return True
-        if query == "Ввести координаты":
+        if query in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_FORECAST_COORDS
             ctx.bot.send_message(
                 message.chat.id,
@@ -142,7 +142,7 @@ def handle_forecast_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if query == "Отправить геолокацию":
+        if query in {"📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_FORECAST_GEO
             ctx.bot.send_message(
                 message.chat.id,

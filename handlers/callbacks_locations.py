@@ -259,7 +259,7 @@ def handle_ai_compare_callback(
             ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Выбор населённого пункта отменён. Выбери способ задания первой локации:",
+                "Выбор населённого пункта отменён. Введи название первой локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return
@@ -269,7 +269,7 @@ def handle_ai_compare_callback(
             ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Выбор населённого пункта отменён. Выбери способ задания второй локации:",
+                "Выбор населённого пункта отменён. Введи название второй локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return
@@ -285,7 +285,7 @@ def handle_ai_compare_callback(
             ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Выбор сохранённой локации отменён. Выбери способ задания первой локации:",
+                "Выбор сохранённой локации отменён. Введи название первой локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return
@@ -294,7 +294,7 @@ def handle_ai_compare_callback(
             ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Выбор сохранённой локации отменён. Выбери способ задания второй локации:",
+                "Выбор сохранённой локации отменён. Введи название второй локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return

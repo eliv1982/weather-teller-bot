@@ -33,7 +33,7 @@ def handle_details_text(
                 session_store.user_states[user_id] = WAITING_DETAILS_CITY
                 ctx.bot.send_message(
                     message.chat.id,
-                    "Выбери способ ввода локации для расширенных данных:",
+                    "Введи название населённого пункта или выбери другой способ ниже:",
                     reply_markup=ctx.location_input_menu(),
                 )
                 return True
@@ -74,7 +74,7 @@ def handle_details_text(
             session_store.user_states[user_id] = WAITING_DETAILS_CITY
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ ввода локации для расширенных данных:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.location_input_menu(),
             )
             return True
@@ -87,7 +87,7 @@ def handle_details_text(
         if query == "Ввести населённый пункт":
             ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для расширенных данных.")
             return True
-        if query == "Ввести координаты":
+        if query in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_DETAILS_COORDS
             ctx.bot.send_message(
                 message.chat.id,
@@ -95,7 +95,7 @@ def handle_details_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if query == "Отправить геолокацию":
+        if query in {"📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_DETAILS_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -230,7 +230,7 @@ def handle_details_text(
                 session_store.user_states[user_id] = WAITING_DETAILS_CITY
                 ctx.bot.send_message(
                     message.chat.id,
-                    "Выбери способ ввода локации для расширенных данных:",
+                    "Введи название населённого пункта или выбери другой способ ниже:",
                     reply_markup=ctx.location_input_menu(),
                 )
                 return True
@@ -255,7 +255,7 @@ def handle_details_text(
             session_store.user_states[user_id] = WAITING_DETAILS_CITY
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ ввода локации для расширенных данных:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.location_input_menu(),
             )
             return True

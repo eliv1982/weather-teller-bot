@@ -93,7 +93,7 @@ def start_current_weather_flow(message: types.Message, *, ctx, session_store) ->
     session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
     ctx.bot.send_message(
         message.chat.id,
-        "Выбери способ ввода локации:",
+        "Введи название населённого пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(),
     )
 
@@ -163,7 +163,7 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
     session_store.user_states[user_id] = WAITING_DETAILS_CITY
     ctx.bot.send_message(
         message.chat.id,
-        "Выбери способ ввода локации для расширенных данных:",
+        "Введи название населённого пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(),
     )
 
@@ -224,7 +224,7 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
-        "Выбери способ ввода локации для прогноза на 5 дней:",
+        "Введи название населённого пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(),
     )
 
@@ -496,12 +496,64 @@ def alerts_worker(*, ctx) -> None:
                             changed = True
                             continue
 
+                        slot_item = next(
+                            (
+                                item
+                                for item in forecast_items
+                                if isinstance(item, dict) and int(item.get("dt") or 0) == first_alert_slot_utc
+                            ),
+                            None,
+                        )
+                        slot_main = slot_item.get("main", {}) if isinstance(slot_item, dict) else {}
+                        slot_wind = slot_item.get("wind", {}) if isinstance(slot_item, dict) else {}
+                        slot_pop = slot_item.get("pop") if isinstance(slot_item, dict) else None
+
+                        desc_l = str(first_alert.get("description") or "").lower()
+                        if any(x in desc_l for x in ("дожд", "лив", "гроза", "снег")):
+                            event_type = "precipitation"
+                        elif isinstance(slot_wind.get("speed"), (int, float)) and float(slot_wind.get("speed")) >= 8.0:
+                            event_type = "wind"
+                        elif (
+                            isinstance(slot_main.get("temp"), (int, float))
+                            and isinstance(slot_main.get("feels_like"), (int, float))
+                            and float(slot_main.get("feels_like")) <= float(slot_main.get("temp")) - 2.0
+                        ):
+                            event_type = "temperature_drop"
+                        else:
+                            event_type = "general"
+
+                        alert_payload = {
+                            "event_type": event_type,
+                            "slot_ts_utc": first_alert_slot_utc,
+                            "slot_local": str(first_alert_text).split("—", 1)[0].strip(),
+                            "temperature": slot_main.get("temp"),
+                            "feels_like": slot_main.get("feels_like"),
+                            "description": first_alert.get("description"),
+                            "wind_speed": slot_wind.get("speed"),
+                            "precip_probability": slot_pop,
+                        }
+                        ai_explanation = ""
+                        try:
+                            ai_explanation = str(
+                                ctx.ai_weather_service.explain_weather_alert(str(title_or_label), alert_payload)
+                            ).strip()
+                        except Exception:
+                            ctx.logger.warning(
+                                "Не удалось получить AI-объяснение уведомления для пользователя %s.",
+                                user_id_str,
+                            )
+
                         alert_text = (
                             "🌤 Weather Teller\n"
                             f"Для локации {title_or_label} найдено изменение погоды:\n"
-                            f"• {first_alert_text}\n"
-                            "Открой Weather Teller и посмотри подробный прогноз по этой локации."
+                            f"• {first_alert_text}"
                         )
+                        if ai_explanation:
+                            alert_text = (
+                                f"{alert_text}\n\n"
+                                "🪄 Совет:\n"
+                                f"{ai_explanation}"
+                            )
                         try:
                             ctx.bot.send_message(int(user_id_str), alert_text)
                             sub["last_alert_signature"] = alert_signature

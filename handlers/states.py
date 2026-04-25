@@ -50,6 +50,7 @@ WAITING_NEW_SAVED_LOCATION_MENU = "waiting_new_saved_location_menu"
 WAITING_NEW_SAVED_LOCATION_TEXT = "waiting_new_saved_location_text"
 WAITING_NEW_SAVED_LOCATION_PICK = "waiting_new_saved_location_pick"
 WAITING_NEW_SAVED_LOCATION_GEO = "waiting_new_saved_location_geo"
+WAITING_NEW_SAVED_LOCATION_COORDS = "waiting_new_saved_location_coords"
 WAITING_NEW_SAVED_LOCATION_TITLE = "waiting_new_saved_location_title"
 WAITING_RENAME_LOCATION_TITLE = "waiting_rename_location_title"
 WAITING_AI_COMPARE_MODE = "waiting_ai_compare_mode"
@@ -122,6 +123,7 @@ LOCATIONS_STATES = {
     WAITING_NEW_SAVED_LOCATION_TEXT,
     WAITING_NEW_SAVED_LOCATION_PICK,
     WAITING_NEW_SAVED_LOCATION_GEO,
+    WAITING_NEW_SAVED_LOCATION_COORDS,
     WAITING_NEW_SAVED_LOCATION_TITLE,
     WAITING_RENAME_LOCATION_TITLE,
     WAITING_AI_COMPARE_MODE,

@@ -20,6 +20,7 @@ from .states import (
     WAITING_AI_COMPARE_MODE,
     WAITING_LOCATION_TITLE,
     WAITING_NEW_SAVED_LOCATION_GEO,
+    WAITING_NEW_SAVED_LOCATION_COORDS,
     WAITING_NEW_SAVED_LOCATION_MENU,
     WAITING_NEW_SAVED_LOCATION_PICK,
     WAITING_NEW_SAVED_LOCATION_TEXT,
@@ -79,7 +80,7 @@ def _ai_compare_set_location(
         session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC2_METHOD
         ctx.bot.send_message(
             message.chat.id,
-            "Локация 1 сохранена. Теперь выбери способ задания второй локации:",
+            "Локация 1 сохранена. Введи название второй локации или выбери другой способ ниже:",
             reply_markup=ctx.ai_compare_location_method_menu(),
         )
         return True
@@ -336,6 +337,60 @@ def validate_second_compare_location(loc_1: dict, loc_2: dict) -> str | None:
     if is_same_location(loc_1, loc_2):
         return "duplicate"
     return None
+
+
+def _ai_compare_process_text_query(
+    message: types.Message,
+    user_id: int,
+    *,
+    step: int,
+    query: str,
+    ctx,
+    session_store,
+) -> bool:
+    """Обрабатывает прямой текстовый ввод локации для шага AI-сравнения."""
+    if not query:
+        ctx.bot.send_message(message.chat.id, "⚠️ Введи населённый пункт.")
+        return True
+    locations = get_locations(query, limit=5)
+    locations = ctx.rank_locations(query, locations)[:3]
+    if not locations:
+        ctx.bot.send_message(
+            message.chat.id,
+            "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
+        )
+        return True
+    if len(locations) == 1:
+        location_item = ctx.build_geocode_item_with_disambiguated_label(locations, 0)
+        lat = location_item.get("lat")
+        lon = location_item.get("lon")
+        if lat is None or lon is None:
+            ctx.bot.send_message(message.chat.id, "Не удалось определить локацию. Попробуй снова.")
+            return True
+        city_label = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
+        return _ai_compare_set_location(
+            message,
+            user_id,
+            step=step,
+            city_label=city_label,
+            lat=float(lat),
+            lon=float(lon),
+            ctx=ctx,
+            session_store=session_store,
+        )
+
+    session_store.ai_compare_location_choices[user_id] = locations
+    session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_PICK if step == 1 else WAITING_AI_COMPARE_LOC2_PICK
+    ctx.bot.send_message(
+        message.chat.id,
+        "Найдено несколько вариантов. Выбери нужный населённый пункт:",
+        reply_markup=ctx.build_location_pick_keyboard(
+            locations,
+            f"aicmp_geo_pick:{step}",
+            "aicmp_geo_cancel",
+        ),
+    )
+    return True
 
 
 def _sorted_day_keys(day_keys: set[str]) -> list[str]:
@@ -621,7 +676,7 @@ def handle_locations_text(
             session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ добавления новой локации:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.add_saved_location_menu(),
             )
             return True
@@ -695,16 +750,8 @@ def handle_locations_text(
         return True
 
     if state == WAITING_NEW_SAVED_LOCATION_MENU:
-        if message.text == "Ввести населённый пункт":
-            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TEXT
-            ctx.bot.send_message(
-                message.chat.id,
-                "Введи населённый пункт, который хочешь сохранить.",
-                reply_markup=types.ReplyKeyboardRemove(),
-            )
-            return True
-
-        if message.text == "Отправить геолокацию":
+        query = (message.text or "").strip()
+        if query in {"📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -712,13 +759,27 @@ def handle_locations_text(
                 reply_markup=ctx.geo_request_menu(),
             )
             return True
+        if query in {"🧭 Координаты", "Ввести координаты"}:
+            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if not query:
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            return True
 
-        ctx.bot.send_message(
-            message.chat.id,
-            "Выбери действие кнопкой ниже или нажми «⬅️ В меню».",
-            reply_markup=ctx.add_saved_location_menu(),
+        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TEXT
+        message.text = query
+        return handle_locations_text(
+            message,
+            user_id,
+            WAITING_NEW_SAVED_LOCATION_TEXT,
+            ctx=ctx,
+            session_store=session_store,
         )
-        return True
 
     if state == WAITING_NEW_SAVED_LOCATION_TEXT:
         query = (message.text or "").strip()
@@ -795,6 +856,27 @@ def handle_locations_text(
         )
         return True
 
+    if state == WAITING_NEW_SAVED_LOCATION_COORDS:
+        parsed = parse_coordinates(message.text or "")
+        if parsed is None:
+            ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
+            return True
+        lat, lon = parsed
+        location = ctx.get_location_by_coordinates(lat, lon)
+        label = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        session_store.saved_location_drafts[user_id] = {
+            "lat": float(lat),
+            "lon": float(lon),
+            "label": label,
+        }
+        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
+        ctx.bot.send_message(
+            message.chat.id,
+            "Введи название для этой локации, например: Дом",
+            reply_markup=types.ReplyKeyboardRemove(),
+        )
+        return True
+
     if state == WAITING_AI_COMPARE_MODE:
         choice = (message.text or "").strip()
         if choice == "Сейчас":
@@ -806,7 +888,7 @@ def handle_locations_text(
             session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ задания первой локации:",
+                "Введи название первой локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return True
@@ -819,7 +901,7 @@ def handle_locations_text(
             session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ задания первой локации:",
+                "Введи название первой локации или выбери другой способ ниже:",
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return True
@@ -839,7 +921,7 @@ def handle_locations_text(
             session_store.user_states.pop(user_id, None)
             ctx.bot.send_message(message.chat.id, "Сравнение отменено.", reply_markup=ctx.main_menu())
             return True
-        if choice == "Из сохранённых":
+        if choice in {"⭐ Из сохранённых", "Из сохранённых"}:
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
@@ -854,15 +936,7 @@ def handle_locations_text(
                 reply_markup=ctx.build_ai_compare_saved_locations_keyboard(saved_locations, step),
             )
             return True
-        if choice == "Ввести населённый пункт":
-            session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_TEXT if step == 1 else WAITING_AI_COMPARE_LOC2_TEXT
-            ctx.bot.send_message(
-                message.chat.id,
-                f"Введи {'первый' if step == 1 else 'второй'} населённый пункт:",
-                reply_markup=types.ReplyKeyboardRemove(),
-            )
-            return True
-        if choice == "Ввести координаты":
+        if choice in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = (
                 WAITING_AI_COMPARE_LOC1_COORDS if step == 1 else WAITING_AI_COMPARE_LOC2_COORDS
             )
@@ -872,7 +946,7 @@ def handle_locations_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if choice == "Отправить геолокацию":
+        if choice in {"📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_GEO if step == 1 else WAITING_AI_COMPARE_LOC2_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -881,58 +955,26 @@ def handle_locations_text(
             )
             return True
 
-        ctx.bot.send_message(
-            message.chat.id,
-            "Выбери способ задания локации кнопкой ниже или нажми «⬅️ Отмена».",
-            reply_markup=ctx.ai_compare_location_method_menu(),
+        return _ai_compare_process_text_query(
+            message,
+            user_id,
+            step=step,
+            query=choice,
+            ctx=ctx,
+            session_store=session_store,
         )
-        return True
 
     if state in {WAITING_AI_COMPARE_LOC1_TEXT, WAITING_AI_COMPARE_LOC2_TEXT}:
         step = 1 if state == WAITING_AI_COMPARE_LOC1_TEXT else 2
         query = (message.text or "").strip()
-        if not query:
-            ctx.bot.send_message(message.chat.id, "⚠️ Введи населённый пункт.")
-            return True
-        locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)[:3]
-        if not locations:
-            ctx.bot.send_message(
-                message.chat.id,
-                "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
-            )
-            return True
-        if len(locations) == 1:
-            location_item = ctx.build_geocode_item_with_disambiguated_label(locations, 0)
-            lat = location_item.get("lat")
-            lon = location_item.get("lon")
-            if lat is None or lon is None:
-                ctx.bot.send_message(message.chat.id, "Не удалось определить локацию. Попробуй снова.")
-                return True
-            city_label = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
-            return _ai_compare_set_location(
-                message,
-                user_id,
-                step=step,
-                city_label=city_label,
-                lat=float(lat),
-                lon=float(lon),
-                ctx=ctx,
-                session_store=session_store,
-            )
-
-        session_store.ai_compare_location_choices[user_id] = locations
-        session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_PICK if step == 1 else WAITING_AI_COMPARE_LOC2_PICK
-        ctx.bot.send_message(
-            message.chat.id,
-            "Найдено несколько вариантов. Выбери нужный населённый пункт:",
-            reply_markup=ctx.build_location_pick_keyboard(
-                locations,
-                f"aicmp_geo_pick:{step}",
-                "aicmp_geo_cancel",
-            ),
+        return _ai_compare_process_text_query(
+            message,
+            user_id,
+            step=step,
+            query=query,
+            ctx=ctx,
+            session_store=session_store,
         )
-        return True
 
     if state in {WAITING_AI_COMPARE_LOC1_COORDS, WAITING_AI_COMPARE_LOC2_COORDS}:
         step = 1 if state == WAITING_AI_COMPARE_LOC1_COORDS else 2

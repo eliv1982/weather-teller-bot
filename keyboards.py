@@ -53,8 +53,10 @@ def alerts_add_location_menu() -> types.ReplyKeyboardMarkup:
 def location_input_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа ввода локации для погодных сценариев."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"), types.KeyboardButton("Ввести координаты"))
-    keyboard.row(types.KeyboardButton("Отправить геолокацию", request_location=True))
+    keyboard.row(
+        types.KeyboardButton("🧭 Координаты"),
+        types.KeyboardButton("📍 Геолокация", request_location=True),
+    )
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -106,7 +108,10 @@ def locations_menu() -> types.ReplyKeyboardMarkup:
 def add_saved_location_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа добавления новой локации."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Ввести населённый пункт"), types.KeyboardButton("Отправить геолокацию"))
+    keyboard.row(
+        types.KeyboardButton("🧭 Координаты"),
+        types.KeyboardButton("📍 Геолокация"),
+    )
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -164,10 +169,10 @@ def ai_compare_mode_menu() -> types.ReplyKeyboardMarkup:
 def ai_compare_location_method_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора способа задания локации для AI-сравнения."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("Из сохранённых"), types.KeyboardButton("Ввести населённый пункт"))
+    keyboard.row(types.KeyboardButton("⭐ Из сохранённых"))
     keyboard.row(
-        types.KeyboardButton("Ввести координаты"),
-        types.KeyboardButton("Отправить геолокацию", request_location=True),
+        types.KeyboardButton("🧭 Координаты"),
+        types.KeyboardButton("📍 Геолокация", request_location=True),
     )
     keyboard.row(types.KeyboardButton("⬅️ Отмена"))
     return keyboard

@@ -56,7 +56,7 @@ def handle_current_text(
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ ввода локации:",
+                "Введи название населённого пункта или выбери другой способ ниже:",
                 reply_markup=ctx.location_input_menu(),
             )
             return True
@@ -69,7 +69,7 @@ def handle_current_text(
         if query == "Ввести населённый пункт":
             ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
             return True
-        if query == "Ввести координаты":
+        if query in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_COORDS
             ctx.bot.send_message(
                 message.chat.id,
@@ -77,7 +77,7 @@ def handle_current_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if query == "Отправить геолокацию":
+        if query in {"📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_GEO
             ctx.bot.send_message(
                 message.chat.id,

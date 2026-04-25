@@ -113,6 +113,32 @@ class AiWeatherService:
         logger.info("AI fallback used: scenario=details")
         return fallback
 
+    def explain_weather_alert(self, location_label: str, alert_payload: dict) -> str:
+        """Коротко объясняет уведомление о погоде с практичным советом."""
+        fallback = self._fallback_weather_alert(location_label, alert_payload)
+        signature = self._weather_alert_signature(location_label, alert_payload)
+        cache_key = self._build_cache_key("ai_weather_alert", signature)
+        cached = self._get_cached(cache_key)
+        if cached:
+            logger.info("AI cache hit: scenario=ai_weather_alert")
+            return cached
+        logger.info("AI cache miss: scenario=ai_weather_alert")
+        prompt = (
+            "Объясни погодное уведомление коротко и практично.\n"
+            "Требования: русский язык, 1-2 коротких предложения, без воды, без дисклеймеров, "
+            "без драматизации и без длинного прогноза.\n"
+            "Используй только переданные данные, ничего не выдумывай.\n"
+            "Дай конкретный совет для ближайшей активности (одежда, зонт, маршрут, время выхода).\n\n"
+            f"Локация: {location_label}\n"
+            f"Событие: {alert_payload}"
+        )
+        model_answer = self._call_model(prompt, max_output_tokens=120)
+        if model_answer:
+            self._save_cached(cache_key, "ai_weather_alert", model_answer, ttl_seconds=self.ttl_current_seconds)
+            return model_answer
+        logger.info("AI fallback used: scenario=ai_weather_alert")
+        return fallback
+
     def compare_two_locations_current_with_ai(self, location_1_payload: dict, location_2_payload: dict) -> str:
         """Сравнивает текущую погоду двух локаций в deterministic-first режиме."""
         signature = self._compare_current_signature(location_1_payload, location_2_payload)
@@ -251,6 +277,23 @@ class AiWeatherService:
             "wind_speed": self._round_1(wind_data.get("speed")),
             "wind_deg": wind_data.get("deg"),
             "air_quality": self._air_quality_signature(air_quality_data),
+        }
+
+    def _weather_alert_signature(self, location_label: str, alert_payload: dict) -> dict:
+        """Сигнатура кэша для AI-объяснения погодного уведомления."""
+        payload = alert_payload if isinstance(alert_payload, dict) else {}
+        return {
+            "mode": "alert",
+            "format_version": "weather_alert_v1",
+            "location": self._normalize_location(location_label),
+            "event_type": self._normalize_location(payload.get("event_type")),
+            "slot_ts_utc": self._as_int(payload.get("slot_ts_utc")),
+            "slot_local": self._normalize_location(payload.get("slot_local")),
+            "temperature": self._round_step(payload.get("temperature"), step=0.5),
+            "feels_like": self._round_step(payload.get("feels_like"), step=0.5),
+            "description": self._normalize_description(payload.get("description")),
+            "wind_speed": self._round_step(payload.get("wind_speed"), step=1.0),
+            "precip_probability": self._round_1(payload.get("precip_probability")),
         }
 
     def _compare_current_signature(self, payload_1: dict, payload_2: dict) -> dict:
@@ -775,6 +818,59 @@ class AiWeatherService:
             line_cooler,
             trip_text,
         ])
+
+    def _fallback_weather_alert(self, location_label: str, alert_payload: dict) -> str:
+        """Детерминированный fallback для погодного уведомления (1-2 коротких предложения)."""
+        payload = alert_payload if isinstance(alert_payload, dict) else {}
+        slot_local = str(payload.get("slot_local") or "").strip()
+        description = str(payload.get("description") or "").strip().lower()
+        event_type = str(payload.get("event_type") or "").strip().lower()
+        temperature = payload.get("temperature")
+        feels_like = payload.get("feels_like")
+        wind_speed = payload.get("wind_speed")
+        precip_probability = payload.get("precip_probability")
+
+        if any(x in description for x in ("дожд", "лив", "гроза", "снег")) or event_type == "precipitation":
+            when = f"К {slot_local} " if slot_local else "Скоро "
+            tail = ""
+            if isinstance(precip_probability, (int, float)) and float(precip_probability) >= 0.6:
+                tail = " Осадки выглядят вероятными."
+            return f"{when}ожидаются осадки, лучше взять зонт или дождевик.{tail}".strip()
+
+        if event_type == "wind" or (isinstance(wind_speed, (int, float)) and float(wind_speed) >= 8):
+            speed_hint = (
+                f" до {round(float(wind_speed), 1)} м/с"
+                if isinstance(wind_speed, (int, float))
+                else ""
+            )
+            return (
+                f"К {slot_local} ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
+                if slot_local
+                else f"Ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
+            ) + " Для прогулки лучше выбрать более защищённый маршрут."
+
+        if event_type == "temperature_drop":
+            feels_note = ""
+            if isinstance(feels_like, (int, float)):
+                feels_note = f" По ощущениям около {round(float(feels_like), 1)}°C."
+            return (
+                "Температура снизится, лучше взять дополнительный верхний слой одежды."
+                f"{feels_note}"
+            ).strip()
+
+        if isinstance(temperature, (int, float)) and isinstance(feels_like, (int, float)):
+            if float(feels_like) <= float(temperature) - 2.0:
+                return (
+                    f"К {slot_local} может ощущаться прохладнее фактической температуры, лучше одеться теплее."
+                    if slot_local
+                    else "Может ощущаться прохладнее фактической температуры, лучше одеться теплее."
+                )
+
+        if slot_local and description:
+            return f"К {slot_local} ожидается {description}, лучше скорректировать маршрут и одежду под условия."
+        if description:
+            return f"Ожидается {description}, лучше заранее учесть это в планах на выход."
+        return ""
 
     def _fallback_compare_forecast_day(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
         """Fallback сравнения прогноза двух локаций на выбранную дату."""
