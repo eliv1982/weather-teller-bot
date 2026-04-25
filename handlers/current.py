@@ -2,11 +2,11 @@ import time
 from telebot import types
 
 from .states import (
-    WAITING_CURRENT_USE_FAVORITE,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_CURRENT_WEATHER_COORDS,
     WAITING_CURRENT_WEATHER_GEO,
     WAITING_CURRENT_WEATHER_PICK,
+    WAITING_CURRENT_WEATHER_SAVED_PICK,
 )
 from coordinates_parser import parse_coordinates
 from weather_app import get_locations
@@ -21,53 +21,24 @@ def handle_current_text(
     session_store,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария текущей погоды."""
-    if state == WAITING_CURRENT_USE_FAVORITE:
-        answer = (message.text or "").strip().lower()
-        yes_values = {"да", "д", "yes", "y"}
-        no_values = {"нет", "н", "no"}
-
-        if answer in yes_values:
-            draft = session_store.current_favorite_drafts.get(user_id)
-            location_item = draft.get("location") if isinstance(draft, dict) else None
-            if not isinstance(location_item, dict):
-                session_store.current_favorite_drafts.pop(user_id, None)
-                session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
-                ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
-                return True
-
-            ctx.complete_current_weather_from_location(
-                ctx.bot,
-                message.chat.id,
-                user_id,
-                location_item,
-                user_states=session_store.user_states,
-                current_location_choices=session_store.current_location_choices,
-                ai_current_snapshots=session_store.ai_current_snapshots,
-                create_ai_snapshot_id_fn=session_store.generate_ai_snapshot_id,
-                cleanup_ai_snapshots_fn=session_store.cleanup_ai_snapshots,
-                load_user_fn=ctx.load_user,
-                save_user_fn=ctx.save_user,
-            )
-            session_store.current_favorite_drafts.pop(user_id, None)
-            return True
-
-        if answer in no_values:
-            session_store.current_favorite_drafts.pop(user_id, None)
-            session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_CITY
-            ctx.bot.send_message(
-                message.chat.id,
-                "Введи название населённого пункта или выбери другой способ ниже:",
-                reply_markup=ctx.location_input_menu(),
-            )
-            return True
-
-        ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
-        return True
-
     if state == WAITING_CURRENT_WEATHER_CITY:
         query = (message.text or "").strip()
-        if query == "Ввести населённый пункт":
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта.")
+        if query == "⭐ Из сохранённых":
+            user_data = ctx.load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Сохранённых локаций пока нет.",
+                    reply_markup=ctx.location_input_menu(has_saved_locations=False),
+                )
+                return True
+            session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_SAVED_PICK
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери сохранённую локацию:",
+                reply_markup=ctx.build_saved_locations_keyboard(saved_locations, "current_saved_pick"),
+            )
             return True
         if query in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_COORDS
@@ -77,7 +48,7 @@ def handle_current_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if query in {"📍 Геолокация", "Отправить геолокацию"}:
+        if query in {"📍 Отправить геолокацию", "📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_CURRENT_WEATHER_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -235,6 +206,13 @@ def handle_current_text(
         ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state == WAITING_CURRENT_WEATHER_SAVED_PICK:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери сохранённую локацию кнопкой ниже или нажми «⬅️ В меню».",
         )
         return True
 

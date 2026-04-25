@@ -75,6 +75,44 @@ def handle_forecast_callback(
         )
         return
 
+    if call.data.startswith("forecast_saved_pick:"):
+        location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
+        user_data = ctx.load_user(user_id)
+        saved_locations = user_data.get("saved_locations", [])
+        target = next(
+            (
+                item
+                for item in saved_locations
+                if isinstance(item, dict) and isinstance(location_id, str) and item.get("id") == location_id
+            ),
+            None,
+        )
+        if not isinstance(target, dict):
+            ctx.bot.answer_callback_query(call.id)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(chat_id, "⚠️ Сохранённая локация не найдена.", reply_markup=ctx.main_menu())
+            return
+        lat = target.get("lat")
+        lon = target.get("lon")
+        city = str(target.get("label") or target.get("title") or "Сохранённая локация")
+        if lat is None or lon is None:
+            ctx.bot.answer_callback_query(call.id)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.send_message(chat_id, "⚠️ У сохранённой локации нет координат.", reply_markup=ctx.main_menu())
+            return
+        ctx.bot.answer_callback_query(call.id)
+        stub = _message_stub_for_chat(chat_id)
+        send_forecast_by_coordinates(
+            stub,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            save_location=True,
+            preferred_city_label=city,
+        )
+        return
+
     cache = session_store.forecast_cache.get(user_id)
     if not cache:
         ctx.bot.answer_callback_query(call.id, "Данные прогноза устарели.")

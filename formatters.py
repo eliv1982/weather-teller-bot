@@ -40,16 +40,13 @@ def format_saved_locations(user_data: dict) -> str:
     if not isinstance(saved_locations, list) or not saved_locations:
         return "Сохранённых локаций пока нет."
 
-    favorite_id = user_data.get("favorite_location_id")
     lines = ["Мои локации:"]
     for item in saved_locations:
         if not isinstance(item, dict):
             continue
-        location_id = item.get("id")
         title = (item.get("title") or "Без названия").strip()
         label = (item.get("label") or "Без подписи").strip()
-        mark = "⭐ " if location_id == favorite_id else ""
-        lines.append(f"{mark}{title} — {label}")
+        lines.append(f"{title} — {label}")
 
     if len(lines) == 1:
         return "Сохранённых локаций пока нет."

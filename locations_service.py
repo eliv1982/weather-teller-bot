@@ -1,5 +1,6 @@
 import logging
 import time
+from math import asin, cos, radians, sin, sqrt
 
 from alerts_service import ensure_notifications_defaults
 from formatters import format_alerts_status, format_weather_response
@@ -11,44 +12,157 @@ from weather_app import build_location_label, get_current_weather
 logger = logging.getLogger(__name__)
 
 
-def save_saved_location_item(user_id: int, title: str, label: str, lat: float, lon: float) -> None:
-    """Сохраняет локацию в список пользователя или обновляет title у дубля по координатам."""
-    user_data = load_user(user_id)
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(saved_locations, list):
-        saved_locations = []
+def normalize_text(value: object) -> str:
+    """Нормализует текст для устойчивого сравнения названий/подписей локаций."""
+    text = str(value or "").strip().lower().replace("ё", "е")
+    text = " ".join(text.split())
+    if "—" in text:
+        text = text.split("—")[-1].strip()
+    return text
 
-    existing_location = None
+
+def normalize_saved_location_name(value: object) -> str:
+    """Совместимое имя-алиас для старых вызовов."""
+    return normalize_text(value)
+
+
+def calculate_distance_km(lat_1: float, lon_1: float, lat_2: float, lon_2: float) -> float:
+    """Считает расстояние между точками по формуле гаверсинусов."""
+    earth_radius_km = 6371.0
+    d_lat = radians(lat_2 - lat_1)
+    d_lon = radians(lon_2 - lon_1)
+    a = sin(d_lat / 2) ** 2 + cos(radians(lat_1)) * cos(radians(lat_2)) * sin(d_lon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    return earth_radius_km * c
+
+
+def _extract_label_parts(label: object) -> tuple[str, str, str]:
+    """Разбирает label вида 'Город (Страна, Регион)' в нормализованные части."""
+    raw = str(label or "").strip()
+    if not raw:
+        return "", "", ""
+    city_raw = raw
+    country_raw = ""
+    state_raw = ""
+    if "(" in raw and ")" in raw:
+        city_raw = raw.split("(", 1)[0].strip()
+        inside = raw.split("(", 1)[1].rsplit(")", 1)[0]
+        parts = [p.strip() for p in inside.split(",")]
+        if parts:
+            country_raw = parts[0]
+        if len(parts) > 1:
+            state_raw = parts[1]
+    return (
+        normalize_saved_location_name(city_raw),
+        normalize_saved_location_name(country_raw),
+        normalize_saved_location_name(state_raw),
+    )
+
+
+def find_duplicate_saved_location_by_geo(
+    saved_locations: list[dict],
+    *,
+    label: str,
+    lat: float,
+    lon: float,
+    distance_threshold_km: float = 2.0,
+) -> dict | None:
+    """Ищет дубль локации по близости координат или по нормализованному label."""
+    new_city, new_country, new_state = _extract_label_parts(label)
     for item in saved_locations:
         if not isinstance(item, dict):
             continue
         item_lat = item.get("lat")
         item_lon = item.get("lon")
-        if item_lat is None or item_lon is None:
-            continue
-        if abs(float(item_lat) - float(lat)) < 1e-6 and abs(float(item_lon) - float(lon)) < 1e-6:
-            existing_location = item
-            break
+        if isinstance(item_lat, (int, float)) and isinstance(item_lon, (int, float)):
+            distance_km = calculate_distance_km(float(item_lat), float(item_lon), float(lat), float(lon))
+            if distance_km < distance_threshold_km:
+                return item
 
-    if existing_location is not None:
-        existing_location["title"] = title
-        existing_location["label"] = label
-        existing_location["lat"] = float(lat)
-        existing_location["lon"] = float(lon)
-    else:
-        location_id = f"loc_{int(time.time() * 1000)}_{len(saved_locations) + 1}"
-        saved_locations.append(
-            {
-                "id": location_id,
-                "title": title,
-                "label": label,
-                "lat": float(lat),
-                "lon": float(lon),
-            }
-        )
+        item_city, item_country, item_state = _extract_label_parts(item.get("label"))
+        if new_city and item_city and new_city == item_city:
+            if new_country and item_country and new_country != item_country:
+                continue
+            if new_state and item_state and new_state != item_state:
+                continue
+            return item
+    return None
+
+
+def find_duplicate_saved_location_by_title(saved_locations: list[dict], *, title: str) -> dict | None:
+    """Ищет дубль по нормализованному title."""
+    target = normalize_text(title)
+    if not target:
+        return None
+    for item in saved_locations:
+        if not isinstance(item, dict):
+            continue
+        item_title = normalize_text(item.get("title"))
+        if item_title and item_title == target:
+            return item
+    return None
+
+
+def format_saved_location_item(item: dict) -> str:
+    """Формирует строку 'title — label' для UX-сообщений."""
+    title = str(item.get("title") or "").strip()
+    label = str(item.get("label") or "").strip()
+    if title and label:
+        return f"{title} — {label}"
+    return title or label or "Локация"
+
+
+def find_duplicate_saved_location(
+    saved_locations: list[dict],
+    *,
+    label: str,
+    lat: float,
+    lon: float,
+    distance_threshold_km: float = 2.0,
+) -> dict | None:
+    """Совместимый wrapper: ищет геодубль."""
+    return find_duplicate_saved_location_by_geo(
+        saved_locations,
+        label=label,
+        lat=lat,
+        lon=lon,
+        distance_threshold_km=distance_threshold_km,
+    )
+
+
+def save_saved_location_item(user_id: int, title: str, label: str, lat: float, lon: float) -> dict:
+    """Сохраняет новую локацию и возвращает статус операции."""
+    user_data = load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list):
+        saved_locations = []
+
+    duplicate_location = find_duplicate_saved_location_by_geo(
+        saved_locations,
+        label=label,
+        lat=float(lat),
+        lon=float(lon),
+    )
+    if duplicate_location is not None:
+        return {"status": "duplicate_location", "item": duplicate_location}
+
+    duplicate_title = find_duplicate_saved_location_by_title(saved_locations, title=title)
+    if duplicate_title is not None:
+        return {"status": "duplicate_title", "item": duplicate_title}
+
+    location_id = f"loc_{int(time.time() * 1000)}_{len(saved_locations) + 1}"
+    new_item = {
+        "id": location_id,
+        "title": title,
+        "label": label,
+        "lat": float(lat),
+        "lon": float(lon),
+    }
+    saved_locations.append(new_item)
 
     user_data["saved_locations"] = saved_locations
     save_user(user_id, user_data)
+    return {"status": "added", "item": new_item}
 
 
 def save_user_location_from_geocode_item(

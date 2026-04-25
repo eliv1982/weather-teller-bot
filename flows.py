@@ -6,14 +6,9 @@ from handlers.states import (
     LOCATIONS_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_COMPARE_CITY_1,
-    WAITING_CURRENT_USE_FAVORITE,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_DETAILS_CITY,
-    WAITING_DETAILS_USE_FAVORITE,
-    WAITING_DETAILS_USE_SAVED_LOCATION,
     WAITING_FORECAST_CITY,
-    WAITING_FORECAST_USE_FAVORITE,
-    WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
 )
 
@@ -73,28 +68,13 @@ def start_current_weather_flow(message: types.Message, *, ctx, session_store) ->
     user_id = message.from_user.id
     session_store.current_location_choices.pop(user_id, None)
     session_store.current_favorite_drafts.pop(user_id, None)
-
     user_data = ctx.load_user(user_id)
-    favorite_item = _get_favorite_location(user_data)
-    if favorite_item is not None:
-        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
-        session_store.current_favorite_drafts[user_id] = {
-            "location": favorite_item,
-            "label": favorite_label,
-        }
-        session_store.set_state(user_id, WAITING_CURRENT_USE_FAVORITE)
-        ctx.bot.send_message(
-            message.chat.id,
-            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
-            reply_markup=ctx.yes_no_menu(),
-        )
-        return
-
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
     session_store.set_state(user_id, WAITING_CURRENT_WEATHER_CITY)
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
-        reply_markup=ctx.location_input_menu(),
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
 
@@ -116,55 +96,14 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
     ctx.logger.info("Запущен сценарий расширенных данных для пользователя %s.", user_id)
     session_store.details_location_choices.pop(user_id, None)
     session_store.details_favorite_drafts.pop(user_id, None)
-
     user_data = ctx.load_user(user_id)
-    favorite_item = _get_favorite_location(user_data)
-    if favorite_item is not None:
-        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
-        session_store.details_favorite_drafts[user_id] = {
-            "city": favorite_label,
-            "lat": favorite_item["lat"],
-            "lon": favorite_item["lon"],
-        }
-        session_store.user_states[user_id] = WAITING_DETAILS_USE_FAVORITE
-        ctx.bot.send_message(
-            message.chat.id,
-            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
-            reply_markup=ctx.yes_no_menu(),
-        )
-        return
-
-    saved_city = user_data.get("city")
-    saved_lat = user_data.get("lat")
-    saved_lon = user_data.get("lon")
-
-    if saved_lat is not None and saved_lon is not None:
-        ctx.logger.info(
-            "Найдена сохранённая локация для /details у пользователя %s: %s (%s, %s).",
-            user_id,
-            saved_city,
-            saved_lat,
-            saved_lon,
-        )
-        session_store.details_saved_drafts[user_id] = {
-            "city": saved_city or "Сохранённая локация",
-            "lat": saved_lat,
-            "lon": saved_lon,
-        }
-        session_store.user_states[user_id] = WAITING_DETAILS_USE_SAVED_LOCATION
-        ctx.bot.send_message(
-            message.chat.id,
-            f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
-            "Ответь: Да или Нет.",
-            reply_markup=ctx.yes_no_menu(),
-        )
-        return
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
 
     session_store.user_states[user_id] = WAITING_DETAILS_CITY
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
-        reply_markup=ctx.location_input_menu(),
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
 
@@ -184,48 +123,14 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     ctx.logger.info("Запущен сценарий прогноза на 5 дней для пользователя %s.", user_id)
     session_store.forecast_location_choices.pop(user_id, None)
     session_store.forecast_favorite_drafts.pop(user_id, None)
-
     user_data = ctx.load_user(user_id)
-    favorite_item = _get_favorite_location(user_data)
-    if favorite_item is not None:
-        favorite_label = str(favorite_item.get("label") or favorite_item.get("title") or "Основная локация")
-        session_store.forecast_favorite_drafts[user_id] = {
-            "city": favorite_label,
-            "lat": favorite_item["lat"],
-            "lon": favorite_item["lon"],
-        }
-        session_store.user_states[user_id] = WAITING_FORECAST_USE_FAVORITE
-        ctx.bot.send_message(
-            message.chat.id,
-            f"Использовать основную локацию: {favorite_label}?\nОтветь: Да или Нет.",
-            reply_markup=ctx.yes_no_menu(),
-        )
-        return
-
-    saved_city = user_data.get("city")
-    saved_lat = user_data.get("lat")
-    saved_lon = user_data.get("lon")
-
-    if saved_lat is not None and saved_lon is not None:
-        session_store.forecast_saved_drafts[user_id] = {
-            "city": saved_city or "Сохранённая локация",
-            "lat": saved_lat,
-            "lon": saved_lon,
-        }
-        session_store.user_states[user_id] = WAITING_FORECAST_USE_SAVED_LOCATION
-        ctx.bot.send_message(
-            message.chat.id,
-            f"Использовать последнюю сохранённую локацию: {saved_city or 'Сохранённая локация'}?\n"
-            "Ответь: Да или Нет.",
-            reply_markup=ctx.yes_no_menu(),
-        )
-        return
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
 
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
-        reply_markup=ctx.location_input_menu(),
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
 
@@ -242,6 +147,12 @@ def show_forecast_days_message(message: types.Message, user_id: int, *, ctx, ses
 
     days = list(cache["grouped"].keys())
     keyboard = ctx.build_forecast_days_keyboard(days)
+    # Снимаем сценарную reply-клавиатуру выбора локации, оставляя inline-навигацию прогноза.
+    ctx.bot.send_message(
+        message.chat.id,
+        "Прогноз готов.",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
     ctx.bot.send_message(
         message.chat.id,
         f"Выбери день прогноза для {cache['city']}:",
@@ -434,6 +345,32 @@ def complete_compare_two_locations(
     ctx.bot.send_message(chat_id, answer, reply_markup=ctx.main_menu())
 
 
+def _short_location_name(label: object) -> str:
+    """Возвращает короткую географическую подпись без служебных префиксов/скобок."""
+    raw = str(label or "").strip()
+    if not raw:
+        return "неизвестная локация"
+    if "—" in raw:
+        raw = raw.split("—", 1)[1].strip()
+    if "(" in raw:
+        raw = raw.split("(", 1)[0].strip()
+    return raw or "неизвестная локация"
+
+
+def _resolve_alert_location_label(sub: dict) -> str:
+    """Возвращает фактическую подпись локации для уведомления и AI-совета."""
+    if not isinstance(sub, dict):
+        return "неизвестная локация"
+    raw_label = (
+        sub.get("label")
+        or sub.get("city")
+        or sub.get("city_label")
+        or sub.get("title")
+        or "неизвестная локация"
+    )
+    return _short_location_name(raw_label)
+
+
 def alerts_worker(*, ctx) -> None:
     """Фоновая проверка прогноза для уведомлений."""
     ctx.logger.info("Фоновый поток уведомлений запущен.")
@@ -483,7 +420,7 @@ def alerts_worker(*, ctx) -> None:
                         horizon_hours=24,
                     )
                     if alerts:
-                        title_or_label = sub.get("title") or sub.get("label") or "неизвестная локация"
+                        location_label = _resolve_alert_location_label(sub)
                         first_alert = alerts[0]
                         first_alert_text = str(first_alert.get("text") or "")
                         first_alert_slot_utc = int(first_alert.get("slot_ts_utc") or 0)
@@ -535,7 +472,7 @@ def alerts_worker(*, ctx) -> None:
                         ai_explanation = ""
                         try:
                             ai_explanation = str(
-                                ctx.ai_weather_service.explain_weather_alert(str(title_or_label), alert_payload)
+                                ctx.ai_weather_service.explain_weather_alert(str(location_label), alert_payload)
                             ).strip()
                         except Exception:
                             ctx.logger.warning(
@@ -545,7 +482,7 @@ def alerts_worker(*, ctx) -> None:
 
                         alert_text = (
                             "🌤 Weather Teller\n"
-                            f"Для локации {title_or_label} найдено изменение погоды:\n"
+                            f"Для локации {location_label} найдено изменение погоды:\n"
                             f"• {first_alert_text}"
                         )
                         if ai_explanation:

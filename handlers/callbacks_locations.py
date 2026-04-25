@@ -2,6 +2,7 @@ from .locations import (
     _ai_compare_day_payload,
     _ai_compare_reset,
     _ai_compare_set_location,
+    _set_new_saved_location_candidate,
     format_ai_compare_day_summary_message,
 )
 from .states import (
@@ -167,7 +168,6 @@ def handle_saved_location_pick_callback(
     ctx,
     session_store,
     LOCATIONS_MENU,
-    WAITING_NEW_SAVED_LOCATION_TITLE,
     types,
 ) -> None:
     """Обрабатывает выбор локации при добавлении новой сохранённой локации."""
@@ -223,17 +223,15 @@ def handle_saved_location_pick_callback(
             )
             return
 
-        session_store.saved_location_drafts[user_id] = {
-            "lat": float(lat),
-            "lon": float(lon),
-            "label": label,
-        }
-        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(
-            chat_id,
-            "Введи название для этой локации, например: Дом",
-            reply_markup=types.ReplyKeyboardRemove(),
+        _set_new_saved_location_candidate(
+            call.message,
+            user_id,
+            lat=float(lat),
+            lon=float(lon),
+            label=str(label),
+            ctx=ctx,
+            session_store=session_store,
         )
         return
 

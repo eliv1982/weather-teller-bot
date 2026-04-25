@@ -21,6 +21,7 @@ from .states import (
     WAITING_LOCATION_TITLE,
     WAITING_NEW_SAVED_LOCATION_GEO,
     WAITING_NEW_SAVED_LOCATION_COORDS,
+    WAITING_NEW_SAVED_LOCATION_COORDS_UNRESOLVED,
     WAITING_NEW_SAVED_LOCATION_MENU,
     WAITING_NEW_SAVED_LOCATION_PICK,
     WAITING_NEW_SAVED_LOCATION_TEXT,
@@ -28,6 +29,10 @@ from .states import (
     WAITING_RENAME_LOCATION_TITLE,
 )
 from coordinates_parser import parse_coordinates
+from locations_service import (
+    find_duplicate_saved_location_by_geo,
+    format_saved_location_item,
+)
 from weather_app import get_locations
 
 
@@ -47,6 +52,70 @@ def _ai_compare_reset(user_id: int, *, session_store) -> None:
     """Очищает runtime-данные сценария AI-сравнения для пользователя."""
     session_store.ai_compare_drafts.pop(user_id, None)
     session_store.ai_compare_location_choices.pop(user_id, None)
+
+
+def _set_new_saved_location_candidate(
+    message: types.Message,
+    user_id: int,
+    *,
+    lat: float,
+    lon: float,
+    label: str,
+    ctx,
+    session_store,
+) -> bool:
+    """Проверяет геодубль и либо просит title, либо сообщает о дубле сразу."""
+    user_data = ctx.load_user(user_id)
+    saved_locations = user_data.get("saved_locations", [])
+    if not isinstance(saved_locations, list):
+        saved_locations = []
+    duplicate = find_duplicate_saved_location_by_geo(
+        saved_locations,
+        label=str(label),
+        lat=float(lat),
+        lon=float(lon),
+        distance_threshold_km=2.0,
+    )
+    if duplicate is not None:
+        session_store.saved_location_drafts.pop(user_id, None)
+        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
+        ctx.bot.send_message(
+            message.chat.id,
+            "Эта локация уже есть в сохранённых:\n"
+            f"{format_saved_location_item(duplicate)}",
+            reply_markup=ctx.add_saved_location_menu(),
+        )
+        ctx.bot.send_message(
+            message.chat.id,
+            ctx.format_saved_locations(user_data),
+            reply_markup=ctx.add_saved_location_menu(),
+        )
+        return True
+
+    session_store.saved_location_drafts[user_id] = {
+        "lat": float(lat),
+        "lon": float(lon),
+        "label": str(label),
+    }
+    session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название для этой локации, например: Дом",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
+    return True
+
+
+def _unresolved_coords_menu(types_module) -> types.ReplyKeyboardMarkup:
+    """Клавиатура действий, если по координатам не найден населённый пункт."""
+    keyboard = types_module.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types_module.KeyboardButton("💾 Сохранить как точку"))
+    keyboard.row(
+        types_module.KeyboardButton("🧭 Ввести координаты заново"),
+        types_module.KeyboardButton("🏙 Ввести населённый пункт"),
+    )
+    keyboard.row(types_module.KeyboardButton("⬅️ В меню"))
+    return keyboard
 
 
 def _ai_compare_set_location(
@@ -533,16 +602,44 @@ def handle_locations_text(
             )
             return True
 
-        ctx.save_saved_location_item(
+        save_result = ctx.save_saved_location_item(
             user_id=user_id,
             title=title,
             label=current_city,
             lat=float(current_lat),
             lon=float(current_lon),
         )
+        status = str((save_result or {}).get("status") or "")
+        if status == "duplicate_title":
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Локация с названием «{title}» уже есть. Введи другое название.",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if status == "duplicate_location":
+            existing = save_result.get("item") if isinstance(save_result, dict) else {}
+            card = format_saved_location_item(existing if isinstance(existing, dict) else {})
+            session_store.user_states[user_id] = LOCATIONS_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Эта локация уже есть в сохранённых: {card}. Дубль не добавляю.",
+                reply_markup=ctx.locations_menu(),
+            )
+            return True
+        if status != "added":
+            session_store.user_states[user_id] = LOCATIONS_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                "Не удалось сохранить локацию. Попробуй позже.",
+                reply_markup=ctx.locations_menu(),
+            )
+            return True
         session_store.user_states[user_id] = LOCATIONS_MENU
         ctx.logger.info("Пользователь %s сохранил локацию с title=%s.", user_id, title)
+        user_data = ctx.load_user(user_id)
         ctx.bot.send_message(message.chat.id, "✅ Локация сохранена.", reply_markup=ctx.locations_menu())
+        ctx.bot.send_message(message.chat.id, ctx.format_saved_locations(user_data), reply_markup=ctx.locations_menu())
         return True
 
     if state == WAITING_NEW_SAVED_LOCATION_TITLE:
@@ -574,21 +671,51 @@ def handle_locations_text(
             )
             return True
 
-        ctx.save_saved_location_item(
+        save_result = ctx.save_saved_location_item(
             user_id=user_id,
             title=title,
             label=str(label),
             lat=float(lat),
             lon=float(lon),
         )
+        status = str((save_result or {}).get("status") or "")
+        if status == "duplicate_title":
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Локация с названием «{title}» уже есть. Введи другое название.",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if status == "duplicate_location":
+            existing = save_result.get("item") if isinstance(save_result, dict) else {}
+            card = format_saved_location_item(existing if isinstance(existing, dict) else {})
+            session_store.saved_location_drafts.pop(user_id, None)
+            session_store.user_states[user_id] = LOCATIONS_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                f"Эта локация уже есть в сохранённых: {card}. Дубль не добавляю.",
+                reply_markup=ctx.locations_menu(),
+            )
+            return True
+        if status != "added":
+            session_store.saved_location_drafts.pop(user_id, None)
+            session_store.user_states[user_id] = LOCATIONS_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                "Не удалось сохранить локацию. Попробуй позже.",
+                reply_markup=ctx.locations_menu(),
+            )
+            return True
         session_store.saved_location_drafts.pop(user_id, None)
         session_store.user_states[user_id] = LOCATIONS_MENU
         ctx.logger.info("Пользователь %s добавил новую сохранённую локацию с title=%s.", user_id, title)
+        user_data = ctx.load_user(user_id)
         ctx.bot.send_message(
             message.chat.id,
             "✅ Локация сохранена.",
             reply_markup=ctx.locations_menu(),
         )
+        ctx.bot.send_message(message.chat.id, ctx.format_saved_locations(user_data), reply_markup=ctx.locations_menu())
         return True
 
     if state == WAITING_RENAME_LOCATION_TITLE:
@@ -642,7 +769,12 @@ def handle_locations_text(
         session_store.user_states[user_id] = LOCATIONS_MENU
         ctx.bot.send_message(
             message.chat.id,
-            "✅ Название локации обновлено.",
+            "✅ Локация переименована.",
+            reply_markup=ctx.locations_menu(),
+        )
+        ctx.bot.send_message(
+            message.chat.id,
+            ctx.format_saved_locations(user_data),
             reply_markup=ctx.locations_menu(),
         )
         return True
@@ -670,7 +802,7 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "Добавить новую локацию":
+        if message.text == "➕ Добавить локацию":
             session_store.saved_location_drafts.pop(user_id, None)
             session_store.rename_location_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
@@ -681,7 +813,7 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "Показать мои локации":
+        if message.text == "📋 Показать мои локации":
             user_data = ctx.load_user(user_id)
             ctx.bot.send_message(
                 message.chat.id,
@@ -690,25 +822,7 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "Сделать основной":
-            user_data = ctx.load_user(user_id)
-            saved_locations = user_data.get("saved_locations", [])
-            if not isinstance(saved_locations, list) or not saved_locations:
-                ctx.bot.send_message(
-                    message.chat.id,
-                    "Сохранённых локаций пока нет.",
-                    reply_markup=ctx.locations_menu(),
-                )
-                return True
-
-            ctx.bot.send_message(
-                message.chat.id,
-                "Выбери основную локацию:",
-                reply_markup=ctx.build_favorite_pick_keyboard(saved_locations),
-            )
-            return True
-
-        if message.text == "Удалить локацию":
+        if message.text == "🗑 Удалить":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
@@ -725,7 +839,7 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "Переименовать локацию":
+        if message.text == "✏️ Переименовать":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
@@ -751,7 +865,7 @@ def handle_locations_text(
 
     if state == WAITING_NEW_SAVED_LOCATION_MENU:
         query = (message.text or "").strip()
-        if query in {"📍 Геолокация", "Отправить геолокацию"}:
+        if query in {"📍 Отправить геолокацию", "📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -809,18 +923,15 @@ def handle_locations_text(
                     reply_markup=ctx.locations_menu(),
                 )
                 return True
-            session_store.saved_location_drafts[user_id] = {
-                "lat": float(lat),
-                "lon": float(lon),
-                "label": label,
-            }
-            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
-            ctx.bot.send_message(
-                message.chat.id,
-                "Введи название для этой локации, например: Дом",
-                reply_markup=types.ReplyKeyboardRemove(),
+            return _set_new_saved_location_candidate(
+                message,
+                user_id,
+                lat=float(lat),
+                lon=float(lon),
+                label=str(label),
+                ctx=ctx,
+                session_store=session_store,
             )
-            return True
 
         session_store.saved_location_drafts[user_id] = {"locations": locations}
         session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_PICK
@@ -864,22 +975,89 @@ def handle_locations_text(
         lat, lon = parsed
         location = ctx.get_location_by_coordinates(lat, lon)
         label = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
-        session_store.saved_location_drafts[user_id] = {
-            "lat": float(lat),
-            "lon": float(lon),
-            "label": label,
-        }
-        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
+        if not location:
+            session_store.saved_location_drafts[user_id] = {
+                "lat": float(lat),
+                "lon": float(lon),
+                "label": label,
+            }
+            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_COORDS_UNRESOLVED
+            ctx.bot.send_message(
+                message.chat.id,
+                "По этим координатам не удалось определить населённый пункт.\n\n"
+                "Можно ввести координаты ещё раз, указать город текстом или сохранить точку только по координатам.",
+                reply_markup=_unresolved_coords_menu(types),
+            )
+            return True
+        return _set_new_saved_location_candidate(
+            message,
+            user_id,
+            lat=float(lat),
+            lon=float(lon),
+            label=str(label),
+            ctx=ctx,
+            session_store=session_store,
+        )
+
+    if state == WAITING_NEW_SAVED_LOCATION_COORDS_UNRESOLVED:
+        choice = (message.text or "").strip()
+        draft = session_store.saved_location_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                "Данные координат устарели. Введи название населённого пункта или выбери другой способ ниже:",
+                reply_markup=ctx.add_saved_location_menu(),
+            )
+            return True
+        if choice == "💾 Сохранить как точку":
+            lat = draft.get("lat")
+            lon = draft.get("lon")
+            label = draft.get("label")
+            if lat is None or lon is None or not label:
+                session_store.saved_location_drafts.pop(user_id, None)
+                session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Данные координат устарели. Введи название населённого пункта или выбери другой способ ниже:",
+                    reply_markup=ctx.add_saved_location_menu(),
+                )
+                return True
+            return _set_new_saved_location_candidate(
+                message,
+                user_id,
+                lat=float(lat),
+                lon=float(lon),
+                label=str(label),
+                ctx=ctx,
+                session_store=session_store,
+            )
+        if choice == "🧭 Ввести координаты заново":
+            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_COORDS
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи координаты в формате: 55.5789, 37.9051",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+            return True
+        if choice == "🏙 Ввести населённый пункт":
+            session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
+            ctx.bot.send_message(
+                message.chat.id,
+                "Введи название населённого пункта или выбери другой способ ниже:",
+                reply_markup=ctx.add_saved_location_menu(),
+            )
+            return True
         ctx.bot.send_message(
             message.chat.id,
-            "Введи название для этой локации, например: Дом",
-            reply_markup=types.ReplyKeyboardRemove(),
+            "Выбери действие кнопкой ниже.",
+            reply_markup=_unresolved_coords_menu(types),
         )
         return True
 
     if state == WAITING_AI_COMPARE_MODE:
         choice = (message.text or "").strip()
-        if choice == "Сейчас":
+        if choice in {"🌤 Сейчас", "Сейчас"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}
@@ -892,7 +1070,7 @@ def handle_locations_text(
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return True
-        if choice == "На дату":
+        if choice in {"📅 На дату", "На дату"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}

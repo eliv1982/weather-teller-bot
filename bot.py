@@ -68,7 +68,12 @@ from handlers.details import handle_details_text
 from handlers.forecast import handle_forecast_text
 from handlers.compare import handle_compare_text
 from handlers.alerts import handle_alerts_text
-from handlers.locations import handle_locations_text, _ai_compare_set_location, start_ai_compare_flow
+from handlers.locations import (
+    handle_locations_text,
+    _ai_compare_set_location,
+    _set_new_saved_location_candidate,
+    start_ai_compare_flow,
+)
 from handlers.geo import handle_geo_text
 from handlers.callbacks_current import handle_current_weather_callback
 from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
@@ -251,13 +256,13 @@ complete_compare_two_locations = partial(flow_complete_compare_two_locations, ct
 alerts_worker = partial(flow_alerts_worker, ctx=ctx)
 
 MENU_BUTTONS = [
-    "Текущая погода",
-    "Прогноз на 5 дней",
+    "🌤 Текущая погода",
+    "📅 Прогноз на 5 дней",
     "✨ Сравнить локации",
-    "Расширенные данные",
-    "Мои локации",
-    "Уведомления",
-    "Помощь",
+    "📊 Расширенные данные",
+    "⭐ Мои локации",
+    "🔔 Уведомления",
+    "❓ Помощь",
 ]
 
 
@@ -348,26 +353,26 @@ def handle_menu_buttons(message: types.Message) -> None:
     section_name = message.text
     logger.info("Пользователь %s нажал кнопку меню: %s", message.from_user.id, section_name)
 
-    if section_name == "Текущая погода":
+    if section_name in {"🌤 Текущая погода", "Текущая погода"}:
         start_current_weather_flow(message)
         return
-    if section_name == "Прогноз на 5 дней":
+    if section_name in {"📅 Прогноз на 5 дней", "Прогноз на 5 дней"}:
         start_forecast_flow(message)
         return
 
-    if section_name == "Помощь":
+    if section_name in {"❓ Помощь", "Помощь"}:
         bot.send_message(message.chat.id, help_text(), reply_markup=main_menu())
         return
-    if section_name == "Расширенные данные":
+    if section_name in {"📊 Расширенные данные", "Расширенные данные"}:
         start_details_flow(message)
         return
     if section_name == "✨ Сравнить локации":
         start_ai_compare_flow(message, message.from_user.id, ctx=ctx, session_store=session_store)
         return
-    if section_name == "Мои локации":
+    if section_name in {"⭐ Мои локации", "Мои локации"}:
         start_locations_flow(message)
         return
-    if section_name == "Уведомления":
+    if section_name in {"🔔 Уведомления", "Уведомления"}:
         start_alerts_flow(message)
         return
 
@@ -495,7 +500,7 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
-    if state == WAITING_ALERTS_ADD_GEO:
+    if state in {WAITING_ALERTS_ADD_GEO, WAITING_ALERTS_ADD_MENU}:
         session_store.alerts_location_choices.pop(user_id, None)
         location_data = message.location
         lat = location_data.latitude
@@ -532,7 +537,7 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
-    if state == WAITING_NEW_SAVED_LOCATION_GEO:
+    if state in {WAITING_NEW_SAVED_LOCATION_GEO, WAITING_NEW_SAVED_LOCATION_MENU}:
         location_data = message.location
         lat = location_data.latitude
         lon = location_data.longitude
@@ -542,16 +547,14 @@ def handle_location_message(message: types.Message) -> None:
         else:
             label = "Выбранная геолокация"
 
-        session_store.saved_location_drafts[user_id] = {
-            "lat": float(lat),
-            "lon": float(lon),
-            "label": label,
-        }
-        session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_TITLE
-        bot.send_message(
-            message.chat.id,
-            "Введи название для этой локации, например: Дом",
-            reply_markup=types.ReplyKeyboardRemove(),
+        _set_new_saved_location_candidate(
+            message,
+            user_id,
+            lat=float(lat),
+            lon=float(lon),
+            label=str(label),
+            ctx=ctx,
+            session_store=session_store,
         )
         return
 
@@ -765,7 +768,6 @@ def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
         ctx=ctx,
         session_store=session_store,
         LOCATIONS_MENU=LOCATIONS_MENU,
-        WAITING_NEW_SAVED_LOCATION_TITLE=WAITING_NEW_SAVED_LOCATION_TITLE,
         types=types,
     )
 

@@ -5,6 +5,7 @@ from .states import (
     WAITING_FORECAST_COORDS,
     WAITING_FORECAST_GEO,
     WAITING_FORECAST_PICK,
+    WAITING_FORECAST_SAVED_PICK,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
 )
@@ -131,8 +132,22 @@ def handle_forecast_text(
 
     if state == WAITING_FORECAST_CITY:
         query = (message.text or "").strip()
-        if query == "Ввести населённый пункт":
-            ctx.bot.send_message(message.chat.id, "Введи название населённого пункта для прогноза на 5 дней.")
+        if query == "⭐ Из сохранённых":
+            user_data = ctx.load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            if not isinstance(saved_locations, list) or not saved_locations:
+                ctx.bot.send_message(
+                    message.chat.id,
+                    "Сохранённых локаций пока нет.",
+                    reply_markup=ctx.location_input_menu(has_saved_locations=False),
+                )
+                return True
+            session_store.user_states[user_id] = WAITING_FORECAST_SAVED_PICK
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери сохранённую локацию:",
+                reply_markup=ctx.build_saved_locations_keyboard(saved_locations, "forecast_saved_pick"),
+            )
             return True
         if query in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_FORECAST_COORDS
@@ -142,7 +157,7 @@ def handle_forecast_text(
                 reply_markup=types.ReplyKeyboardRemove(),
             )
             return True
-        if query in {"📍 Геолокация", "Отправить геолокацию"}:
+        if query in {"📍 Отправить геолокацию", "📍 Геолокация", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_FORECAST_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -251,6 +266,13 @@ def handle_forecast_text(
         ctx.bot.send_message(
             message.chat.id,
             "Выбери населённый пункт кнопкой ниже или нажми «⬅️ Отмена».",
+        )
+        return True
+
+    if state == WAITING_FORECAST_SAVED_PICK:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери сохранённую локацию кнопкой ниже или нажми «⬅️ В меню».",
         )
         return True
 

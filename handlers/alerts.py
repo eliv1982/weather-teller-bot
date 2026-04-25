@@ -73,6 +73,11 @@ def handle_alerts_text(
 ) -> bool:
     """Обрабатывает текстовые состояния сценария уведомлений."""
     alerts_menu_actions = {
+        "📋 Показать подписки",
+        "➕ Добавить локацию в уведомления",
+        "🔔 Включить/выключить подписку",
+        "⏱ Изменить интервал подписки",
+        "🗑 Удалить подписку",
         "Показать подписки",
         "Добавить локацию в уведомления",
         "Включить/выключить подписку",
@@ -181,14 +186,14 @@ def handle_alerts_text(
         return True
 
     if state == WAITING_ALERTS_ADD_MENU:
-        if message.text == "Выбрать из сохранённых":
+        if message.text == "⭐ Из сохранённых":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
                 ctx.bot.send_message(
                     message.chat.id,
                     "Сохранённых локаций пока нет.",
-                    reply_markup=ctx.alerts_add_location_menu(),
+                    reply_markup=ctx.alerts_add_location_menu(has_saved_locations=False),
                 )
                 return True
 
@@ -200,16 +205,7 @@ def handle_alerts_text(
             )
             return True
 
-        if message.text == "Ввести населённый пункт":
-            session_store.user_states[user_id] = WAITING_ALERTS_ADD_TEXT
-            ctx.bot.send_message(
-                message.chat.id,
-                "Введи населённый пункт для подписки уведомлений.",
-                reply_markup=types.ReplyKeyboardRemove(),
-            )
-            return True
-
-        if message.text == "Отправить геолокацию":
+        if message.text in {"📍 Геолокация", "📍 Отправить геолокацию", "Отправить геолокацию"}:
             session_store.user_states[user_id] = WAITING_ALERTS_ADD_GEO
             ctx.bot.send_message(
                 message.chat.id,
@@ -218,7 +214,7 @@ def handle_alerts_text(
             )
             return True
 
-        if message.text == "Ввести координаты":
+        if message.text in {"🧭 Координаты", "Ввести координаты"}:
             session_store.user_states[user_id] = WAITING_ALERTS_ADD_COORDS
             ctx.bot.send_message(
                 message.chat.id,
@@ -227,12 +223,12 @@ def handle_alerts_text(
             )
             return True
 
-        ctx.bot.send_message(
-            message.chat.id,
-            "Выбери действие кнопкой ниже или нажми «⬅️ В меню».",
-            reply_markup=ctx.alerts_add_location_menu(),
-        )
-        return True
+        query = (message.text or "").strip()
+        if not query:
+            ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
+            return True
+        session_store.user_states[user_id] = WAITING_ALERTS_ADD_TEXT
+        return handle_alerts_text(message, user_id, WAITING_ALERTS_ADD_TEXT, ctx=ctx, session_store=session_store)
 
     if state in {WAITING_ALERTS_ADD_SAVED_PICK, WAITING_ALERTS_TOGGLE_PICK, WAITING_ALERTS_INTERVAL_PICK, WAITING_ALERTS_DELETE_PICK}:
         # Если пользователь нажал кнопку из меню уведомлений, выходим из текущего pick-сценария
@@ -249,24 +245,27 @@ def handle_alerts_text(
         user_data = ctx.ensure_notifications_defaults(ctx.load_user(user_id))
         user_data = service.ensure_defaults(user_data)
 
-        if message.text == "Показать подписки":
+        if message.text in {"📋 Показать подписки", "Показать подписки"}:
             session_store.user_states[user_id] = ALERTS_MENU
             _show_subscriptions_status(message.chat.id, ctx=ctx, user_data=user_data)
             return True
 
-        if message.text == "Добавить локацию в уведомления":
+        if message.text in {"➕ Добавить локацию в уведомления", "Добавить локацию в уведомления"}:
             session_store.alerts_location_choices.pop(user_id, None)
             session_store.alerts_subscription_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_ALERTS_ADD_MENU
+            user_data = ctx.load_user(user_id)
+            saved_locations = user_data.get("saved_locations", [])
+            has_saved = isinstance(saved_locations, list) and bool(saved_locations)
             ctx.bot.send_message(
                 message.chat.id,
-                "Выбери способ добавления локации в уведомления:",
-                reply_markup=ctx.alerts_add_location_menu(),
+                "Введи название населённого пункта или выбери другой способ ниже:",
+                reply_markup=ctx.alerts_add_location_menu(has_saved_locations=has_saved),
             )
             return True
 
         subscriptions = service.list_subscriptions(user_data)
-        if message.text == "Включить/выключить подписку":
+        if message.text in {"🔔 Включить/выключить подписку", "Включить/выключить подписку"}:
             if not subscriptions:
                 ctx.bot.send_message(message.chat.id, "Подписок на уведомления пока нет.", reply_markup=ctx.alerts_menu())
                 return True
@@ -278,7 +277,7 @@ def handle_alerts_text(
             )
             return True
 
-        if message.text == "Изменить интервал подписки":
+        if message.text in {"⏱ Изменить интервал подписки", "Изменить интервал подписки"}:
             if not subscriptions:
                 ctx.bot.send_message(message.chat.id, "Подписок на уведомления пока нет.", reply_markup=ctx.alerts_menu())
                 return True
@@ -290,7 +289,7 @@ def handle_alerts_text(
             )
             return True
 
-        if message.text == "Удалить подписку":
+        if message.text in {"🗑 Удалить подписку", "Удалить подписку"}:
             if not subscriptions:
                 ctx.bot.send_message(message.chat.id, "Подписок на уведомления пока нет.", reply_markup=ctx.alerts_menu())
                 return True
