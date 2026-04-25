@@ -114,8 +114,7 @@ class AiWeatherService:
         return fallback
 
     def compare_two_locations_current_with_ai(self, location_1_payload: dict, location_2_payload: dict) -> str:
-        """Сравнивает текущую погоду двух локаций через AI (или fallback)."""
-        fallback = self._fallback_compare_current(location_1_payload, location_2_payload)
+        """Сравнивает текущую погоду двух локаций в deterministic-first режиме."""
         signature = self._compare_current_signature(location_1_payload, location_2_payload)
         cache_key = self._build_cache_key("ai_compare_current", signature)
         cached = self._get_cached(cache_key)
@@ -123,24 +122,9 @@ class AiWeatherService:
             logger.info("AI cache hit: scenario=ai_compare_current")
             return cached
         logger.info("AI cache miss: scenario=ai_compare_current")
-
-        prompt = (
-            "Сравни текущую погоду в двух локациях и дай короткий человеческий вывод.\n"
-            "Требования: русский язык, 3-5 коротких предложений, дружелюбно, естественно и по делу, "
-            "без канцелярита, без сарказма, без клоунады, без дисклеймеров и без воды.\n"
-            "Мы уже показываем фактическую сводку отдельно, поэтому не повторяй цифры подробно.\n"
-            "Сфокусируйся на практическом выводе: где холоднее/ветренее/влажнее, где погода ровнее, "
-            "и для чего удобнее каждый вариант (прогулка, поездка).\n"
-            "Избегай оценочных и резких формулировок. Финал — понятная рекомендация в одно короткое предложение.\n\n"
-            f"Локация 1: {location_1_payload}\n"
-            f"Локация 2: {location_2_payload}"
-        )
-        model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_default)
-        if model_answer:
-            self._save_cached(cache_key, "ai_compare_current", model_answer, ttl_seconds=self.ttl_current_seconds)
-            return model_answer
-        logger.info("AI fallback used: scenario=ai_compare_current")
-        return fallback
+        final_text = self._fallback_compare_current(location_1_payload, location_2_payload)
+        self._save_cached(cache_key, "ai_compare_current", final_text, ttl_seconds=self.ttl_current_seconds)
+        return final_text
 
     def compare_two_locations_forecast_day_with_ai(
         self,
@@ -273,6 +257,7 @@ class AiWeatherService:
         """Сигнатура кэша для AI-сравнения текущей погоды."""
         return {
             "mode": "current",
+            "format_version": "deterministic_current_v1",
             "location_1": {
                 "label": self._normalize_location(payload_1.get("city_label")),
                 "fingerprint": self._build_location_fingerprint(payload_1),
