@@ -1,11 +1,10 @@
 import logging
 import os
-from datetime import datetime
-import hashlib
 import json
 import re
 
 from postgres_storage import get_ai_cached_response, save_ai_cached_response
+from ai import fallbacks, location_assist, prompts, signatures
 
 logger = logging.getLogger(__name__)
 
@@ -59,34 +58,7 @@ class AiWeatherService:
                 logger.info("AI cache hit: scenario=ai_location_assist")
                 return parsed_cached
         logger.info("AI cache miss: scenario=ai_location_assist")
-        prompt = (
-            "Ты помогаешь уточнить пользовательский запрос локации для геокодинга OpenWeather.\n"
-            "КРИТИЧЕСКИ ВАЖНО:\n"
-            "- не возвращай координаты;\n"
-            "- не выдумывай населённые пункты;\n"
-            "- только нормализуй текст и предложи безопасные альтернативные поисковые фразы.\n\n"
-            "Поддержи составные русские запросы вида:\n"
-            "- <населенный пункт> <район>\n"
-            "- <населенный пункт> <область/край/регион>\n"
-            "- <населенный пункт> рядом с <городом>\n"
-            "- <город> <район/ориентир> (например: Сочи Адлер, Москва центр)\n"
-            "Разбери ввод на settlement/city/village, district/rayon, region/oblast/krai, optional landmark/area,\n"
-            "и собери alternative_queries, пригодные для OpenWeather geocoding.\n\n"
-            "Верни ТОЛЬКО JSON-объект с полями:\n"
-            "{\n"
-            '  "normalized_query": string,\n'
-            '  "alternative_queries": string[],\n'
-            '  "needs_clarification": boolean,\n'
-            '  "clarification_text": string,\n'
-            '  "reason": string\n'
-            "}\n\n"
-            "Когда запрос слишком общий (например: центр, аэропорт, рядом со мной),"
-            " выставляй needs_clarification=true и пиши короткий practical clarification_text.\n"
-            "Язык ответа: русский.\n"
-            "Контекст сценария: "
-            f"{context if isinstance(context, dict) else {}}\n"
-            f"Запрос пользователя: {str(user_input or '').strip()}"
-        )
+        prompt = prompts.build_location_assist_prompt(user_input, context)
         model_answer = self._call_model(prompt, max_output_tokens=220)
         parsed_model = self._parse_location_assist_payload(model_answer or "")
         if parsed_model is not None:
@@ -110,25 +82,7 @@ class AiWeatherService:
             logger.info("AI cache hit: scenario=current")
             return cached
         logger.info("AI cache miss: scenario=current")
-        prompt = (
-            "Объясни текущую погоду простым и живым русским языком.\n"
-            "Требования: 3-4 коротких предложения, дружелюбно и по делу, без канцелярита, "
-            "без сарказма, без клоунады, без дисклеймеров и без воды.\n"
-            "Используй только переданные данные, ничего не выдумывай.\n"
-            "Обязательно скажи: как ощущается погода, нужен ли зонт, как лучше одеться, "
-            "насколько комфортно сейчас на улице.\n"
-            "Правила формулировок по ветру:\n"
-            "- <3 м/с: слабый ветер, почти не мешает;\n"
-            "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
-            "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
-            "- >=8 м/с: сильный ветер, реально влияет на комфорт.\n"
-            "Не используй при ветре <=5 м/с формулировки: "
-            "«усиливает холод», «усиливает сырость», «делает погоду неприятной», "
-            "«сильно влияет на комфорт», «главный фактор».\n"
-            "Пиши как полезный совет живого помощника, без сухих шаблонов.\n\n"
-            f"Локация: {city_label}\n"
-            f"Данные: {weather_data}"
-        )
+        prompt = prompts.build_current_prompt(city_label, weather_data)
         model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_default)
         if model_answer:
             self._save_cached(cache_key, "current", model_answer, ttl_seconds=self.ttl_current_seconds)
@@ -146,16 +100,7 @@ class AiWeatherService:
             logger.info("AI cache hit: scenario=forecast_day")
             return cached
         logger.info("AI cache miss: scenario=forecast_day")
-        prompt = (
-            "Дай короткий и полезный совет по прогнозу на день.\n"
-            "Требования: русский язык, 3-4 коротких предложения, естественный дружелюбный тон, "
-            "без канцелярита, без сарказма, без клоунады, без дисклеймеров и без воды.\n"
-            "Используй только переданные данные, ничего не выдумывай.\n"
-            "Обязательно укажи: лучшее окно для прогулки, осадки и главное изменение погоды в течение дня.\n"
-            "Финал сделай практичным: что лучше учесть перед выходом.\n\n"
-            f"Локация: {city_label}\n"
-            f"Слоты прогноза за день: {day_forecast_data}"
-        )
+        prompt = prompts.build_forecast_day_prompt(city_label, day_forecast_data)
         model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_forecast_day)
         if model_answer:
             self._save_cached(cache_key, "forecast_day", model_answer, ttl_seconds=self.ttl_forecast_seconds)
@@ -173,25 +118,7 @@ class AiWeatherService:
             logger.info("AI cache hit: scenario=details")
             return cached
         logger.info("AI cache miss: scenario=details")
-        prompt = (
-            "Поясни расширенные погодные данные простым и полезным русским языком.\n"
-            "Требования: 4-5 коротких предложений, дружелюбно и по делу, без канцелярита, "
-            "без сарказма, без клоунады, без дисклеймеров и без воды.\n"
-            "Используй только переданные данные, ничего не выдумывай.\n"
-            "Не перечисляй всё подряд: выдели 1-2 самых важных фактора сейчас и объясни, "
-            "почему именно они важны прямо сейчас.\n\n"
-            "Правила формулировок по ветру:\n"
-            "- <3 м/с: слабый ветер, почти не мешает;\n"
-            "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
-            "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
-            "- >=8 м/с: сильный ветер, влияет на комфорт.\n"
-            "При ветре <=5 м/с избегай фраз о сильном негативном влиянии ветра.\n"
-            "Если качество воздуха хорошее, формулируй коротко: "
-            "«Качество воздуха хорошее: пыль и основные загрязнители на низком уровне.»\n\n"
-            f"Локация: {city_label}\n"
-            f"Погода: {weather_data}\n"
-            f"Качество воздуха: {air_quality_data}"
-        )
+        prompt = prompts.build_details_prompt(city_label, weather_data, air_quality_data)
         model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_default)
         if model_answer:
             self._save_cached(cache_key, "details", model_answer, ttl_seconds=self.ttl_details_seconds)
@@ -209,28 +136,7 @@ class AiWeatherService:
             logger.info("AI cache hit: scenario=ai_weather_alert")
             return self._postprocess_weather_alert_text(cached)
         logger.info("AI cache miss: scenario=ai_weather_alert")
-        prompt = (
-            "Объясни погодное уведомление коротко и практично.\n"
-            "Требования: русский язык, 1-2 коротких предложения, без воды, без дисклеймеров, "
-            "без драматизации и без длинного прогноза.\n"
-            "Используй только переданные данные, ничего не выдумывай.\n"
-            "Дай конкретный совет для ближайшей активности (одежда, зонт, маршрут, время выхода).\n\n"
-            "Нельзя использовать неестественные конструкции: "
-            "«маршрут под крышей», «короткий маршрут под крышей», «маршрут под укрытием», «идти под крышей».\n"
-            "Используй естественные варианты: "
-            "«выбрать короткий маршрут», «избегать долгой прогулки под дождём», "
-            "«идти там, где меньше открытых участков», «перенести прогулку на более сухое время», "
-            "«взять зонт и непромокаемую верхнюю одежду», «выйти чуть раньше, если дорога важна по времени».\n"
-            "Ветер описывай по шкале:\n"
-            "- <3 м/с: слабый;\n"
-            "- 3-5 м/с: умеренный;\n"
-            "- 5-7 м/с: заметный;\n"
-            "- >=8 м/с: сильный.\n"
-            "При ветре до 5 м/с не пиши фразы «ветер усиливает холод/сырость» и "
-            "«сильно влияет на комфорт».\n\n"
-            f"Локация: {location_label}\n"
-            f"Событие: {alert_payload}"
-        )
+        prompt = prompts.build_weather_alert_prompt(location_label, alert_payload)
         model_answer = self._call_model(prompt, max_output_tokens=120)
         if model_answer:
             final_text = self._postprocess_weather_alert_text(model_answer)
@@ -292,14 +198,7 @@ class AiWeatherService:
 
     def _build_cache_key(self, scenario: str, signature: dict) -> str:
         """Собирает стабильный cache_key из сценария, модели и сигнатуры входа."""
-        payload = {
-            "scenario": scenario,
-            "model": self.model,
-            "signature": signature,
-        }
-        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-        return f"ai:{scenario}:{digest}"
+        return signatures.build_cache_key(self.model, scenario, signature)
 
     def _get_cached(self, cache_key: str) -> str | None:
         """Безопасно читает ответ из PostgreSQL-кэша."""
@@ -323,169 +222,49 @@ class AiWeatherService:
 
     def _current_signature(self, city_label: str, weather_data: dict) -> dict:
         """Возвращает сигнатуру ключевых параметров текущей погоды."""
-        main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
-        wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
-        weather_item = weather_data.get("weather", [{}])[0] if isinstance(weather_data, dict) else {}
-        signature = {
-            "location": self._normalize_location(city_label),
-            "temp": self._round_step(main_data.get("temp"), step=0.5),
-            "feels_like": self._round_step(main_data.get("feels_like"), step=0.5),
-            "humidity": self._as_int(main_data.get("humidity")),
-            "pressure": self._as_int(main_data.get("pressure")),
-            "description": self._normalize_description(weather_item.get("description")),
-            "wind_speed": self._round_step(wind_data.get("speed"), step=1.0),
-        }
+        signature = signatures.current_signature(city_label, weather_data)
         logger.debug("AI current normalized signature: %s", signature)
         return signature
 
     def _forecast_signature(self, city_label: str, day_forecast_data: list[dict]) -> dict:
         """Возвращает сигнатуру дневного прогноза из ключевых полей каждого слота."""
-        slots: list[dict] = []
-        for item in day_forecast_data if isinstance(day_forecast_data, list) else []:
-            if not isinstance(item, dict):
-                continue
-            main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
-            weather_item = item.get("weather", [{}])[0] if isinstance(item.get("weather"), list) else {}
-            slot = {
-                "dt_txt": item.get("dt_txt"),
-                "temp": main_data.get("temp"),
-                "temp_min": main_data.get("temp_min"),
-                "temp_max": main_data.get("temp_max"),
-                "humidity": main_data.get("humidity"),
-                "description": weather_item.get("description"),
-                "pop": item.get("pop"),
-            }
-            slots.append(slot)
-        return {
-            "location": str(city_label).strip().lower(),
-            "slots": slots,
-        }
+        return signatures.forecast_signature(city_label, day_forecast_data)
 
     def _details_signature(self, city_label: str, weather_data: dict, air_quality_data: dict | None) -> dict:
         """Возвращает сигнатуру расширенных данных погоды и воздуха."""
-        main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
-        wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
-        weather_item = weather_data.get("weather", [{}])[0] if isinstance(weather_data, dict) else {}
-        return {
-            "location": str(city_label).strip().lower(),
-            "temp": self._round_1(main_data.get("temp")),
-            "feels_like": self._round_1(main_data.get("feels_like")),
-            "humidity": self._as_int(main_data.get("humidity")),
-            "pressure": self._as_int(main_data.get("pressure")),
-            "visibility": weather_data.get("visibility") if isinstance(weather_data, dict) else None,
-            "description": weather_item.get("description"),
-            "wind_speed": self._round_1(wind_data.get("speed")),
-            "wind_deg": wind_data.get("deg"),
-            "air_quality": self._air_quality_signature(air_quality_data),
-        }
+        return signatures.details_signature(city_label, weather_data, air_quality_data)
 
     def _weather_alert_signature(self, location_label: str, alert_payload: dict) -> dict:
         """Сигнатура кэша для AI-объяснения погодного уведомления."""
-        payload = alert_payload if isinstance(alert_payload, dict) else {}
-        return {
-            "mode": "alert",
-            "format_version": "weather_alert_v1",
-            "location": self._normalize_location(location_label),
-            "event_type": self._normalize_location(payload.get("event_type")),
-            "slot_ts_utc": self._as_int(payload.get("slot_ts_utc")),
-            "slot_local": self._normalize_location(payload.get("slot_local")),
-            "temperature": self._round_step(payload.get("temperature"), step=0.5),
-            "feels_like": self._round_step(payload.get("feels_like"), step=0.5),
-            "description": self._normalize_description(payload.get("description")),
-            "wind_speed": self._round_step(payload.get("wind_speed"), step=1.0),
-            "precip_probability": self._round_1(payload.get("precip_probability")),
-        }
+        return signatures.weather_alert_signature(location_label, alert_payload)
 
     def _location_assist_signature(self, user_input: str, context: dict | None) -> dict:
         """Сигнатура кэша для AI-assist текстового запроса локации."""
-        ctx = context if isinstance(context, dict) else {}
-        return {
-            "mode": "location_assist",
-            "format_version": "location_assist_v1",
-            "query": self._normalize_query_text(user_input),
-            "scenario": self._normalize_query_text(ctx.get("scenario")),
-            "language": self._normalize_query_text(ctx.get("language") or "ru"),
-        }
+        return signatures.location_assist_signature(user_input, context)
 
     def _compare_current_signature(self, payload_1: dict, payload_2: dict) -> dict:
         """Сигнатура кэша для AI-сравнения текущей погоды."""
-        return {
-            "mode": "current",
-            "format_version": "deterministic_current_v1",
-            "location_1": {
-                "label": self._normalize_location(payload_1.get("city_label")),
-                "fingerprint": self._build_location_fingerprint(payload_1),
-            },
-            "temp_1": self._round_step(payload_1.get("temperature"), step=0.5),
-            "feels_1": self._round_step(payload_1.get("feels_like"), step=0.5),
-            "desc_1": self._normalize_description(payload_1.get("description")),
-            "humidity_1": self._as_int(payload_1.get("humidity")),
-            "wind_1": self._round_step(payload_1.get("wind_speed"), step=1.0),
-            "location_2": {
-                "label": self._normalize_location(payload_2.get("city_label")),
-                "fingerprint": self._build_location_fingerprint(payload_2),
-            },
-            "temp_2": self._round_step(payload_2.get("temperature"), step=0.5),
-            "feels_2": self._round_step(payload_2.get("feels_like"), step=0.5),
-            "desc_2": self._normalize_description(payload_2.get("description")),
-            "humidity_2": self._as_int(payload_2.get("humidity")),
-            "wind_2": self._round_step(payload_2.get("wind_speed"), step=1.0),
-        }
+        return signatures.compare_current_signature(payload_1, payload_2)
 
     def _compare_forecast_day_signature(self, payload_1: dict, payload_2: dict, selected_day: str) -> dict:
         """Сигнатура кэша для AI-сравнения прогноза на выбранный день."""
-        return {
-            "mode": "date",
-            "format_version": "deterministic_v3",
-            "selected_day": self._normalize_location(selected_day),
-            "location_1": {
-                "label": self._normalize_location(payload_1.get("city_label")),
-                "fingerprint": self._build_location_fingerprint(payload_1),
-            },
-            "min_temp_1": self._round_step(payload_1.get("min_temp"), step=0.5),
-            "max_temp_1": self._round_step(payload_1.get("max_temp"), step=0.5),
-            "dominant_desc_1": self._normalize_description(payload_1.get("dominant_description")),
-            "rain_slots_1": self._as_int((payload_1.get("precipitation_signal") or {}).get("rain_slots")),
-            "max_pop_1": self._round_1((payload_1.get("precipitation_signal") or {}).get("max_pop")),
-            "location_2": {
-                "label": self._normalize_location(payload_2.get("city_label")),
-                "fingerprint": self._build_location_fingerprint(payload_2),
-            },
-            "min_temp_2": self._round_step(payload_2.get("min_temp"), step=0.5),
-            "max_temp_2": self._round_step(payload_2.get("max_temp"), step=0.5),
-            "dominant_desc_2": self._normalize_description(payload_2.get("dominant_description")),
-            "rain_slots_2": self._as_int((payload_2.get("precipitation_signal") or {}).get("rain_slots")),
-            "max_pop_2": self._round_1((payload_2.get("precipitation_signal") or {}).get("max_pop")),
-        }
+        return signatures.compare_forecast_day_signature(payload_1, payload_2, selected_day)
 
     def _build_location_fingerprint(self, payload: dict) -> str:
         """Собирает стабильный fingerprint локации для cache signature."""
-        country = self._normalize_location(payload.get("country"))
-        state = self._normalize_location(payload.get("state"))
-        city = self._normalize_location(payload.get("city_label"))
-        lat = self._round_coords(payload.get("lat"))
-        lon = self._round_coords(payload.get("lon"))
-        return f"{country}|{state}|{city}|{lat}|{lon}"
+        return signatures.build_location_fingerprint(payload)
 
     def _round_1(self, value: object) -> float | None:
         """Округляет число до 1 знака после запятой."""
-        if isinstance(value, (int, float)):
-            return round(float(value), 1)
-        return None
+        return signatures.round_1(value)
 
     def _round_step(self, value: object, *, step: float) -> float | None:
         """Округляет число до заданного шага."""
-        if not isinstance(value, (int, float)):
-            return None
-        if step <= 0:
-            return float(value)
-        return round(round(float(value) / step) * step, 3)
+        return signatures.round_step(value, step=step)
 
     def _round_coords(self, value: object) -> str:
         """Округляет координату для fingerprint до 3 знаков."""
-        if not isinstance(value, (int, float)):
-            return ""
-        return f"{round(float(value), 3):.3f}"
+        return signatures.round_coords(value)
 
     def _postprocess_compare_forecast_day_text(
         self,
@@ -532,505 +311,55 @@ class AiWeatherService:
 
     def _normalize_location(self, value: object) -> str:
         """Нормализует подпись локации для устойчивого cache key."""
-        text = str(value or "").strip().lower()
-        return " ".join(text.split())
+        return signatures.normalize_location(value)
 
     def _normalize_description(self, value: object) -> str:
         """Нормализует описание погоды."""
-        text = str(value or "").strip().lower()
-        return " ".join(text.split())
+        return signatures.normalize_description(value)
 
     def _normalize_query_text(self, value: object) -> str:
         """Нормализует произвольный пользовательский текстовый запрос."""
-        text = str(value or "").strip().lower().replace("ё", "е")
-        return " ".join(text.split())
+        return signatures.normalize_query_text(value)
 
     def _parse_location_assist_payload(self, payload: str) -> dict | None:
         """Парсит JSON-пейлоад AI-assist и валидирует ожидаемые поля."""
-        raw = str(payload or "").strip()
-        if not raw:
-            return None
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            return None
-        try:
-            parsed = json.loads(raw[start : end + 1])
-        except Exception:
-            return None
-        if not isinstance(parsed, dict):
-            return None
-        normalized_query = str(parsed.get("normalized_query") or "").strip()
-        alt_raw = parsed.get("alternative_queries")
-        alternative_queries: list[str] = []
-        if isinstance(alt_raw, list):
-            for item in alt_raw:
-                candidate = str(item or "").strip()
-                if candidate and candidate not in alternative_queries:
-                    alternative_queries.append(candidate)
-        needs_clarification = bool(parsed.get("needs_clarification", False))
-        clarification_text = str(parsed.get("clarification_text") or "").strip()
-        reason = str(parsed.get("reason") or "").strip()
-        if needs_clarification and not clarification_text:
-            clarification_text = "Уточни населённый пункт или отправь геолокацию."
-        return {
-            "normalized_query": normalized_query,
-            "alternative_queries": alternative_queries[:5],
-            "needs_clarification": needs_clarification,
-            "clarification_text": clarification_text,
-            "reason": reason,
-        }
+        return location_assist.parse_location_assist_payload(payload)
 
     def _fallback_location_assist(self, user_input: str, context: dict | None) -> dict:
         """Детерминированный fallback для неоднозначного ввода локации."""
-        _ = context
-        normalized = self._normalize_query_text(user_input)
-        alias = self.apply_location_alias(user_input)
-        center_case = self._build_center_location_assist(normalized)
-        if center_case is not None:
-            return center_case
-        if normalized in {"рядом со мной", "рядом", "возле меня", "около меня"}:
-            return {
-                "normalized_query": "",
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Лучше отправь геолокацию — так я точнее пойму место.",
-                "reason": "near_me_ambiguous",
-            }
-        if normalized in {"центр"}:
-            return {
-                "normalized_query": normalized,
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Уточни город: например, центр Москвы или центр Санкт-Петербурга.",
-                "reason": "generic_center_ambiguous",
-            }
-        if normalized in {"аэропорт"}:
-            return {
-                "normalized_query": normalized,
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Уточни город или отправь геолокацию. Например: аэропорт Сочи или аэропорт Москвы.",
-                "reason": "generic_airport_ambiguous",
-            }
-        if normalized in {"район", "область", "регион"}:
-            return {
-                "normalized_query": normalized,
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Уточни населённый пункт и регион. Например: Заречный, Свердловская область.",
-                "reason": "generic_admin_area_ambiguous",
-            }
-
-        structured = self._build_structured_location_alternatives(normalized)
-        if structured is not None:
-            return structured
-
-        if alias and alias != str(user_input or "").strip():
-            alternatives = [alias]
-            if alias == "Санкт-Петербург":
-                alternatives.extend(["Saint Petersburg", "Петербург"])
-            return {
-                "normalized_query": alias,
-                "alternative_queries": alternatives,
-                "needs_clarification": False,
-                "clarification_text": "",
-                "reason": "alias_match",
-            }
-        return {
-            "normalized_query": str(user_input or "").strip(),
-            "alternative_queries": [],
-            "needs_clarification": False,
-            "clarification_text": "Уточни населённый пункт или отправь геолокацию.",
-            "reason": "default_fallback",
-        }
+        return location_assist.fallback_location_assist(self, user_input, context)
 
     def _build_center_location_assist(self, normalized_input: str) -> dict | None:
         """Обрабатывает запросы с «центр» отдельно от общего fallback."""
-        text = str(normalized_input or "").strip()
-        if "центр" not in text:
-            return None
-
-        if text == "центр":
-            return {
-                "normalized_query": "центр",
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Уточни город: например, «центр Москвы» или «центр Санкт-Петербурга». Можно также отправить геолокацию.",
-                "reason": "center_without_city",
-            }
-
-        without_center = " ".join([t for t in text.replace(",", " ").split() if t != "центр"]).strip()
-        if not without_center:
-            return {
-                "normalized_query": "центр",
-                "alternative_queries": [],
-                "needs_clarification": True,
-                "clarification_text": "Уточни город: например, «центр Москвы» или «центр Санкт-Петербурга». Можно также отправить геолокацию.",
-                "reason": "center_without_city",
-            }
-
-        city_alias = self.apply_location_alias(without_center)
-        city_norm = self._normalize_query_text(city_alias or without_center)
-        if city_norm in {"москвы", "москва"}:
-            return {
-                "normalized_query": "Москва",
-                "alternative_queries": ["Москва", "Москва центр", "Moscow city center"],
-                "needs_clarification": False,
-                "clarification_text": "",
-                "reason": "center_with_moscow",
-            }
-        if city_norm in {"санкт-петербурга", "санкт-петербург", "петербурга", "петербург", "питер", "спб"}:
-            return {
-                "normalized_query": "Санкт-Петербург",
-                "alternative_queries": [
-                    "Санкт-Петербург",
-                    "Санкт-Петербург центр",
-                    "Saint Petersburg city center",
-                ],
-                "needs_clarification": False,
-                "clarification_text": "",
-                "reason": "center_with_saint_petersburg",
-            }
-
-        city_cap = (city_alias or without_center).strip().title()
-        if not city_cap:
-            return None
-        return {
-            "normalized_query": city_cap,
-            "alternative_queries": [city_cap, f"{city_cap} центр"],
-            "needs_clarification": False,
-            "clarification_text": "",
-            "reason": "center_with_city",
-        }
+        return location_assist.build_center_location_assist(self, normalized_input)
 
     def _build_structured_location_alternatives(self, normalized_input: str) -> dict | None:
         """Собирает fallback-варианты geocoding для запросов с районом/областью/ориентиром."""
-        text = str(normalized_input or "").strip()
-        if not text or len(text.split()) < 2:
-            return None
-
-        tokens = [t for t in text.replace(",", " ").split() if t]
-        if not tokens:
-            return None
-
-        area_stopwords = {"рядом", "с", "центр", "район", "область", "край", "регион", "г", "город"}
-        region_markers = {"область", "край", "регион"}
-
-        settlement_tokens: list[str] = []
-        for token in tokens:
-            if token in area_stopwords:
-                break
-            settlement_tokens.append(token)
-        if not settlement_tokens:
-            settlement_tokens = [tokens[0]]
-
-        settlement = " ".join(settlement_tokens).strip()
-        if not settlement:
-            return None
-
-        region_value = ""
-        if any(marker in tokens for marker in region_markers):
-            idx = next((i for i, t in enumerate(tokens) if t in region_markers), -1)
-            if idx > 0:
-                region_value = " ".join(tokens[max(0, idx - 1) : idx + 1]).strip()
-
-        district_value = ""
-        if "район" in tokens:
-            idx = tokens.index("район")
-            if idx > 0:
-                district_value = " ".join(tokens[max(0, idx - 1) : idx + 1]).strip()
-
-        nearby_value = ""
-        if "рядом" in tokens and "с" in tokens:
-            s_idx = max(i for i, t in enumerate(tokens) if t == "с")
-            if s_idx + 1 < len(tokens):
-                nearby_value = " ".join(tokens[s_idx + 1 :]).strip()
-
-        area_value = ""
-        if "центр" in tokens:
-            area_value = "центр"
-        elif len(tokens) > len(settlement_tokens):
-            tail = [t for t in tokens[len(settlement_tokens) :] if t not in {"рядом", "с"}]
-            if tail and "район" not in tail and not any(t in region_markers for t in tail):
-                area_value = " ".join(tail).strip()
-
-        settlement_cap = settlement.title()
-        region_cap = region_value.title() if region_value else ""
-        district_cap = district_value.title() if district_value else ""
-        nearby_cap = nearby_value.title() if nearby_value else ""
-        area_cap = area_value.title() if area_value else ""
-
-        alternatives: list[str] = []
-        if district_cap and region_cap:
-            alternatives.append(f"{settlement_cap}, {district_cap}, {region_cap}")
-        if nearby_cap and region_cap:
-            alternatives.append(f"{settlement_cap}, рядом с {nearby_cap}, {region_cap}")
-        elif nearby_cap:
-            alternatives.append(f"{settlement_cap}, рядом с {nearby_cap}")
-        if area_cap and settlement_cap.lower() != area_cap.lower():
-            alternatives.append(f"{settlement_cap}, {area_cap}")
-        if region_cap:
-            alternatives.append(f"{settlement_cap}, {region_cap}")
-        if "Московская Область" in region_cap:
-            alternatives.append(f"{settlement_cap}, Moscow Oblast")
-
-        unique_alternatives: list[str] = []
-        for candidate in alternatives:
-            clean = candidate.strip()
-            if clean and clean not in unique_alternatives:
-                unique_alternatives.append(clean)
-
-        if not unique_alternatives:
-            return None
-
-        return {
-            "normalized_query": settlement_cap,
-            "alternative_queries": unique_alternatives[:5],
-            "needs_clarification": False,
-            "clarification_text": "",
-            "reason": "structured_settlement_area_query",
-        }
+        return location_assist.build_structured_location_alternatives(normalized_input)
 
     def _as_int(self, value: object) -> int | None:
         """Приводит значение к целому числу, если это возможно."""
-        if isinstance(value, (int, float)):
-            return int(round(float(value)))
-        return None
+        return signatures.as_int(value)
 
     def _air_quality_signature(self, air_quality_data: dict | None) -> dict | None:
         """Возвращает нормализованную сигнатуру ключевых компонентов воздуха."""
-        if not isinstance(air_quality_data, dict):
-            return None
-        return {
-            "pm2_5": self._round_1(air_quality_data.get("pm2_5")),
-            "pm10": self._round_1(air_quality_data.get("pm10")),
-            "no2": self._round_1(air_quality_data.get("no2")),
-            "o3": self._round_1(air_quality_data.get("o3")),
-            "so2": self._round_1(air_quality_data.get("so2")),
-            "co": self._round_1(air_quality_data.get("co")),
-        }
+        return signatures.air_quality_signature(air_quality_data)
 
     def _fallback_current(self, city_label: str, weather_data: dict) -> str:
         """Детерминированный fallback для текущей погоды без OpenAI."""
-        main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
-        weather_list = weather_data.get("weather", []) if isinstance(weather_data, dict) else []
-        wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
-        temp = main_data.get("temp")
-        feels_like = main_data.get("feels_like")
-        description = (weather_list[0].get("description") if weather_list else "") or "без описания"
-        wind_speed = wind_data.get("speed")
-        desc_lower = str(description).lower()
-        umbrella = (
-            "Лучше взять зонт на всякий случай."
-            if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег"))
-            else "Скорее всего, можно обойтись без зонта."
-        )
-        if isinstance(feels_like, (int, float)):
-            if feels_like <= 0:
-                clothes = "Лучше одеться заметно теплее."
-            elif feels_like <= 12:
-                clothes = "Лучше накинуть что-то тёплое."
-            else:
-                clothes = "Можно выбрать более лёгкую одежду."
-        else:
-            clothes = "Одежду лучше выбрать по ощущениям на месте."
-        comfort = (
-            "На улице в целом довольно комфортно."
-            if isinstance(temp, (int, float)) and -5 <= temp <= 25
-            else "На улице может быть не слишком комфортно."
-        )
-        wind_note = ""
-        if isinstance(wind_speed, (int, float)):
-            ws = float(wind_speed)
-            if ws < 3:
-                wind_note = " Ветер слабый, почти не мешает."
-            elif ws <= 5:
-                wind_note = " Ветер умеренный: заметный, но без сильного влияния на комфорт."
-            elif ws < 8:
-                if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег")) or (
-                    isinstance(feels_like, (int, float)) and float(feels_like) < 8
-                ):
-                    wind_note = " Ветер заметный: при осадках или прохладе может быть менее комфортно."
-                else:
-                    wind_note = " Ветер заметный, на открытых участках может ощущаться сильнее."
-            else:
-                wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
-        return (
-            f"Сейчас в {city_label}: {description}, температура {temp if temp is not None else 'н/д'}°C, "
-            f"ощущается как {feels_like if feels_like is not None else 'н/д'}°C.{wind_note} "
-            f"{umbrella} {clothes} {comfort}"
-        )
+        return fallbacks.fallback_current(city_label, weather_data)
 
     def _fallback_day_forecast(self, city_label: str, day_items: list[dict]) -> str:
         """Детерминированный fallback для дневного прогноза без OpenAI."""
-        if not isinstance(day_items, list) or not day_items:
-            return f"По {city_label} пока недостаточно данных, чтобы дать понятную рекомендацию на день."
-
-        rain_slots = 0
-        best_slot = None
-        best_temp = None
-        for item in day_items:
-            weather_desc = str(item.get("weather", [{}])[0].get("description", "")).lower()
-            if any(x in weather_desc for x in ("дожд", "лив", "гроза", "снег")):
-                rain_slots += 1
-            temp = item.get("main", {}).get("temp")
-            dt_txt = str(item.get("dt_txt") or "")
-            if isinstance(temp, (int, float)) and (best_temp is None or temp > best_temp):
-                best_temp = float(temp)
-                best_slot = dt_txt
-
-        rain_note = (
-            "В течение дня возможны осадки, зонт лучше взять с собой."
-            if rain_slots > 0
-            else "Существенных осадков по прогнозу не видно."
-        )
-        slot_note = ""
-        if best_slot and " " in best_slot:
-            try:
-                slot_dt = datetime.strptime(best_slot, "%Y-%m-%d %H:%M:%S")
-                slot_note = f"Лучшее окно для выхода — около {slot_dt.strftime('%H:%M')}."
-            except ValueError:
-                slot_note = ""
-
-        return (
-            f"По {city_label}: {rain_note} "
-            f"{slot_note} В течение дня температура может заметно меняться, "
-            "поэтому перед выходом лучше быстро проверить прогноз ещё раз."
-        ).strip()
+        return fallbacks.fallback_day_forecast(city_label, day_items)
 
     def _fallback_details(self, city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:
         """Детерминированный fallback для расширенных данных без OpenAI."""
-        main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
-        wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
-        humidity = main_data.get("humidity")
-        visibility = weather_data.get("visibility") if isinstance(weather_data, dict) else None
-        wind_speed = wind_data.get("speed")
-        pm25 = air_quality_data.get("pm2_5") if isinstance(air_quality_data, dict) else None
-
-        humidity_note = (
-            "Влажность высокая, поэтому воздух может ощущаться тяжёлым."
-            if isinstance(humidity, (int, float)) and humidity >= 75
-            else "Влажность сейчас в комфортном диапазоне."
-        )
-        if isinstance(wind_speed, (int, float)):
-            ws = float(wind_speed)
-            weather_list = weather_data.get("weather", []) if isinstance(weather_data, dict) else []
-            description = (weather_list[0].get("description") if weather_list else "") or ""
-            desc_lower = str(description).lower()
-            temp = main_data.get("temp")
-            if ws < 3:
-                wind_note = "Ветер слабый, почти не мешает."
-            elif ws <= 5:
-                wind_note = "Ветер умеренный: заметный, но без сильного влияния на комфорт."
-            elif ws < 8:
-                if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег")) or (
-                    isinstance(temp, (int, float)) and float(temp) < 8
-                ):
-                    wind_note = "Ветер заметный: при осадках или прохладе может быть менее комфортно."
-                else:
-                    wind_note = "Ветер заметный, на открытых участках ощущается сильнее."
-            else:
-                wind_note = "Ветер сильный и заметно влияет на комфорт."
-        else:
-            wind_note = "Данные о ветре ограничены."
-        visibility_note = (
-            f"Видимость примерно {int(visibility)} м."
-            if isinstance(visibility, (int, float))
-            else "Данные по видимости ограничены."
-        )
-        if isinstance(pm25, (int, float)):
-            air_note = (
-                "Качество воздуха хорошее: пыль и основные загрязнители на низком уровне."
-                if pm25 <= 35
-                else "Качество воздуха сейчас ниже комфортного."
-            )
-        else:
-            air_note = "Данные о качестве воздуха сейчас неполные."
-
-        return (
-            f"По {city_label}: {humidity_note} {wind_note} {visibility_note} {air_note} "
-            "Если планируешь долгую прогулку, ориентируйся в первую очередь на эти факторы."
-        )
+        return fallbacks.fallback_details(city_label, weather_data, air_quality_data)
 
     def _fallback_compare_current(self, payload_1: dict, payload_2: dict) -> str:
         """Короткий практичный fallback сравнения текущей погоды без субъективных оценок."""
-        city_1_label = str(payload_1.get("city_label") or "Локация 1")
-        city_2_label = str(payload_2.get("city_label") or "Локация 2")
-        name_1 = self._get_short_location_name(city_1_label)
-        name_2 = self._get_short_location_name(city_2_label)
-
-        temp_1 = payload_1.get("temperature")
-        temp_2 = payload_2.get("temperature")
-        wind_1 = payload_1.get("wind_speed")
-        wind_2 = payload_2.get("wind_speed")
-        hum_1 = payload_1.get("humidity")
-        hum_2 = payload_2.get("humidity")
-        desc_1 = str(payload_1.get("description") or "").lower()
-        desc_2 = str(payload_2.get("description") or "").lower()
-
-        rain_markers = ("дожд", "лив", "гроза", "снег")
-        precip_1 = any(m in desc_1 for m in rain_markers)
-        precip_2 = any(m in desc_2 for m in rain_markers)
-
-        def _signed(a: object, b: object) -> float | None:
-            if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-                return float(a) - float(b)
-            return None
-
-        d_temp = _signed(temp_1, temp_2)
-        d_wind = _signed(wind_1, wind_2)
-        d_hum = _signed(hum_1, hum_2)
-
-        warmer = None
-        if d_temp is not None and abs(d_temp) >= 1.0:
-            warmer = 1 if d_temp > 0 else 2
-        calmer = None
-        if d_wind is not None and abs(d_wind) >= 1.0:
-            calmer = 1 if d_wind < 0 else 2
-        drier = None
-        if d_hum is not None and abs(d_hum) >= 8:
-            drier = 1 if d_hum < 0 else 2
-        no_rain = None
-        if precip_1 and not precip_2:
-            no_rain = 2
-        elif precip_2 and not precip_1:
-            no_rain = 1
-
-        signals = [s for s in (warmer, calmer, drier, no_rain) if s is not None]
-        adv_1 = sum(1 for s in signals if s == 1)
-        adv_2 = sum(1 for s in signals if s == 2)
-
-        near_identical = (
-            no_rain is None
-            and (d_temp is None or abs(d_temp) < 1.0)
-            and (d_wind is None or abs(d_wind) < 1.5)
-            and (d_hum is None or abs(d_hum) < 10)
-        )
-
-        clear_winner = None
-        if not near_identical:
-            if adv_1 >= 2 and adv_2 == 0:
-                clear_winner = 1
-            elif adv_2 >= 2 and adv_1 == 0:
-                clear_winner = 2
-
-        if clear_winner is not None:
-            return self._render_compare_current_clear(
-                clear_winner,
-                city_1_label, city_2_label,
-                name_1, name_2,
-                warmer, calmer, drier, no_rain,
-            )
-        if near_identical:
-            return self._render_compare_current_near_identical(
-                name_1, name_2, d_wind, d_hum,
-            )
-        return self._render_compare_current_mixed(
-            city_1_label, city_2_label,
-            name_1, name_2,
-            warmer, calmer, drier, no_rain,
-        )
+        return fallbacks.fallback_compare_current(self, payload_1, payload_2)
 
     def _render_compare_current_clear(
         self,
@@ -1219,96 +548,15 @@ class AiWeatherService:
 
     def _fallback_weather_alert(self, location_label: str, alert_payload: dict) -> str:
         """Детерминированный fallback для погодного уведомления (1-2 коротких предложения)."""
-        payload = alert_payload if isinstance(alert_payload, dict) else {}
-        slot_local = str(payload.get("slot_local") or "").strip()
-        description = str(payload.get("description") or "").strip().lower()
-        event_type = str(payload.get("event_type") or "").strip().lower()
-        temperature = payload.get("temperature")
-        feels_like = payload.get("feels_like")
-        wind_speed = payload.get("wind_speed")
-        precip_probability = payload.get("precip_probability")
-
-        if any(x in description for x in ("дожд", "лив", "гроза", "снег")) or event_type == "precipitation":
-            when = f"К {slot_local} " if slot_local else "Скоро "
-            tail = ""
-            if isinstance(precip_probability, (int, float)) and float(precip_probability) >= 0.6:
-                tail = " Осадки выглядят вероятными."
-            wind_tail = ""
-            if isinstance(wind_speed, (int, float)):
-                ws = float(wind_speed)
-                if ws < 3:
-                    wind_tail = " Ветер слабый."
-                elif ws <= 5:
-                    wind_tail = " Ветер умеренный."
-                elif ws < 8:
-                    wind_tail = " Ветер заметный."
-                else:
-                    wind_tail = " Ветер сильный."
-            return (
-                f"{when}ожидаются осадки, лучше взять зонт и непромокаемую верхнюю одежду."
-                " Если планируешь прогулку, лучше выбрать короткий маршрут или перенести её на более сухое время."
-                f"{tail}{wind_tail}"
-            ).strip()
-
-        if event_type == "wind" or (isinstance(wind_speed, (int, float)) and float(wind_speed) >= 8):
-            speed_hint = (
-                f" до {round(float(wind_speed), 1)} м/с"
-                if isinstance(wind_speed, (int, float))
-                else ""
-            )
-            return (
-                f"К {slot_local} ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
-                if slot_local
-                else f"Ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
-            ) + " Для прогулки лучше идти там, где меньше открытых участков."
-
-        if event_type == "temperature_drop":
-            feels_note = ""
-            if isinstance(feels_like, (int, float)):
-                feels_note = f" По ощущениям около {round(float(feels_like), 1)}°C."
-            return (
-                "Температура снизится, лучше взять дополнительный верхний слой одежды."
-                f"{feels_note}"
-            ).strip()
-
-        if isinstance(temperature, (int, float)) and isinstance(feels_like, (int, float)):
-            if float(feels_like) <= float(temperature) - 2.0:
-                return (
-                    f"К {slot_local} может ощущаться прохладнее фактической температуры, лучше одеться теплее."
-                    if slot_local
-                    else "Может ощущаться прохладнее фактической температуры, лучше одеться теплее."
-                )
-
-        if slot_local and description:
-            return f"К {slot_local} ожидается {description}, лучше скорректировать маршрут и одежду под условия."
-        if description:
-            return f"Ожидается {description}, лучше заранее учесть это в планах на выход."
-        return ""
+        return fallbacks.fallback_weather_alert(location_label, alert_payload)
 
     def _postprocess_weather_alert_text(self, text: str) -> str:
         """Мягко нормализует формулировки AI-совета по уведомлениям."""
-        normalized = " ".join(str(text or "").split())
-        if not normalized:
-            return ""
-        replacements = {
-            "короткий маршрут под крышей": "короткий маршрут",
-            "маршрут под крышей": "короткий маршрут",
-            "маршрут под укрытием": "маршрут, где меньше открытых участков",
-            "идти под крышей": "идти там, где меньше открытых участков",
-            "ветер усиливает холод": "ветер делает воздух прохладнее",
-            "ветер усиливает сырость": "при осадках на улице может быть менее комфортно",
-            "сильно влияет на комфорт": "заметно влияет на комфорт",
-        }
-        for src, dst in replacements.items():
-            normalized = re.sub(rf"\b{re.escape(src)}\b", dst, normalized, flags=re.IGNORECASE)
-        return normalized.strip()
+        return fallbacks.postprocess_weather_alert_text(text)
 
     def _fallback_compare_forecast_day(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
         """Fallback сравнения прогноза двух локаций на выбранную дату."""
-        profile_1 = self._build_forecast_day_risk_profile(payload_1)
-        profile_2 = self._build_forecast_day_risk_profile(payload_2)
-        verdict = self._build_forecast_compare_verdict(profile_1, profile_2)
-        return self._build_deterministic_compare_forecast_day_text(profile_1, profile_2, verdict)
+        return fallbacks.fallback_compare_forecast_day(self, payload_1, payload_2, selected_day)
 
     def _build_forecast_day_risk_profile(self, payload: dict) -> dict:
         """Строит детерминированный профиль погодных рисков для compare-by-date."""
