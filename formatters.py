@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from weather_app import analyze_air_pollution
+from weather.descriptions import normalize_weather_description
 
 
 def wind_direction_ru(deg: float) -> str:
@@ -120,7 +121,7 @@ def format_weather_response(city_label: str, weather: dict) -> str:
 
     temp = main_data.get("temp")
     feels_like = main_data.get("feels_like")
-    description = weather_data[0].get("description", "без описания")
+    description = normalize_weather_description(weather_data[0].get("description", "без описания"))
     humidity = main_data.get("humidity")
     pressure = main_data.get("pressure")
     wind_speed = wind_data.get("speed")
@@ -179,7 +180,7 @@ def format_details_response(city_label: str, weather: dict, air_components: dict
 
     temp = main_data.get("temp")
     feels_like = main_data.get("feels_like")
-    description = weather_data[0].get("description", "без описания")
+    description = normalize_weather_description(weather_data[0].get("description", "без описания"))
     humidity = main_data.get("humidity")
     pressure = main_data.get("pressure")
     pressure_mmhg = round(pressure * 0.75006) if pressure is not None else None
@@ -244,7 +245,7 @@ def format_compare_response(city_1: str, weather_1: dict, city_2: str, weather_2
     w1 = {
         "temp": main_1.get("temp"),
         "feels_like": main_1.get("feels_like"),
-        "description": weather_data_1[0].get("description", "без описания"),
+        "description": normalize_weather_description(weather_data_1[0].get("description", "без описания")),
         "humidity": main_1.get("humidity"),
         "wind_speed": wind_data_1.get("speed"),
         "wind_deg": wind_data_1.get("deg"),
@@ -252,7 +253,7 @@ def format_compare_response(city_1: str, weather_1: dict, city_2: str, weather_2
     w2 = {
         "temp": main_2.get("temp"),
         "feels_like": main_2.get("feels_like"),
-        "description": weather_data_2[0].get("description", "без описания"),
+        "description": normalize_weather_description(weather_data_2[0].get("description", "без описания")),
         "humidity": main_2.get("humidity"),
         "wind_speed": wind_data_2.get("speed"),
         "wind_deg": wind_data_2.get("deg"),
