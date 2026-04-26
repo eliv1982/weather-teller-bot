@@ -3,3 +3,4 @@ venv/
 __pycache__/
 bot.log
 .cache/
+User_Data.json
