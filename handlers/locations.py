@@ -185,7 +185,7 @@ def _format_ai_compare_current_snapshot(payload: dict) -> str:
     city = str(payload.get("city_label") or "Локация")
     temperature = _format_number(payload.get("temperature"), "°C")
     feels_like = _format_number(payload.get("feels_like"), "°C")
-    description = str(payload.get("description") or "без описания")
+    description = location_compare_helpers.normalize_weather_description(payload.get("description") or "без описания")
     return (
         f"• {city}: {temperature}, ощущается как {feels_like}, {description}"
     )

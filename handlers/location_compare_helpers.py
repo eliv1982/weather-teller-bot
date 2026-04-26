@@ -1,6 +1,8 @@
 from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
 
+from weather.descriptions import normalize_weather_description
+
 
 def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta: dict | None = None) -> dict:
     """Собирает payload текущей погоды для AI-сравнения."""
@@ -16,7 +18,7 @@ def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta
         "state": meta.get("state"),
         "temperature": main_data.get("temp"),
         "feels_like": main_data.get("feels_like"),
-        "description": weather_item.get("description"),
+        "description": normalize_weather_description(weather_item.get("description")),
         "humidity": main_data.get("humidity"),
         "wind_speed": wind_data.get("speed"),
     }
@@ -53,7 +55,7 @@ def _ai_compare_day_payload(
             temps.append(float(temp))
 
         weather_item = item.get("weather", [{}])[0] if isinstance(item.get("weather"), list) else {}
-        description = str(weather_item.get("description") or "без описания")
+        description = normalize_weather_description(weather_item.get("description") or "без описания")
         desc_counter[description] = desc_counter.get(description, 0) + 1
         desc_l = description.lower()
         if any(x in desc_l for x in ("дожд", "лив", "гроза", "снег")):

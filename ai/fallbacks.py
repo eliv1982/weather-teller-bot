@@ -3,6 +3,8 @@
 from datetime import datetime
 import re
 
+from weather.descriptions import normalize_weather_description
+
 
 def fallback_current(city_label: str, weather_data: dict) -> str:
     main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
@@ -10,7 +12,7 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
     temp = main_data.get("temp")
     feels_like = main_data.get("feels_like")
-    description = (weather_list[0].get("description") if weather_list else "") or "без описания"
+    description = normalize_weather_description((weather_list[0].get("description") if weather_list else "") or "без описания")
     wind_speed = wind_data.get("speed")
     desc_lower = str(description).lower()
     umbrella = (
@@ -105,7 +107,7 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
     if isinstance(wind_speed, (int, float)):
         ws = float(wind_speed)
         weather_list = weather_data.get("weather", []) if isinstance(weather_data, dict) else []
-        description = (weather_list[0].get("description") if weather_list else "") or ""
+        description = normalize_weather_description((weather_list[0].get("description") if weather_list else "") or "")
         desc_lower = str(description).lower()
         temp = main_data.get("temp")
         if ws < 3:
@@ -198,7 +200,7 @@ def fallback_compare_current(service, payload_1: dict, payload_2: dict) -> str:
 def fallback_weather_alert(location_label: str, alert_payload: dict) -> str:
     payload = alert_payload if isinstance(alert_payload, dict) else {}
     slot_local = str(payload.get("slot_local") or "").strip()
-    description = str(payload.get("description") or "").strip().lower()
+    description = normalize_weather_description(payload.get("description")).lower()
     event_type = str(payload.get("event_type") or "").strip().lower()
     temperature = payload.get("temperature")
     feels_like = payload.get("feels_like")

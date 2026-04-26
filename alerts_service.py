@@ -2,6 +2,7 @@ from datetime import datetime
 import time
 
 from alerts_subscription_service import AlertsSubscriptionService
+from weather.descriptions import normalize_weather_description
 
 _alerts_subscriptions = AlertsSubscriptionService()
 
@@ -160,8 +161,9 @@ def detect_weather_alerts(
         if slot_ts < now_utc_ts or slot_ts > upper_bound_ts:
             continue
 
-        description = item.get("weather", [{}])[0].get("description", "")
-        lowered = description.lower()
+        raw_description = item.get("weather", [{}])[0].get("description", "")
+        lowered = str(raw_description).lower()
+        description = normalize_weather_description(raw_description)
         if any(keyword in lowered for keyword in keywords):
             local_ts = slot_ts + offset_sec
             local_dt = datetime.utcfromtimestamp(local_ts)
