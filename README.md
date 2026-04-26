@@ -1,90 +1,123 @@
 # Weather Teller Telegram Bot
 
-Weather Teller is a Telegram weather bot built with Python and OpenWeather API.  
-It provides current weather, 5-day forecast, geolocation weather, detailed metrics, air quality, and city comparison.  
-The bot supports saved/favorite locations, multi-location alert subscriptions, and manual coordinate input.  
-Current architecture uses PostgreSQL as the main storage and is ready for Docker-based local/server deployment.  
-The bot also includes an optional AI overlay for human-friendly weather explanations via OpenAI API with safe fallback mode.  
-The project can run both as local Python app and as a full Docker Compose stack.
+## English summary
+
+Weather Teller is a Telegram weather bot built with Python, PostgreSQL, Docker, OpenWeather API and OpenAI API.  
+It provides current weather, 5-day forecasts, extended weather metrics, air quality data, smart location comparison, saved locations and multi-location alerts.  
+The project includes AI-powered explanations, weather alert advice, location query assistance and short TTL API caching.  
+The bot is designed as a portfolio-ready educational project with a production-like Docker Compose setup.  
+It runs both locally and in Docker Compose with PostgreSQL as the primary storage.
 
 ## Описание проекта
 
-Weather Teller — Telegram-бот для получения и мониторинга погоды.
+Weather Teller — Telegram-бот для получения погоды, мониторинга изменений, сравнения локаций и хранения часто используемых мест.
 
-Актуальная версия поддерживает:
+## Основные возможности
 
-- текущую погоду;
+### Погода
+
+- текущая погода;
 - прогноз на 5 дней;
-- погоду по геолокации (как способ выбора локации в сценариях и через команду `/geo`);
-- расширенные данные и качество воздуха;
-- основной compare-сценарий «✨ Сравнить локации»;
-- сохранённые локации и выбор основной локации;
-- уведомления по нескольким локациям;
-- ручной ввод координат;
-- хранение данных в PostgreSQL;
-- запуск в Docker / Docker Compose.
-- AI-объяснения погоды (опционально, через OpenAI API, с fallback без API).
+- расширенные данные;
+- качество воздуха;
+- ввод локации текстом, координатами, геолокацией или через сохранённые локации.
 
-## Функциональность
+### Локации
 
-- **Текущая погода**: поиск по населённому пункту, выбор из нескольких совпадений, использование основной локации.
-- **Прогноз на 5 дней**: группировка по дням, удобная inline-навигация.
-- **Геолокация как способ ввода**: доступна в сценариях текущей погоды, прогноза на 5 дней, расширенных данных и AI-сравнения.
-- **Расширенные данные**: влажность, давление, ветер, облачность, видимость, восход/закат, качество воздуха.
-- **✨ Сравнить локации (основной compare-сценарий)**: сравнение двух локаций в режимах «Сейчас» и «На дату».
-- **Сохранённые локации**: добавление, переименование, удаление, просмотр списка.
-- **Основная локация**: быстрый выбор любимой локации в сценариях погоды/прогноза/деталей.
-- **Уведомления по нескольким локациям**: подписки с интервалом проверки, включение/выключение, удаление.
-- **Ввод координат вручную**: поддержка форматов `lat, lon` и `lat lon`.
-- **AI-объяснение текущей погоды**: кнопка с кратким human-friendly разбором после ответа по текущей погоде.
-- **AI-рекомендация по прогнозу дня**: кнопка в карточке дня с краткой рекомендацией по выходу и осадкам.
-- **AI-пояснение расширенных данных**: кнопка с простым пояснением влажности, ветра, видимости и воздуха.
-- **Гибкий выбор локаций для compare**: для каждой локации поддержаны способы: населённый пункт, координаты, геолокация и выбор из сохранённых.
-- **Сравнение на дату из ближайших 5 дней**: после выбора двух локаций бот показывает краткую сводку и короткий AI-вывод.
+- сохранение часто используемых локаций;
+- добавление через город, координаты или геолокацию;
+- переименование и удаление;
+- защита от дублей;
+- выбор сохранённых локаций в погоде, прогнозе, расширенных данных, уведомлениях и сравнении;
+- обработка неоднозначных запросов:
+  - Питер / СПб;
+  - мск;
+  - центр;
+  - центр Москвы;
+  - центр Екатеринбурга;
+  - Заречный Свердловская область.
+
+### Сравнение локаций
+
+- режим «Сейчас»;
+- режим «На дату»;
+- выбор каждой из двух локаций любым способом;
+- защита от сравнения одной и той же точки;
+- короткий понятный вывод по погодным условиям;
+- deterministic verdicts для более стабильных формулировок.
+
+### Уведомления
+
+- подписки по нескольким локациям;
+- настройка интервала;
+- включение/выключение;
+- удаление подписки;
+- AI-совет в уведомлении;
+- уведомления показывают фактический населённый пункт, а не только пользовательское название.
+
+### AI-функции
+
+- объяснение текущей погоды простым языком;
+- объяснение расширенных данных и качества воздуха;
+- рекомендация по прогнозу дня;
+- совет в уведомлениях;
+- помощь при неоднозначном вводе локации;
+- fallback-режим, если OpenAI API недоступен.
+
+### Кэширование
+
+- short TTL in-memory API-cache для OpenWeather:
+  - current weather;
+  - forecast;
+  - air pollution;
+  - geocoding;
+  - reverse geocoding;
+- PostgreSQL AI-cache для AI-ответов;
+- cache hit/miss logging.
 
 ## Стек
 
 - Python
 - pyTelegramBotAPI
 - OpenWeather API
+- OpenAI API
 - PostgreSQL
 - Docker / Docker Compose
+- psycopg v3
 - python-dotenv
-- psycopg v3 (`psycopg[binary]`)
-- OpenAI SDK (`openai`)
 
 ## Структура проекта
 
-Ниже ключевые файлы и модули текущей архитектуры:
-
 ```text
 bot.py
+flows.py
+handlers/
+weather/
+ai_weather_service.py
 postgres_storage.py
 alerts_subscription_service.py
 app_context.py
 session_store.py
-flows.py
-handlers/
-weather/
 formatters.py
 keyboards.py
+Dockerfile
 docker-compose.yml
 docker-compose.postgres.yml
-Dockerfile
 .env.example
 .env.docker.example
 ```
 
-- `bot.py` — точка входа, регистрация обработчиков, запуск polling и worker.
-- `postgres_storage.py` — слой хранения в PostgreSQL.
-- `alerts_subscription_service.py` — доменная логика подписок на уведомления.
-- `app_context.py` — DI-контейнер зависимостей.
-- `session_store.py` — runtime-состояния и FSM-данные.
-- `flows.py` — сценарные flow-функции и `alerts_worker`.
+- `bot.py` — точка входа, регистрация обработчиков, запуск polling и фонового worker.
+- `flows.py` — сценарные flow-функции и логика оркестрации уведомлений.
 - `handlers/` — текстовые и callback-обработчики по сценариям.
-- `weather/` — модули API/локаций/качества воздуха.
-- `docker-compose.yml` — полный запуск (`postgres + weather_bot`).
-- `docker-compose.postgres.yml` — запуск только PostgreSQL.
+- `weather/` — модуль OpenWeather API, геокодинг, reverse geocoding, API-cache.
+- `ai_weather_service.py` — AI-объяснения, AI-assist, deterministic fallback и AI-cache интеграция.
+- `postgres_storage.py` — слой хранения данных в PostgreSQL.
+- `alerts_subscription_service.py` — доменная логика подписок уведомлений.
+- `app_context.py` — контейнер зависимостей приложения.
+- `session_store.py` — runtime-состояния и FSM-данные.
+- `formatters.py` — форматирование пользовательских сообщений.
+- `keyboards.py` — reply/inline клавиатуры.
 
 ## Переменные окружения
 
@@ -99,14 +132,16 @@ PGDATABASE=weather_teller
 PGUSER=weather_user
 PGPASSWORD=change_me_strong_password
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.4-mini
+OPENAI_MODEL=your_openai_model
 ```
 
 Важно:
 
 - для локального запуска вне Docker обычно `PGHOST=localhost`;
-- для запуска в Docker Compose (когда бот в контейнере) должен быть `PGHOST=postgres`.
-- если `OPENAI_API_KEY` не задан, бот продолжает работать в fallback-режиме без падений.
+- для запуска в Docker Compose (когда бот в контейнере) должен быть `PGHOST=postgres`;
+- `OPENAI_API_KEY` опционален;
+- `OPENAI_MODEL` опционален;
+- если `OPENAI_API_KEY` не задан, основные погодные сценарии не падают и работают через fallback.
 
 ## Локальный запуск
 
@@ -174,12 +209,10 @@ docker compose -f docker-compose.postgres.yml up -d
 docker compose -f docker-compose.postgres.yml down
 ```
 
-## Запуск всего проекта в Docker
+## Запуск всего проекта в Docker Compose
 
-Этот режим поднимает оба сервиса: `postgres` и `weather_bot`.
-В `docker-compose.yml` для PostgreSQL включён `healthcheck` (`pg_isready`), а `weather_bot`
-запускается после статуса `service_healthy`.
-Дополнительно в коде бота сохранена retry-логика подключения к БД как запасной уровень устойчивости.
+Этот режим поднимает оба сервиса: `postgres` и `weather_bot`.  
+Проект использует production-like Docker Compose setup: healthcheck PostgreSQL, запуск бота после `service_healthy`, и дополнительную retry-логику подключения к БД в приложении.
 
 ### 1) Подготовить docker-совместимый `.env`
 
@@ -229,6 +262,7 @@ docker exec -it weather_postgres psql -U weather_user -d weather_teller -P pager
 SELECT * FROM users;
 SELECT * FROM saved_locations;
 SELECT * FROM alert_subscriptions;
+SELECT * FROM ai_response_cache;
 ```
 
 Выход:
@@ -239,23 +273,41 @@ SELECT * FROM alert_subscriptions;
 
 ## Что хранится в базе
 
-- `users` — активная локация пользователя, выбранная основная локация, legacy-настройки уведомлений.
+- `users` — служебные пользовательские настройки и последняя рабочая локация.
 - `saved_locations` — пользовательские сохранённые локации.
 - `alert_subscriptions` — подписки уведомлений по нескольким локациям (статус, интервал, служебные поля worker).
+- `ai_response_cache` — кэш AI-ответов в PostgreSQL.
 
 ## Команды бота
 
 - `/start` — главное меню
 - `/current` — текущая погода
 - `/forecast` — прогноз на 5 дней
-- `/geo` — shortcut/backward compatibility для погоды по геолокации
-- `/compare` — legacy shortcut сравнения (оставлен для обратной совместимости)
 - `/details` — расширенные данные
 - `/alerts` — уведомления
+- `/compare` — сравнение локаций
+- `/geo` — погода по геолокации
 - `/help` — справка
+
+Основной UX реализован через кнопочное меню, а команды сохранены как shortcuts/backward compatibility.
 
 ## Текущий статус проекта
 
-- Базовая версия бота готова и работает в production-подобной структуре.
-- PostgreSQL и Docker уже подключены в рабочем контуре.
-- Следующий этап — деплой на Ubuntu-сервер и дальнейшее развитие функциональности.
+- v1 feature-complete;
+- протестирован локально и в Docker Compose;
+- поддерживает серверный деплой;
+- далее запланированы архитектурный рефакторинг и расширение тестового покрытия.
+
+## Future improvements / Roadmap
+
+- split `ai_weather_service.py` into prompts/fallbacks/signatures modules;
+- extract shared location input pipeline;
+- move notifications worker into dedicated service;
+- add tests for critical state transitions;
+- improve observability;
+- optional multilingual mode.
+
+## Автор
+
+Автор: Елена Шленскова  
+Telegram: @elena_shlenskova
