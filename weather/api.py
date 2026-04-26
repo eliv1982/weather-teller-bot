@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import copy
 
 import requests
 from dotenv import load_dotenv
@@ -10,6 +11,82 @@ from .locations import _dedupe_geocode_sorted, _enrich_location_item, _location_
 load_dotenv()
 OW_API_KEY = os.getenv("OW_API_KEY")
 LAST_ERROR_TYPE = None  # None | "network" | "rate_limit"
+
+logger = logging.getLogger(__name__)
+
+
+class TTLCache:
+    """Простой in-memory TTL cache для внешних API-запросов."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, tuple[float, object]] = {}
+
+    def get(self, key: str) -> object | None:
+        now = time.time()
+        item = self._store.get(key)
+        if item is None:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            self._store.pop(key, None)
+            return None
+        return copy.deepcopy(value)
+
+    def set(self, key: str, value: object, ttl_seconds: int) -> None:
+        if ttl_seconds <= 0:
+            return
+        expires_at = time.time() + float(ttl_seconds)
+        self._store[key] = (expires_at, copy.deepcopy(value))
+
+    def cleanup_expired(self) -> None:
+        now = time.time()
+        expired = [k for k, (exp, _) in self._store.items() if exp <= now]
+        for key in expired:
+            self._store.pop(key, None)
+
+
+API_CACHE = TTLCache()
+
+TTL_CURRENT_SECONDS = 2 * 60
+TTL_FORECAST_SECONDS = 15 * 60
+TTL_AIR_SECONDS = 15 * 60
+TTL_GEOCODE_SECONDS = 30 * 60
+TTL_REVERSE_GEOCODE_SECONDS = 30 * 60
+def _normalize_query_for_key(query: str) -> str:
+    return " ".join(str(query or "").strip().lower().split())
+
+
+def _round_coord(value: float) -> float:
+    return round(float(value), 4)
+
+
+def _coord_cache_key(namespace: str, lat: float, lon: float) -> str:
+    return f"{namespace}:{_round_coord(lat):.4f}:{_round_coord(lon):.4f}"
+
+
+def _query_cache_key(namespace: str, query: str, *, limit: int) -> str:
+    return f"{namespace}:{_normalize_query_for_key(query)}:limit={int(limit)}"
+
+
+def _log_cache_hit(scope: str, key: str, *, query: str | None = None) -> None:
+    if query is not None:
+        logger.info("API cache HIT: %s query=%s key=%s", scope, query, key)
+        return
+    logger.info("API cache HIT: %s key=%s", scope, key)
+
+
+def _log_cache_miss(scope: str, key: str, *, query: str | None = None) -> None:
+    if query is not None:
+        logger.info("API cache MISS: %s query=%s key=%s", scope, query, key)
+        return
+    logger.info("API cache MISS: %s key=%s", scope, key)
+
+
+def _log_cache_set(scope: str, key: str, ttl_seconds: int, *, query: str | None = None) -> None:
+    if query is not None:
+        logger.info("API cache SET: %s ttl=%s query=%s key=%s", scope, ttl_seconds, query, key)
+        return
+    logger.info("API cache SET: %s ttl=%s key=%s", scope, ttl_seconds, key)
 
 
 def safe_request(
@@ -109,6 +186,13 @@ def get_locations(query: str, limit: int = 5) -> list[dict] | None:
     q = (query or "").strip()
     if not q:
         return None
+    cap = min(max(1, limit), 5)
+    cache_key = _query_cache_key("geocode", q, limit=cap)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("geocode", cache_key, query=_normalize_query_for_key(q))
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("geocode", cache_key, query=_normalize_query_for_key(q))
     candidates = _collect_geocode_candidates(q)
     if not candidates:
         return None
@@ -120,14 +204,22 @@ def get_locations(query: str, limit: int = 5) -> list[dict] | None:
         )
     )
     deduped = _dedupe_geocode_sorted(candidates)
-    cap = min(max(1, limit), 5)
     final = deduped[:cap]
-    return [_enrich_location_item(item) for item in final]
+    result = [_enrich_location_item(item) for item in final]
+    API_CACHE.set(cache_key, result, ttl_seconds=TTL_GEOCODE_SECONDS)
+    _log_cache_set("geocode", cache_key, TTL_GEOCODE_SECONDS, query=_normalize_query_for_key(q))
+    return result
 
 
 def get_location_by_coordinates(lat: float, lon: float) -> dict | None:
     if not OW_API_KEY:
         return None
+    cache_key = _coord_cache_key("reverse_geocode", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("reverse_geocode", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("reverse_geocode", cache_key)
     url = "https://api.openweathermap.org/geo/1.0/reverse"
     params = {"lat": lat, "lon": lon, "limit": 1, "appid": OW_API_KEY}
     response = safe_request(url, params)
@@ -139,21 +231,33 @@ def get_location_by_coordinates(lat: float, lon: float) -> dict | None:
         return None
     if not data:
         return None
-    return data[0]
+    result = data[0]
+    API_CACHE.set(cache_key, result, ttl_seconds=TTL_REVERSE_GEOCODE_SECONDS)
+    _log_cache_set("reverse_geocode", cache_key, TTL_REVERSE_GEOCODE_SECONDS)
+    return result
 
 
 def get_current_weather(lat: float, lon: float) -> dict | None:
     if not OW_API_KEY:
         return None
+    cache_key = _coord_cache_key("current", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("current_weather", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("current_weather", cache_key)
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "appid": OW_API_KEY, "units": "metric", "lang": "ru"}
     response = safe_request(url, params)
     if response is None or response.status_code != 200:
         return None
     try:
-        return response.json()
+        result = response.json()
     except ValueError:
         return None
+    API_CACHE.set(cache_key, result, ttl_seconds=TTL_CURRENT_SECONDS)
+    _log_cache_set("current_weather", cache_key, TTL_CURRENT_SECONDS)
+    return result
 
 
 def get_coordinates(query: str, limit: int = 1) -> tuple[float, float] | None:
@@ -175,6 +279,12 @@ def get_coordinates(query: str, limit: int = 1) -> tuple[float, float] | None:
 def get_forecast_5d3h(lat: float, lon: float) -> list[dict] | None:
     if not OW_API_KEY:
         return None
+    cache_key = _coord_cache_key("forecast", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("forecast_5d3h", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("forecast_5d3h", cache_key)
     url = "https://api.openweathermap.org/data/2.5/forecast"
     params = {"lat": lat, "lon": lon, "appid": OW_API_KEY, "units": "metric", "lang": "ru"}
     response = safe_request(url, params)
@@ -196,12 +306,20 @@ def get_forecast_5d3h(lat: float, lon: float) -> list[dict] | None:
         row = dict(item)
         row["_timezone_offset"] = int(tz_offset) if isinstance(tz_offset, (int, float)) else 0
         enriched.append(row)
+    API_CACHE.set(cache_key, enriched, ttl_seconds=TTL_FORECAST_SECONDS)
+    _log_cache_set("forecast_5d3h", cache_key, TTL_FORECAST_SECONDS)
     return enriched
 
 
 def get_air_pollution(lat: float, lon: float) -> dict | None:
     if not OW_API_KEY:
         return None
+    cache_key = _coord_cache_key("air", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("air_pollution", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("air_pollution", cache_key)
     url = "https://api.openweathermap.org/data/2.5/air_pollution"
     params = {"lat": lat, "lon": lon, "appid": OW_API_KEY}
     response = safe_request(url, params)
@@ -217,4 +335,6 @@ def get_air_pollution(lat: float, lon: float) -> dict | None:
         return None
     if not isinstance(components, dict):
         return None
+    API_CACHE.set(cache_key, components, ttl_seconds=TTL_AIR_SECONDS)
+    _log_cache_set("air_pollution", cache_key, TTL_AIR_SECONDS)
     return components
