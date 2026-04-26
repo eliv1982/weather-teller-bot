@@ -190,7 +190,7 @@ def compare_current_signature(payload_1: dict, payload_2: dict) -> dict:
 def compare_forecast_day_signature(payload_1: dict, payload_2: dict, selected_day: str) -> dict:
     return {
         "mode": "date",
-        "format_version": "deterministic_v3",
+        "format_version": "deterministic_v4",
         "selected_day": normalize_location(selected_day),
         "location_1": {
             "label": normalize_location(payload_1.get("city_label")),

@@ -846,6 +846,10 @@ class AiWeatherService:
             return clean[0]
         return ", ".join(clean[:-1]) + " и " + clean[-1]
 
+    def _format_location_pair(self, name_1: str, name_2: str) -> str:
+        """Строит нейтральную пару локаций без необходимости склонения."""
+        return f"локаций «{name_1}» и «{name_2}»"
+
     def _build_city_tradeoff_line(self, base: dict, other: dict) -> str:
         """Формирует строку вида: '<Город>: плюс, но минус.'"""
         city = self._get_short_location_name(str(base.get("city_label") or "Локация"))
@@ -1089,7 +1093,8 @@ class AiWeatherService:
             detail_line = f"{windier_phrase}, {calmer_phrase}."
             prefer_line = f"Если важен меньший ветер, {calmer_name} выглядит чуть практичнее."
         else:
-            detail_line = f"Разница по ветру и температуре между {name_1} и {name_2} почти не ощущается."
+            pair = self._format_location_pair(name_1, name_2)
+            detail_line = f"Для {pair} разница по ветру и температуре почти не ощущается."
             prefer_line = "Если важен меньший ветер, ориентируйся на прогноз ближе к дате."
 
         temp_note_1 = str(profile_1.get("temperature_note") or "умеренно тепло")
