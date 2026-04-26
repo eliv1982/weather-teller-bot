@@ -9,8 +9,8 @@ services:
       POSTGRES_PASSWORD: ${PGPASSWORD}
     volumes:
       - weather_pg_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+#    ports:
+#      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PGUSER} -d ${PGDATABASE}"]
       interval: 5s
