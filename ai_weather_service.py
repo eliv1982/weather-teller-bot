@@ -117,6 +117,14 @@ class AiWeatherService:
             "Используй только переданные данные, ничего не выдумывай.\n"
             "Обязательно скажи: как ощущается погода, нужен ли зонт, как лучше одеться, "
             "насколько комфортно сейчас на улице.\n"
+            "Правила формулировок по ветру:\n"
+            "- <3 м/с: слабый ветер, почти не мешает;\n"
+            "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
+            "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
+            "- >=8 м/с: сильный ветер, реально влияет на комфорт.\n"
+            "Не используй при ветре <=5 м/с формулировки: "
+            "«усиливает холод», «усиливает сырость», «делает погоду неприятной», "
+            "«сильно влияет на комфорт», «главный фактор».\n"
             "Пиши как полезный совет живого помощника, без сухих шаблонов.\n\n"
             f"Локация: {city_label}\n"
             f"Данные: {weather_data}"
@@ -172,6 +180,14 @@ class AiWeatherService:
             "Используй только переданные данные, ничего не выдумывай.\n"
             "Не перечисляй всё подряд: выдели 1-2 самых важных фактора сейчас и объясни, "
             "почему именно они важны прямо сейчас.\n\n"
+            "Правила формулировок по ветру:\n"
+            "- <3 м/с: слабый ветер, почти не мешает;\n"
+            "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
+            "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
+            "- >=8 м/с: сильный ветер, влияет на комфорт.\n"
+            "При ветре <=5 м/с избегай фраз о сильном негативном влиянии ветра.\n"
+            "Если качество воздуха хорошее, формулируй коротко: "
+            "«Качество воздуха хорошее: пыль и основные загрязнители на низком уровне.»\n\n"
             f"Локация: {city_label}\n"
             f"Погода: {weather_data}\n"
             f"Качество воздуха: {air_quality_data}"
@@ -191,7 +207,7 @@ class AiWeatherService:
         cached = self._get_cached(cache_key)
         if cached:
             logger.info("AI cache hit: scenario=ai_weather_alert")
-            return cached
+            return self._postprocess_weather_alert_text(cached)
         logger.info("AI cache miss: scenario=ai_weather_alert")
         prompt = (
             "Объясни погодное уведомление коротко и практично.\n"
@@ -199,15 +215,29 @@ class AiWeatherService:
             "без драматизации и без длинного прогноза.\n"
             "Используй только переданные данные, ничего не выдумывай.\n"
             "Дай конкретный совет для ближайшей активности (одежда, зонт, маршрут, время выхода).\n\n"
+            "Нельзя использовать неестественные конструкции: "
+            "«маршрут под крышей», «короткий маршрут под крышей», «маршрут под укрытием», «идти под крышей».\n"
+            "Используй естественные варианты: "
+            "«выбрать короткий маршрут», «избегать долгой прогулки под дождём», "
+            "«идти там, где меньше открытых участков», «перенести прогулку на более сухое время», "
+            "«взять зонт и непромокаемую верхнюю одежду», «выйти чуть раньше, если дорога важна по времени».\n"
+            "Ветер описывай по шкале:\n"
+            "- <3 м/с: слабый;\n"
+            "- 3-5 м/с: умеренный;\n"
+            "- 5-7 м/с: заметный;\n"
+            "- >=8 м/с: сильный.\n"
+            "При ветре до 5 м/с не пиши фразы «ветер усиливает холод/сырость» и "
+            "«сильно влияет на комфорт».\n\n"
             f"Локация: {location_label}\n"
             f"Событие: {alert_payload}"
         )
         model_answer = self._call_model(prompt, max_output_tokens=120)
         if model_answer:
-            self._save_cached(cache_key, "ai_weather_alert", model_answer, ttl_seconds=self.ttl_current_seconds)
-            return model_answer
+            final_text = self._postprocess_weather_alert_text(model_answer)
+            self._save_cached(cache_key, "ai_weather_alert", final_text, ttl_seconds=self.ttl_current_seconds)
+            return final_text
         logger.info("AI fallback used: scenario=ai_weather_alert")
-        return fallback
+        return self._postprocess_weather_alert_text(fallback)
 
     def compare_two_locations_current_with_ai(self, location_1_payload: dict, location_2_payload: dict) -> str:
         """Сравнивает текущую погоду двух локаций в deterministic-first режиме."""
@@ -810,7 +840,22 @@ class AiWeatherService:
             if isinstance(temp, (int, float)) and -5 <= temp <= 25
             else "На улице может быть не слишком комфортно."
         )
-        wind_note = f" Ветер около {wind_speed} м/с." if isinstance(wind_speed, (int, float)) else ""
+        wind_note = ""
+        if isinstance(wind_speed, (int, float)):
+            ws = float(wind_speed)
+            if ws < 3:
+                wind_note = " Ветер слабый, почти не мешает."
+            elif ws <= 5:
+                wind_note = " Ветер умеренный: заметный, но без сильного влияния на комфорт."
+            elif ws < 8:
+                if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег")) or (
+                    isinstance(feels_like, (int, float)) and float(feels_like) < 8
+                ):
+                    wind_note = " Ветер заметный: при осадках или прохладе может быть менее комфортно."
+                else:
+                    wind_note = " Ветер заметный, на открытых участках может ощущаться сильнее."
+            else:
+                wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
         return (
             f"Сейчас в {city_label}: {description}, температура {temp if temp is not None else 'н/д'}°C, "
             f"ощущается как {feels_like if feels_like is not None else 'н/д'}°C.{wind_note} "
@@ -868,18 +913,38 @@ class AiWeatherService:
             if isinstance(humidity, (int, float)) and humidity >= 75
             else "Влажность сейчас в комфортном диапазоне."
         )
-        wind_note = (
-            f"Ветер около {wind_speed} м/с."
-            if isinstance(wind_speed, (int, float))
-            else "Данные о ветре ограничены."
-        )
+        if isinstance(wind_speed, (int, float)):
+            ws = float(wind_speed)
+            weather_list = weather_data.get("weather", []) if isinstance(weather_data, dict) else []
+            description = (weather_list[0].get("description") if weather_list else "") or ""
+            desc_lower = str(description).lower()
+            temp = main_data.get("temp")
+            if ws < 3:
+                wind_note = "Ветер слабый, почти не мешает."
+            elif ws <= 5:
+                wind_note = "Ветер умеренный: заметный, но без сильного влияния на комфорт."
+            elif ws < 8:
+                if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег")) or (
+                    isinstance(temp, (int, float)) and float(temp) < 8
+                ):
+                    wind_note = "Ветер заметный: при осадках или прохладе может быть менее комфортно."
+                else:
+                    wind_note = "Ветер заметный, на открытых участках ощущается сильнее."
+            else:
+                wind_note = "Ветер сильный и заметно влияет на комфорт."
+        else:
+            wind_note = "Данные о ветре ограничены."
         visibility_note = (
             f"Видимость примерно {int(visibility)} м."
             if isinstance(visibility, (int, float))
             else "Данные по видимости ограничены."
         )
         if isinstance(pm25, (int, float)):
-            air_note = "Качество воздуха в целом нормальное." if pm25 <= 35 else "Качество воздуха сейчас ниже комфортного."
+            air_note = (
+                "Качество воздуха хорошее: пыль и основные загрязнители на низком уровне."
+                if pm25 <= 35
+                else "Качество воздуха сейчас ниже комфортного."
+            )
         else:
             air_note = "Данные о качестве воздуха сейчас неполные."
 
@@ -1168,7 +1233,22 @@ class AiWeatherService:
             tail = ""
             if isinstance(precip_probability, (int, float)) and float(precip_probability) >= 0.6:
                 tail = " Осадки выглядят вероятными."
-            return f"{when}ожидаются осадки, лучше взять зонт или дождевик.{tail}".strip()
+            wind_tail = ""
+            if isinstance(wind_speed, (int, float)):
+                ws = float(wind_speed)
+                if ws < 3:
+                    wind_tail = " Ветер слабый."
+                elif ws <= 5:
+                    wind_tail = " Ветер умеренный."
+                elif ws < 8:
+                    wind_tail = " Ветер заметный."
+                else:
+                    wind_tail = " Ветер сильный."
+            return (
+                f"{when}ожидаются осадки, лучше взять зонт и непромокаемую верхнюю одежду."
+                " Если планируешь прогулку, лучше выбрать короткий маршрут или перенести её на более сухое время."
+                f"{tail}{wind_tail}"
+            ).strip()
 
         if event_type == "wind" or (isinstance(wind_speed, (int, float)) and float(wind_speed) >= 8):
             speed_hint = (
@@ -1180,7 +1260,7 @@ class AiWeatherService:
                 f"К {slot_local} ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
                 if slot_local
                 else f"Ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
-            ) + " Для прогулки лучше выбрать более защищённый маршрут."
+            ) + " Для прогулки лучше идти там, где меньше открытых участков."
 
         if event_type == "temperature_drop":
             feels_note = ""
@@ -1204,6 +1284,24 @@ class AiWeatherService:
         if description:
             return f"Ожидается {description}, лучше заранее учесть это в планах на выход."
         return ""
+
+    def _postprocess_weather_alert_text(self, text: str) -> str:
+        """Мягко нормализует формулировки AI-совета по уведомлениям."""
+        normalized = " ".join(str(text or "").split())
+        if not normalized:
+            return ""
+        replacements = {
+            "короткий маршрут под крышей": "короткий маршрут",
+            "маршрут под крышей": "короткий маршрут",
+            "маршрут под укрытием": "маршрут, где меньше открытых участков",
+            "идти под крышей": "идти там, где меньше открытых участков",
+            "ветер усиливает холод": "ветер делает воздух прохладнее",
+            "ветер усиливает сырость": "при осадках на улице может быть менее комфортно",
+            "сильно влияет на комфорт": "заметно влияет на комфорт",
+        }
+        for src, dst in replacements.items():
+            normalized = re.sub(rf"\b{re.escape(src)}\b", dst, normalized, flags=re.IGNORECASE)
+        return normalized.strip()
 
     def _fallback_compare_forecast_day(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
         """Fallback сравнения прогноза двух локаций на выбранную дату."""
