@@ -5,7 +5,7 @@ from .states import (
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
 )
-from weather_app import get_locations
+from location_query_assist import find_locations_with_assist
 
 
 def handle_compare_text(
@@ -25,12 +25,20 @@ def handle_compare_text(
             ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
-        locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)[:3]
+        search_result = find_locations_with_assist(
+            query,
+            scenario="compare_loc_1",
+            ctx=ctx,
+        )
+        clarification_text = search_result.get("clarification_text")
+        if clarification_text:
+            ctx.bot.send_message(message.chat.id, str(clarification_text))
+            return True
+        locations = search_result.get("locations") if isinstance(search_result, dict) else []
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
-                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+                "Не нашла такую локацию. Уточни город, страну или отправь геолокацию.",
             )
             return True
 
@@ -88,12 +96,20 @@ def handle_compare_text(
             )
             return True
 
-        locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)[:3]
+        search_result = find_locations_with_assist(
+            query,
+            scenario="compare_loc_2",
+            ctx=ctx,
+        )
+        clarification_text = search_result.get("clarification_text")
+        if clarification_text:
+            ctx.bot.send_message(message.chat.id, str(clarification_text))
+            return True
+        locations = search_result.get("locations") if isinstance(search_result, dict) else []
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
-                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+                "Не нашла такую локацию. Уточни город, страну или отправь геолокацию.",
             )
             return True
 

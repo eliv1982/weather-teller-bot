@@ -29,6 +29,76 @@ class AiWeatherService:
         self.ttl_current_seconds = 20 * 60
         self.ttl_details_seconds = 20 * 60
         self.ttl_forecast_seconds = 6 * 60 * 60
+        self.ttl_location_assist_seconds = 24 * 60 * 60
+        self.location_alias_map = {
+            "питер": "Санкт-Петербург",
+            "спб": "Санкт-Петербург",
+            "санкт питер": "Санкт-Петербург",
+            "петербург": "Санкт-Петербург",
+            "ленинград": "Санкт-Петербург",
+            "мск": "Москва",
+            "москва": "Москва",
+        }
+
+    def apply_location_alias(self, user_input: str) -> str:
+        """Нормализует частые алиасы локаций до geocoding-запроса."""
+        key = self._normalize_query_text(user_input)
+        if not key:
+            return ""
+        return self.location_alias_map.get(key, str(user_input or "").strip())
+
+    def assist_location_query(self, user_input: str, context: dict | None = None) -> dict:
+        """Помогает уточнить текст локации, не возвращая координаты."""
+        fallback = self._fallback_location_assist(user_input, context)
+        signature = self._location_assist_signature(user_input, context)
+        cache_key = self._build_cache_key("ai_location_assist", signature)
+        cached = self._get_cached(cache_key)
+        if cached:
+            parsed_cached = self._parse_location_assist_payload(cached)
+            if parsed_cached is not None:
+                logger.info("AI cache hit: scenario=ai_location_assist")
+                return parsed_cached
+        logger.info("AI cache miss: scenario=ai_location_assist")
+        prompt = (
+            "Ты помогаешь уточнить пользовательский запрос локации для геокодинга OpenWeather.\n"
+            "КРИТИЧЕСКИ ВАЖНО:\n"
+            "- не возвращай координаты;\n"
+            "- не выдумывай населённые пункты;\n"
+            "- только нормализуй текст и предложи безопасные альтернативные поисковые фразы.\n\n"
+            "Поддержи составные русские запросы вида:\n"
+            "- <населенный пункт> <район>\n"
+            "- <населенный пункт> <область/край/регион>\n"
+            "- <населенный пункт> рядом с <городом>\n"
+            "- <город> <район/ориентир> (например: Сочи Адлер, Москва центр)\n"
+            "Разбери ввод на settlement/city/village, district/rayon, region/oblast/krai, optional landmark/area,\n"
+            "и собери alternative_queries, пригодные для OpenWeather geocoding.\n\n"
+            "Верни ТОЛЬКО JSON-объект с полями:\n"
+            "{\n"
+            '  "normalized_query": string,\n'
+            '  "alternative_queries": string[],\n'
+            '  "needs_clarification": boolean,\n'
+            '  "clarification_text": string,\n'
+            '  "reason": string\n'
+            "}\n\n"
+            "Когда запрос слишком общий (например: центр, аэропорт, рядом со мной),"
+            " выставляй needs_clarification=true и пиши короткий practical clarification_text.\n"
+            "Язык ответа: русский.\n"
+            "Контекст сценария: "
+            f"{context if isinstance(context, dict) else {}}\n"
+            f"Запрос пользователя: {str(user_input or '').strip()}"
+        )
+        model_answer = self._call_model(prompt, max_output_tokens=220)
+        parsed_model = self._parse_location_assist_payload(model_answer or "")
+        if parsed_model is not None:
+            self._save_cached(
+                cache_key,
+                "ai_location_assist",
+                json.dumps(parsed_model, ensure_ascii=False, separators=(",", ":")),
+                ttl_seconds=self.ttl_location_assist_seconds,
+            )
+            return parsed_model
+        logger.info("AI fallback used: scenario=ai_location_assist")
+        return fallback
 
     def explain_current_weather(self, city_label: str, weather_data: dict) -> str:
         """Коротко объясняет текущую погоду простым языком."""
@@ -296,6 +366,17 @@ class AiWeatherService:
             "precip_probability": self._round_1(payload.get("precip_probability")),
         }
 
+    def _location_assist_signature(self, user_input: str, context: dict | None) -> dict:
+        """Сигнатура кэша для AI-assist текстового запроса локации."""
+        ctx = context if isinstance(context, dict) else {}
+        return {
+            "mode": "location_assist",
+            "format_version": "location_assist_v1",
+            "query": self._normalize_query_text(user_input),
+            "scenario": self._normalize_query_text(ctx.get("scenario")),
+            "language": self._normalize_query_text(ctx.get("language") or "ru"),
+        }
+
     def _compare_current_signature(self, payload_1: dict, payload_2: dict) -> dict:
         """Сигнатура кэша для AI-сравнения текущей погоды."""
         return {
@@ -428,6 +509,258 @@ class AiWeatherService:
         """Нормализует описание погоды."""
         text = str(value or "").strip().lower()
         return " ".join(text.split())
+
+    def _normalize_query_text(self, value: object) -> str:
+        """Нормализует произвольный пользовательский текстовый запрос."""
+        text = str(value or "").strip().lower().replace("ё", "е")
+        return " ".join(text.split())
+
+    def _parse_location_assist_payload(self, payload: str) -> dict | None:
+        """Парсит JSON-пейлоад AI-assist и валидирует ожидаемые поля."""
+        raw = str(payload or "").strip()
+        if not raw:
+            return None
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            parsed = json.loads(raw[start : end + 1])
+        except Exception:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        normalized_query = str(parsed.get("normalized_query") or "").strip()
+        alt_raw = parsed.get("alternative_queries")
+        alternative_queries: list[str] = []
+        if isinstance(alt_raw, list):
+            for item in alt_raw:
+                candidate = str(item or "").strip()
+                if candidate and candidate not in alternative_queries:
+                    alternative_queries.append(candidate)
+        needs_clarification = bool(parsed.get("needs_clarification", False))
+        clarification_text = str(parsed.get("clarification_text") or "").strip()
+        reason = str(parsed.get("reason") or "").strip()
+        if needs_clarification and not clarification_text:
+            clarification_text = "Уточни населённый пункт или отправь геолокацию."
+        return {
+            "normalized_query": normalized_query,
+            "alternative_queries": alternative_queries[:5],
+            "needs_clarification": needs_clarification,
+            "clarification_text": clarification_text,
+            "reason": reason,
+        }
+
+    def _fallback_location_assist(self, user_input: str, context: dict | None) -> dict:
+        """Детерминированный fallback для неоднозначного ввода локации."""
+        _ = context
+        normalized = self._normalize_query_text(user_input)
+        alias = self.apply_location_alias(user_input)
+        center_case = self._build_center_location_assist(normalized)
+        if center_case is not None:
+            return center_case
+        if normalized in {"рядом со мной", "рядом", "возле меня", "около меня"}:
+            return {
+                "normalized_query": "",
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Лучше отправь геолокацию — так я точнее пойму место.",
+                "reason": "near_me_ambiguous",
+            }
+        if normalized in {"центр"}:
+            return {
+                "normalized_query": normalized,
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Уточни город: например, центр Москвы или центр Санкт-Петербурга.",
+                "reason": "generic_center_ambiguous",
+            }
+        if normalized in {"аэропорт"}:
+            return {
+                "normalized_query": normalized,
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Уточни город или отправь геолокацию. Например: аэропорт Сочи или аэропорт Москвы.",
+                "reason": "generic_airport_ambiguous",
+            }
+        if normalized in {"район", "область", "регион"}:
+            return {
+                "normalized_query": normalized,
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Уточни населённый пункт и регион. Например: Заречный, Свердловская область.",
+                "reason": "generic_admin_area_ambiguous",
+            }
+
+        structured = self._build_structured_location_alternatives(normalized)
+        if structured is not None:
+            return structured
+
+        if alias and alias != str(user_input or "").strip():
+            alternatives = [alias]
+            if alias == "Санкт-Петербург":
+                alternatives.extend(["Saint Petersburg", "Петербург"])
+            return {
+                "normalized_query": alias,
+                "alternative_queries": alternatives,
+                "needs_clarification": False,
+                "clarification_text": "",
+                "reason": "alias_match",
+            }
+        return {
+            "normalized_query": str(user_input or "").strip(),
+            "alternative_queries": [],
+            "needs_clarification": False,
+            "clarification_text": "Уточни населённый пункт или отправь геолокацию.",
+            "reason": "default_fallback",
+        }
+
+    def _build_center_location_assist(self, normalized_input: str) -> dict | None:
+        """Обрабатывает запросы с «центр» отдельно от общего fallback."""
+        text = str(normalized_input or "").strip()
+        if "центр" not in text:
+            return None
+
+        if text == "центр":
+            return {
+                "normalized_query": "центр",
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Уточни город: например, «центр Москвы» или «центр Санкт-Петербурга». Можно также отправить геолокацию.",
+                "reason": "center_without_city",
+            }
+
+        without_center = " ".join([t for t in text.replace(",", " ").split() if t != "центр"]).strip()
+        if not without_center:
+            return {
+                "normalized_query": "центр",
+                "alternative_queries": [],
+                "needs_clarification": True,
+                "clarification_text": "Уточни город: например, «центр Москвы» или «центр Санкт-Петербурга». Можно также отправить геолокацию.",
+                "reason": "center_without_city",
+            }
+
+        city_alias = self.apply_location_alias(without_center)
+        city_norm = self._normalize_query_text(city_alias or without_center)
+        if city_norm in {"москвы", "москва"}:
+            return {
+                "normalized_query": "Москва",
+                "alternative_queries": ["Москва", "Москва центр", "Moscow city center"],
+                "needs_clarification": False,
+                "clarification_text": "",
+                "reason": "center_with_moscow",
+            }
+        if city_norm in {"санкт-петербурга", "санкт-петербург", "петербурга", "петербург", "питер", "спб"}:
+            return {
+                "normalized_query": "Санкт-Петербург",
+                "alternative_queries": [
+                    "Санкт-Петербург",
+                    "Санкт-Петербург центр",
+                    "Saint Petersburg city center",
+                ],
+                "needs_clarification": False,
+                "clarification_text": "",
+                "reason": "center_with_saint_petersburg",
+            }
+
+        city_cap = (city_alias or without_center).strip().title()
+        if not city_cap:
+            return None
+        return {
+            "normalized_query": city_cap,
+            "alternative_queries": [city_cap, f"{city_cap} центр"],
+            "needs_clarification": False,
+            "clarification_text": "",
+            "reason": "center_with_city",
+        }
+
+    def _build_structured_location_alternatives(self, normalized_input: str) -> dict | None:
+        """Собирает fallback-варианты geocoding для запросов с районом/областью/ориентиром."""
+        text = str(normalized_input or "").strip()
+        if not text or len(text.split()) < 2:
+            return None
+
+        tokens = [t for t in text.replace(",", " ").split() if t]
+        if not tokens:
+            return None
+
+        area_stopwords = {"рядом", "с", "центр", "район", "область", "край", "регион", "г", "город"}
+        region_markers = {"область", "край", "регион"}
+
+        settlement_tokens: list[str] = []
+        for token in tokens:
+            if token in area_stopwords:
+                break
+            settlement_tokens.append(token)
+        if not settlement_tokens:
+            settlement_tokens = [tokens[0]]
+
+        settlement = " ".join(settlement_tokens).strip()
+        if not settlement:
+            return None
+
+        region_value = ""
+        if any(marker in tokens for marker in region_markers):
+            idx = next((i for i, t in enumerate(tokens) if t in region_markers), -1)
+            if idx > 0:
+                region_value = " ".join(tokens[max(0, idx - 1) : idx + 1]).strip()
+
+        district_value = ""
+        if "район" in tokens:
+            idx = tokens.index("район")
+            if idx > 0:
+                district_value = " ".join(tokens[max(0, idx - 1) : idx + 1]).strip()
+
+        nearby_value = ""
+        if "рядом" in tokens and "с" in tokens:
+            s_idx = max(i for i, t in enumerate(tokens) if t == "с")
+            if s_idx + 1 < len(tokens):
+                nearby_value = " ".join(tokens[s_idx + 1 :]).strip()
+
+        area_value = ""
+        if "центр" in tokens:
+            area_value = "центр"
+        elif len(tokens) > len(settlement_tokens):
+            tail = [t for t in tokens[len(settlement_tokens) :] if t not in {"рядом", "с"}]
+            if tail and "район" not in tail and not any(t in region_markers for t in tail):
+                area_value = " ".join(tail).strip()
+
+        settlement_cap = settlement.title()
+        region_cap = region_value.title() if region_value else ""
+        district_cap = district_value.title() if district_value else ""
+        nearby_cap = nearby_value.title() if nearby_value else ""
+        area_cap = area_value.title() if area_value else ""
+
+        alternatives: list[str] = []
+        if district_cap and region_cap:
+            alternatives.append(f"{settlement_cap}, {district_cap}, {region_cap}")
+        if nearby_cap and region_cap:
+            alternatives.append(f"{settlement_cap}, рядом с {nearby_cap}, {region_cap}")
+        elif nearby_cap:
+            alternatives.append(f"{settlement_cap}, рядом с {nearby_cap}")
+        if area_cap and settlement_cap.lower() != area_cap.lower():
+            alternatives.append(f"{settlement_cap}, {area_cap}")
+        if region_cap:
+            alternatives.append(f"{settlement_cap}, {region_cap}")
+        if "Московская Область" in region_cap:
+            alternatives.append(f"{settlement_cap}, Moscow Oblast")
+
+        unique_alternatives: list[str] = []
+        for candidate in alternatives:
+            clean = candidate.strip()
+            if clean and clean not in unique_alternatives:
+                unique_alternatives.append(clean)
+
+        if not unique_alternatives:
+            return None
+
+        return {
+            "normalized_query": settlement_cap,
+            "alternative_queries": unique_alternatives[:5],
+            "needs_clarification": False,
+            "clarification_text": "",
+            "reason": "structured_settlement_area_query",
+        }
 
     def _as_int(self, value: object) -> int | None:
         """Приводит значение к целому числу, если это возможно."""

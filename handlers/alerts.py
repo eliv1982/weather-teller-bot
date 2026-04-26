@@ -15,6 +15,7 @@ from .states import (
     WAITING_ALERTS_TOGGLE_PICK,
 )
 from coordinates_parser import parse_coordinates
+from location_query_assist import find_locations_with_assist
 
 
 def _show_subscriptions_status(chat_id: int, *, ctx, user_data: dict) -> None:
@@ -92,12 +93,20 @@ def handle_alerts_text(
             ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
-        locations = ctx.get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)[:3]
+        search_result = find_locations_with_assist(
+            query,
+            scenario="alerts_add_location",
+            ctx=ctx,
+        )
+        clarification_text = search_result.get("clarification_text")
+        if clarification_text:
+            ctx.bot.send_message(message.chat.id, str(clarification_text))
+            return True
+        locations = search_result.get("locations") if isinstance(search_result, dict) else []
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
-                "⚠️ Населённый пункт не найден. Попробуй указать название точнее, например с регионом, или отправь геолокацию.",
+                "Не нашла такую локацию. Уточни город, страну или отправь геолокацию.",
             )
             return True
 

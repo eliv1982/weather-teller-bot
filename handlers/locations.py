@@ -29,11 +29,11 @@ from .states import (
     WAITING_RENAME_LOCATION_TITLE,
 )
 from coordinates_parser import parse_coordinates
+from location_query_assist import find_locations_with_assist
 from locations_service import (
     find_duplicate_saved_location_by_geo,
     format_saved_location_item,
 )
-from weather_app import get_locations
 
 
 def start_ai_compare_flow(message: types.Message, user_id: int, *, ctx, session_store) -> None:
@@ -421,12 +421,20 @@ def _ai_compare_process_text_query(
     if not query:
         ctx.bot.send_message(message.chat.id, "⚠️ Введи населённый пункт.")
         return True
-    locations = get_locations(query, limit=5)
-    locations = ctx.rank_locations(query, locations)[:3]
+    search_result = find_locations_with_assist(
+        query,
+        scenario=f"ai_compare_loc_{step}",
+        ctx=ctx,
+    )
+    clarification_text = search_result.get("clarification_text")
+    if clarification_text:
+        ctx.bot.send_message(message.chat.id, str(clarification_text))
+        return True
+    locations = search_result.get("locations") if isinstance(search_result, dict) else []
     if not locations:
         ctx.bot.send_message(
             message.chat.id,
-            "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
+            "Не нашла такую локацию. Уточни город, страну или отправь геолокацию.",
         )
         return True
     if len(locations) == 1:
@@ -901,12 +909,20 @@ def handle_locations_text(
             ctx.bot.send_message(message.chat.id, "⚠️ Введи название населённого пункта.")
             return True
 
-        locations = get_locations(query, limit=5)
-        locations = ctx.rank_locations(query, locations)[:3]
+        search_result = find_locations_with_assist(
+            query,
+            scenario="saved_location_add",
+            ctx=ctx,
+        )
+        clarification_text = search_result.get("clarification_text")
+        if clarification_text:
+            ctx.bot.send_message(message.chat.id, str(clarification_text))
+            return True
+        locations = search_result.get("locations") if isinstance(search_result, dict) else []
         if not locations:
             ctx.bot.send_message(
                 message.chat.id,
-                "⚠️ Населённый пункт не найден. Попробуй указать название точнее.",
+                "Не нашла такую локацию. Уточни город, страну или отправь геолокацию.",
             )
             return True
 
