@@ -373,54 +373,44 @@ class AiWeatherService:
         drier: int | None,
         no_rain: int | None,
     ) -> str:
-        """Рендер ветки compare current с явным лидером."""
-        if winner_idx == 1:
-            win_label, los_label = city_1_label, city_2_label
-            win_name, los_name = name_1, name_2
-        else:
-            win_label, los_label = city_2_label, city_1_label
-            win_name, los_name = name_2, name_1
+        """Рендер ветки compare current с заметным отличием по погодным условиям."""
+        def _parts_for(idx: int) -> list[str]:
+            parts: list[str] = []
+            if warmer == idx:
+                parts.append("теплее")
+            elif warmer == 3 - idx:
+                parts.append("прохладнее")
+            if calmer == idx:
+                parts.append("ветер слабее")
+            elif calmer == 3 - idx:
+                parts.append("ветер заметнее")
+            if drier == idx:
+                parts.append("воздух суше")
+            elif drier == 3 - idx:
+                parts.append("воздух влажнее")
+            if no_rain == idx:
+                parts.append("без осадков")
+            elif no_rain == 3 - idx:
+                parts.append("возможны осадки")
+            return parts[:3] or ["условия в целом ровные"]
 
-        pluses: list[str] = []
-        if warmer == winner_idx:
-            pluses.append("чуть теплее")
-        if calmer == winner_idx:
-            pluses.append("ветер слабее")
-        if drier == winner_idx:
-            pluses.append("воздух суше")
-        if no_rain == winner_idx:
-            pluses.append("без осадков")
-        if not pluses:
-            pluses.append("условия ровнее")
-        win_inner = self._join_enumeration(pluses[:2])
+        tradeoffs: list[str] = []
+        if warmer in {1, 2}:
+            tradeoffs.append(f"Если важнее тепло — {name_1 if warmer == 1 else name_2}.")
+        if drier in {1, 2}:
+            tradeoffs.append(f"Если важнее сухой воздух — {name_1 if drier == 1 else name_2}.")
+        if calmer in {1, 2}:
+            tradeoffs.append(f"Если важнее слабый ветер — {name_1 if calmer == 1 else name_2}.")
+        if no_rain in {1, 2}:
+            tradeoffs.append(f"Если важнее без осадков — {name_1 if no_rain == 1 else name_2}.")
+        if not tradeoffs:
+            tradeoffs.append("Если важнее маршрут — ориентируйся на дорогу и время на улице.")
 
-        minuses: list[str] = []
-        if warmer == winner_idx:
-            minuses.append("прохладнее")
-        if calmer == winner_idx:
-            minuses.append("ветер заметнее")
-        if drier == winner_idx:
-            minuses.append("воздух более влажный")
-        if no_rain == winner_idx:
-            minuses.append("возможны осадки")
-        if not minuses:
-            minuses.append("условия менее ровные")
-        los_inner = self._join_enumeration(minuses[:2])
-
-        if calmer == winner_idx:
-            extra_inner = "лучше одеться теплее из-за ветра."
-        elif no_rain == winner_idx:
-            extra_inner = "стоит взять зонт."
-        elif warmer == winner_idx:
-            extra_inner = "лучше одеться теплее."
-        else:
-            extra_inner = "стоит подбирать одежду осторожнее."
-
-        line_1 = self._speak_about(win_label, f"сейчас {win_inner}.")
-        line_2 = self._speak_about(los_label, f"{los_inner}.")
-        line_3 = f"Для короткой прогулки практичнее {win_name}."
-        line_4 = self._speak_about(los_label, extra_inner)
-        return "\n".join([line_1, line_2, line_3, line_4])
+        return "\n".join([
+            self._speak_about(city_1_label, f"сейчас {self._join_enumeration(_parts_for(1))}."),
+            self._speak_about(city_2_label, f"сейчас {self._join_enumeration(_parts_for(2))}."),
+            *tradeoffs[:3],
+        ])
 
     def _render_compare_current_near_identical(
         self,
@@ -436,19 +426,18 @@ class AiWeatherService:
         if wind_diff_visible:
             detail = "Температура и влажность близкие, заметнее всего отличается ветер."
             calmer_name = name_1 if float(d_wind) <= 0 else name_2
-            prefer = f"Если важен меньший ветер, практичнее {calmer_name}."
+            prefer = f"Если важнее слабый ветер — {calmer_name}."
         elif hum_diff_visible:
             detail = "Температура и ветер близкие, заметнее всего отличается влажность."
             drier_name = name_1 if float(d_hum) <= 0 else name_2
-            prefer = f"Если важен сухой воздух, практичнее {drier_name}."
+            prefer = f"Если важнее сухой воздух — {drier_name}."
         else:
             detail = "Температура, влажность и ветер — всё очень близко."
             prefer = "Разница настолько небольшая, что ориентируйся на удобство маршрута."
 
         return "\n".join([
-            "Погода почти одинаковая.",
+            "Условия близки.",
             detail,
-            "Для прогулки выбирай по маршруту.",
             prefer,
         ])
 
@@ -527,20 +516,14 @@ class AiWeatherService:
             calmer_name = name_2
 
         if warmer is not None and drier_name and drier_name != warmer_name:
-            trip_text = (
-                f"Для прогулки выбирай по приоритету: тепло — {warmer_name}, "
-                f"суше и ровнее — {drier_name}."
-            )
+            trip_text = f"Если важнее тепло — {warmer_name}. Если важнее сухо — {drier_name}."
         elif warmer is not None and calmer_name and calmer_name != warmer_name:
-            trip_text = (
-                f"Для прогулки выбирай по приоритету: тепло — {warmer_name}, "
-                f"меньше ветра — {calmer_name}."
-            )
+            trip_text = f"Если важнее тепло — {warmer_name}. Если важнее слабый ветер — {calmer_name}."
         else:
-            trip_text = "Для прогулки ориентируйся на удобство маршрута."
+            trip_text = "Если важнее маршрут — ориентируйся на дорогу и время на улице."
 
         return "\n".join([
-            "Однозначного лидера нет.",
+            "У вариантов разные плюсы.",
             line_warmer,
             line_cooler,
             trip_text,
@@ -766,8 +749,11 @@ class AiWeatherService:
 
         if has_clear_winner and isinstance(winner, str):
             walk_recommendation = f"Для прогулки практичнее {winner}: меньше погодных рисков."
-            trip_recommendation = f"Для поездки практичнее {winner}."
-            ai_instruction = f"Есть явный лидер: {winner}. Укажи это, но кратко назови риски второй локации."
+            trip_recommendation = f"Если важнее меньше погодных помех в дороге — {winner}."
+            ai_instruction = (
+                f"Есть заметный перевес по отдельным погодным факторам: {winner}. "
+                "Укажи это, но кратко назови риски второй локации."
+            )
         else:
             walk_city = drier_city or calmer_city or winner
             trip_city = drier_city or winner
@@ -777,7 +763,7 @@ class AiWeatherService:
                 else "Для прогулки ориентируйся на меньший риск осадков и ветра."
             )
             trip_recommendation = (
-                f"Для поездки практичнее {trip_city}."
+                f"Если важнее меньше погодных помех в дороге — {trip_city}."
                 if isinstance(trip_city, str) and trip_city
                 else "Для поездки ориентируйся на риск осадков."
             )
@@ -993,74 +979,32 @@ class AiWeatherService:
         name_1: str,
         name_2: str,
     ) -> str:
-        """Рендер compare-by-date: есть явный лидер."""
+        """Рендер compare-by-date: есть заметное отличие по погодным условиям."""
         winner_full = str(verdict.get("winner") or "")
         winner_name = self._get_short_location_name(winner_full)
-        if winner_name == name_1:
-            win_profile, los_profile = profile_1, profile_2
-            win_label, los_label = city_1_full, city_2_full
-            win_name, los_name = name_1, name_2
-        else:
-            win_profile, los_profile = profile_2, profile_1
-            win_label, los_label = city_2_full, city_1_full
-            win_name, los_name = name_2, name_1
 
         warmer_name = self._get_short_location_name(str(verdict.get("warmer_city") or ""))
         drier_name = self._get_short_location_name(str(verdict.get("drier_city") or ""))
         calmer_name = self._get_short_location_name(str(verdict.get("calmer_city") or ""))
 
-        pluses: list[str] = []
-        if warmer_name == win_name:
-            pluses.append("теплее")
-        if drier_name == win_name:
-            pluses.append("суше")
-        if calmer_name == win_name:
-            pluses.append("с более слабым ветром")
-        if not pluses:
-            pluses.append("условия ровнее")
+        tradeoffs: list[str] = []
+        if warmer_name in {name_1, name_2}:
+            tradeoffs.append(f"Если важнее тепло — {warmer_name}.")
+        if drier_name in {name_1, name_2}:
+            tradeoffs.append(f"Если важнее сухо — {drier_name}.")
+        if calmer_name in {name_1, name_2}:
+            tradeoffs.append(f"Если важнее слабый ветер — {calmer_name}.")
+        if winner_name in {name_1, name_2}:
+            tradeoffs.append(f"Если нужен самый спокойный вариант для прогулки — {winner_name}: меньше погодных помех.")
+        if not tradeoffs:
+            tradeoffs.append("Если важнее маршрут — ориентируйся на дорогу и время на улице.")
 
-        los_temp = self._temperature_comparison_phrase(los_profile, win_profile)
-        if los_temp in {"заметно прохладнее", "чуть прохладнее"}:
-            temp_opener = los_temp
-        elif "прохладнее" in los_temp:
-            temp_opener = "прохладнее"
-        else:
-            temp_opener = "уступает по сумме условий"
-
-        los_precip_type = str(los_profile.get("precipitation_type") or "")
-        los_precip_risk = str(los_profile.get("precipitation_risk") or "")
-        tail_parts: list[str] = []
-        if los_precip_type == "snow" and los_precip_risk in {"medium", "high"}:
-            tail_parts.append("там ожидается снег")
-        elif los_precip_type == "rain" and los_precip_risk in {"medium", "high"}:
-            tail_parts.append("там возможен дождь")
-        elif los_precip_risk == "high":
-            tail_parts.append("высокий шанс осадков")
-
-        wind_phrase = self._wind_comparison_phrase(los_profile, win_profile)
-        if wind_phrase in {"ветер заметнее", "ветер ощутимый"}:
-            tail_parts.append("ветер ощутимее")
-
-        if not tail_parts:
-            tail_parts.append("условия менее ровные")
-
-        los_line = f"{los_name} {temp_opener}: " + " и ".join(tail_parts[:2]) + "."
-
-        win_line = f"{win_name} " + self._join_enumeration(pluses[:3]) + "."
-        trip_line = f"Для прогулки и поездки практичнее {win_name}."
-
-        extra_line = self._speak_about(
-            los_label,
-            "стоит закладывать тёплую одежду и риск осадков.",
-        )
-
-        return (
-            f"Лучше выглядит {win_name}.\n\n"
-            f"{win_line}\n"
-            f"{los_line}\n\n"
-            f"{trip_line}\n"
-            f"{extra_line}"
-        )
+        return "\n".join([
+            self._build_city_tradeoff_line(profile_1, profile_2),
+            self._build_city_tradeoff_line(profile_2, profile_1),
+            "",
+            *tradeoffs[:3],
+        ])
 
     def _render_compare_forecast_near_identical(
         self,
@@ -1091,7 +1035,7 @@ class AiWeatherService:
             else:
                 calmer_phrase = f"{calmer_name}: {calmer_phrase_inner}"
             detail_line = f"{windier_phrase}, {calmer_phrase}."
-            prefer_line = f"Если важен меньший ветер, {calmer_name} выглядит чуть практичнее."
+            prefer_line = f"Если важнее слабый ветер — {calmer_name}."
         else:
             pair = self._format_location_pair(name_1, name_2)
             detail_line = f"Для {pair} разница по ветру и температуре почти не ощущается."
@@ -1118,10 +1062,10 @@ class AiWeatherService:
         context_line = context_raw[:1].upper() + context_raw[1:] + "."
 
         return (
-            "Погода почти одинаковая.\n\n"
+            "Условия близки.\n\n"
             f"{context_line}\n"
             f"{detail_line}\n\n"
-            "Для прогулки явного преимущества нет — выбирай по маршруту.\n"
+            "Разница небольшая, поэтому можно выбирать по маршруту.\n"
             f"{prefer_line}"
         )
 
@@ -1191,23 +1135,23 @@ class AiWeatherService:
         )
 
         walk_city = drier_name or calmer_name or (name_1 if risk_1 < risk_2 else name_2)
-        walk_text = f"Для прогулки лучше {walk_city}."
+        walk_text = f"Если нужен самый спокойный вариант для прогулки — {walk_city}: ниже сумма погодных рисков."
 
         if warmer_name and drier_name and warmer_name != drier_name:
             trip_text = (
-                f"Если важнее температура — {warmer_name}, "
-                f"если важнее меньше осадков — {drier_name}."
+                f"Если важнее тепло — {warmer_name}. "
+                f"Если важнее меньше осадков — {drier_name}."
             )
         elif warmer_name and calmer_name and warmer_name != calmer_name:
             trip_text = (
-                f"Если важнее температура — {warmer_name}, "
-                f"если важнее меньший ветер — {calmer_name}."
+                f"Если важнее тепло — {warmer_name}. "
+                f"Если важнее слабый ветер — {calmer_name}."
             )
         else:
-            trip_text = "Для поездки выбирай по приоритету: температура или меньший риск осадков."
+            trip_text = "Если важнее дорога — смотри на риск осадков и ветер ближе к выходу."
 
         return (
-            "Однозначного лидера нет.\n\n"
+            "У вариантов разные плюсы.\n\n"
             f"{line_warmer}\n"
             f"{line_cooler}\n\n"
             f"{walk_text}\n"
