@@ -1,5 +1,32 @@
 """Prompt templates/builders extracted from AiWeatherService."""
 
+from weather.descriptions import normalize_weather_description
+
+
+def _normalize_ai_weather_payload(value: object) -> object:
+    """Return an AI-only copy with normalized weather descriptions."""
+    if isinstance(value, list):
+        return [_normalize_ai_weather_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    normalized: dict = {}
+    for key, item in value.items():
+        if key == "description":
+            normalized[key] = normalize_weather_description(item) if isinstance(item, str) else item
+        elif key == "weather" and isinstance(item, list):
+            normalized[key] = [
+                _normalize_ai_weather_payload(weather_item)
+                if isinstance(weather_item, dict)
+                else weather_item
+                for weather_item in item
+            ]
+        elif isinstance(item, (dict, list)):
+            normalized[key] = _normalize_ai_weather_payload(item)
+        else:
+            normalized[key] = item
+    return normalized
+
 
 def build_location_assist_prompt(user_input: str, context: dict | None = None) -> str:
     return (
@@ -33,6 +60,7 @@ def build_location_assist_prompt(user_input: str, context: dict | None = None) -
 
 
 def build_current_prompt(city_label: str, weather_data: dict) -> str:
+    ai_weather_data = _normalize_ai_weather_payload(weather_data)
     return (
         "Объясни текущую погоду простым и живым русским языком.\n"
         "Требования: 3-4 коротких предложения, дружелюбно и по делу, без канцелярита, "
@@ -50,24 +78,27 @@ def build_current_prompt(city_label: str, weather_data: dict) -> str:
         "«сильно влияет на комфорт», «главный фактор».\n"
         "Пиши как полезный совет живого помощника, без сухих шаблонов.\n\n"
         f"Локация: {city_label}\n"
-        f"Данные: {weather_data}"
+        f"Данные: {ai_weather_data}"
     )
 
 
 def build_forecast_day_prompt(city_label: str, day_forecast_data: list[dict]) -> str:
+    ai_day_forecast_data = _normalize_ai_weather_payload(day_forecast_data)
     return (
         "Дай короткий и полезный совет по прогнозу на день.\n"
         "Требования: русский язык, 3-4 коротких предложения, естественный дружелюбный тон, "
         "без канцелярита, без сарказма, без клоунады, без дисклеймеров и без воды.\n"
         "Используй только переданные данные, ничего не выдумывай.\n"
         "Обязательно укажи: лучшее окно для прогулки, осадки и главное изменение погоды в течение дня.\n"
-        "Финал сделай практичным: что лучше учесть перед выходом.\n\n"
+        "Финал сделай практичным и привязанным к погоде: зонт или непромокаемая одежда при дожде, "
+        "одеться теплее при холоде, учитывать ветер только если он заметный.\n\n"
         f"Локация: {city_label}\n"
-        f"Слоты прогноза за день: {day_forecast_data}"
+        f"Слоты прогноза за день: {ai_day_forecast_data}"
     )
 
 
 def build_details_prompt(city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:
+    ai_weather_data = _normalize_ai_weather_payload(weather_data)
     return (
         "Поясни расширенные погодные данные простым и полезным русским языком.\n"
         "Требования: 4-5 коротких предложений, дружелюбно и по делу, без канцелярита, "
@@ -84,24 +115,26 @@ def build_details_prompt(city_label: str, weather_data: dict, air_quality_data: 
         "Если качество воздуха хорошее, формулируй коротко: "
         "«Качество воздуха хорошее: пыль и основные загрязнители на низком уровне.»\n\n"
         f"Локация: {city_label}\n"
-        f"Погода: {weather_data}\n"
+        f"Погода: {ai_weather_data}\n"
         f"Качество воздуха: {air_quality_data}"
     )
 
 
 def build_weather_alert_prompt(location_label: str, alert_payload: dict) -> str:
+    ai_alert_payload = _normalize_ai_weather_payload(alert_payload)
     return (
         "Объясни погодное уведомление коротко и практично.\n"
         "Требования: русский язык, 1-2 коротких предложения, без воды, без дисклеймеров, "
         "без драматизации и без длинного прогноза.\n"
         "Используй только переданные данные, ничего не выдумывай.\n"
-        "Дай конкретный совет для ближайшей активности (одежда, зонт, маршрут, время выхода).\n\n"
+        "Дай конкретный совет для ближайшей активности: зонт и непромокаемая одежда при дожде, "
+        "одеться теплее при холоде, выбрать менее открытый маршрут при заметном ветре.\n\n"
         "Нельзя использовать неестественные конструкции: "
         "«маршрут под крышей», «короткий маршрут под крышей», «маршрут под укрытием», «идти под крышей».\n"
         "Используй естественные варианты: "
         "«выбрать короткий маршрут», «избегать долгой прогулки под дождём», "
         "«идти там, где меньше открытых участков», «перенести прогулку на более сухое время», "
-        "«взять зонт и непромокаемую верхнюю одежду», «выйти чуть раньше, если дорога важна по времени».\n"
+        "«взять зонт и непромокаемую верхнюю одежду», «одеться теплее».\n"
         "Ветер описывай по шкале:\n"
         "- <3 м/с: слабый;\n"
         "- 3-5 м/с: умеренный;\n"
@@ -110,6 +143,6 @@ def build_weather_alert_prompt(location_label: str, alert_payload: dict) -> str:
         "При ветре до 5 м/с не пиши фразы «ветер усиливает холод/сырость» и "
         "«сильно влияет на комфорт».\n\n"
         f"Локация: {location_label}\n"
-        f"Событие: {alert_payload}"
+        f"Событие: {ai_alert_payload}"
     )
 
