@@ -63,7 +63,7 @@ def handle_favorite_pick_callback(
     ctx.bot.send_message(
         chat_id,
         "✅ Основная локация обновлена.\n\n" + ctx.format_saved_locations(user_data),
-        reply_markup=ctx.locations_menu(),
+        reply_markup=ctx.saved_locations_management_menu(),
     )
 
 
@@ -113,7 +113,7 @@ def handle_delete_location_pick_callback(
     ctx.bot.send_message(
         chat_id,
         "✅ Локация удалена.\n\n" + ctx.format_saved_locations(user_data),
-        reply_markup=ctx.locations_menu(),
+        reply_markup=ctx.saved_locations_management_menu(),
     )
 
 

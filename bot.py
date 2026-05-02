@@ -39,6 +39,8 @@ from keyboards import (
     location_input_menu,
     locations_menu,
     main_menu,
+    saved_locations_management_menu,
+    weather_menu,
     yes_no_menu,
 )
 from ai_weather_service import AiWeatherService
@@ -194,9 +196,11 @@ ctx = AppContext(
     load_all_users=load_all_users,
     save_all_users=save_all_users,
     main_menu=main_menu,
+    weather_menu=weather_menu,
     alerts_menu=alerts_menu,
     alerts_add_location_menu=alerts_add_location_menu,
     locations_menu=locations_menu,
+    saved_locations_management_menu=saved_locations_management_menu,
     add_saved_location_menu=add_saved_location_menu,
     ai_compare_mode_menu=ai_compare_mode_menu,
     ai_compare_location_method_menu=ai_compare_location_method_menu,
@@ -256,11 +260,19 @@ complete_compare_two_locations = partial(flow_complete_compare_two_locations, ct
 alerts_worker = partial(flow_alerts_worker, ctx=ctx)
 
 MENU_BUTTONS = [
+    "🌦 Прогноз погоды",
+    "📍 Локации",
+    "ℹ️ Помощь",
+    "☀️ Прогноз на сегодня",
+    "🌤 Прогноз на завтра",
+    "🧭 Расширенные данные",
+    "⚖️ Сравнить локации",
     "🌤 Текущая погода",
     "📅 Прогноз на 5 дней",
     "✨ Сравнить локации",
     "📊 Расширенные данные",
     "⭐ Мои локации",
+    "🔔 Подписки",
     "🔔 Уведомления",
     "❓ Помощь",
 ]
@@ -279,14 +291,13 @@ def handle_start(message: types.Message) -> None:
     text = (
         "Привет! Я Weather Teller 🌤\n\n"
         "Помогу:\n"
-        "• быстро узнать текущую погоду\n"
-        "• посмотреть прогноз на 5 дней\n"
-        "• проверить качество воздуха и расширенные погодные данные\n"
-        "• сравнить погоду в разных городах\n"
-        "• сохранить важные локации\n"
-        "• получать уведомления об изменениях\n"
-        "• объяснить погоду простым языком ✨\n\n"
-        "Выбери действие ниже — и начнём."
+        "• посмотреть прогноз погоды на сегодня и на 5 дней;\n"
+        "• открыть расширенные погодные данные;\n"
+        "• сохранить важные локации;\n"
+        "• сравнить погоду в двух местах;\n"
+        "• настроить подписки на погодные обновления;\n"
+        "• объяснить прогноз простым языком ✨\n\n"
+        "Выбери раздел ниже — и начнём."
     )
     bot.send_message(message.chat.id, text, reply_markup=main_menu())
 
@@ -353,26 +364,36 @@ def handle_menu_buttons(message: types.Message) -> None:
     section_name = message.text
     logger.info("Пользователь %s нажал кнопку меню: %s", message.from_user.id, section_name)
 
-    if section_name in {"🌤 Текущая погода", "Текущая погода"}:
+    if section_name in {"🌦 Прогноз погоды", "Прогноз погоды"}:
+        bot.send_message(message.chat.id, "Выбери погодный раздел.", reply_markup=weather_menu())
+        return
+    if section_name in {"☀️ Прогноз на сегодня", "🌤 Текущая погода", "Текущая погода"}:
         start_current_weather_flow(message)
+        return
+    if section_name in {"🌤 Прогноз на завтра", "Прогноз на завтра"}:
+        bot.send_message(
+            message.chat.id,
+            "Прогноз на завтра добавим следующим обновлением. Пока можно открыть прогноз на 5 дней.",
+            reply_markup=weather_menu(),
+        )
         return
     if section_name in {"📅 Прогноз на 5 дней", "Прогноз на 5 дней"}:
         start_forecast_flow(message)
         return
 
-    if section_name in {"❓ Помощь", "Помощь"}:
+    if section_name in {"❓ Помощь", "ℹ️ Помощь", "Помощь"}:
         bot.send_message(message.chat.id, help_text(), reply_markup=main_menu())
         return
-    if section_name in {"📊 Расширенные данные", "Расширенные данные"}:
+    if section_name in {"📊 Расширенные данные", "🧭 Расширенные данные", "Расширенные данные"}:
         start_details_flow(message)
         return
-    if section_name == "✨ Сравнить локации":
+    if section_name in {"✨ Сравнить локации", "⚖️ Сравнить локации"}:
         start_ai_compare_flow(message, message.from_user.id, ctx=ctx, session_store=session_store)
         return
-    if section_name in {"⭐ Мои локации", "Мои локации"}:
+    if section_name in {"⭐ Мои локации", "📍 Локации", "Мои локации", "Локации"}:
         start_locations_flow(message)
         return
-    if section_name in {"🔔 Уведомления", "Уведомления"}:
+    if section_name in {"🔔 Подписки", "Подписки", "🔔 Уведомления", "Уведомления"}:
         start_alerts_flow(message)
         return
 

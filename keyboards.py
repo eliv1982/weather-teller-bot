@@ -6,10 +6,17 @@ from weather_app import build_disambiguated_location_labels
 def main_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт главное меню бота."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🌤 Текущая погода"), types.KeyboardButton("📅 Прогноз на 5 дней"))
-    keyboard.row(types.KeyboardButton("📊 Расширенные данные"), types.KeyboardButton("✨ Сравнить локации"))
-    keyboard.row(types.KeyboardButton("⭐ Мои локации"), types.KeyboardButton("🔔 Уведомления"))
-    keyboard.row(types.KeyboardButton("❓ Помощь"))
+    keyboard.row(types.KeyboardButton("🌦 Прогноз погоды"), types.KeyboardButton("📍 Локации"))
+    keyboard.row(types.KeyboardButton("🔔 Подписки"), types.KeyboardButton("ℹ️ Помощь"))
+    return keyboard
+
+
+def weather_menu() -> types.ReplyKeyboardMarkup:
+    """Создаёт меню погодных сценариев."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("☀️ Прогноз на сегодня"), types.KeyboardButton("🌤 Прогноз на завтра"))
+    keyboard.row(types.KeyboardButton("📅 Прогноз на 5 дней"), types.KeyboardButton("🧭 Расширенные данные"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
 
@@ -107,8 +114,16 @@ def build_alert_subscriptions_keyboard(subscriptions: list[dict], callback_prefi
 def locations_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт меню управления сохранёнными локациями."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("➕ Добавить локацию"), types.KeyboardButton("📋 Показать мои локации"))
-    keyboard.row(types.KeyboardButton("✏️ Переименовать"), types.KeyboardButton("🗑 Удалить"))
+    keyboard.row(types.KeyboardButton("📋 Показать мои локации"), types.KeyboardButton("⚖️ Сравнить локации"))
+    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    return keyboard
+
+
+def saved_locations_management_menu() -> types.ReplyKeyboardMarkup:
+    """Создаёт меню действий со списком сохранённых локаций."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("➕ Добавить локацию"), types.KeyboardButton("🗑 Удалить локацию"))
+    keyboard.row(types.KeyboardButton("✏️ Изменить локацию"), types.KeyboardButton("⚖️ Сравнить локации"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -181,8 +196,8 @@ def build_ai_action_keyboard(button_text: str, callback_data: str) -> types.Inli
 def ai_compare_mode_menu() -> types.ReplyKeyboardMarkup:
     """Подменю выбора режима умного AI-сравнения локаций."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🌤 Сейчас"), types.KeyboardButton("📅 На дату"))
-    keyboard.row(types.KeyboardButton("⬅️ В меню"))
+    keyboard.row(types.KeyboardButton("Сравнить сейчас"), types.KeyboardButton("Сравнить на дату"))
+    keyboard.row(types.KeyboardButton("⬅️ Назад"))
     return keyboard
 
 

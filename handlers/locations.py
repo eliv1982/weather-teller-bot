@@ -148,7 +148,7 @@ def _ai_compare_set_location(
         session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC2_METHOD
         ctx.bot.send_message(
             message.chat.id,
-            "Локация 1 сохранена. Введи название второй локации или выбери другой способ ниже:",
+            f"Первая локация: {city_label}. Теперь выбери вторую локацию.",
             reply_markup=ctx.ai_compare_location_method_menu(),
         )
         return True
@@ -169,6 +169,7 @@ def _ai_compare_set_location(
             )
             return True
 
+    ctx.bot.send_message(message.chat.id, f"Вторая локация: {city_label}. Сравниваю погоду.")
     return _ai_compare_after_two_locations(message, user_id, ctx=ctx, session_store=session_store)
 
 
@@ -469,8 +470,12 @@ def handle_locations_text(
         session_store.user_states[user_id] = LOCATIONS_MENU
         ctx.logger.info("Пользователь %s сохранил локацию с title=%s.", user_id, title)
         user_data = ctx.load_user(user_id)
-        ctx.bot.send_message(message.chat.id, "✅ Локация сохранена.", reply_markup=ctx.locations_menu())
-        ctx.bot.send_message(message.chat.id, ctx.format_saved_locations(user_data), reply_markup=ctx.locations_menu())
+        ctx.bot.send_message(message.chat.id, "✅ Локация сохранена.", reply_markup=ctx.saved_locations_management_menu())
+        ctx.bot.send_message(
+            message.chat.id,
+            ctx.format_saved_locations(user_data),
+            reply_markup=ctx.saved_locations_management_menu(),
+        )
         return True
 
     if state == WAITING_NEW_SAVED_LOCATION_TITLE:
@@ -544,9 +549,13 @@ def handle_locations_text(
         ctx.bot.send_message(
             message.chat.id,
             "✅ Локация сохранена.",
-            reply_markup=ctx.locations_menu(),
+            reply_markup=ctx.saved_locations_management_menu(),
         )
-        ctx.bot.send_message(message.chat.id, ctx.format_saved_locations(user_data), reply_markup=ctx.locations_menu())
+        ctx.bot.send_message(
+            message.chat.id,
+            ctx.format_saved_locations(user_data),
+            reply_markup=ctx.saved_locations_management_menu(),
+        )
         return True
 
     if state == WAITING_RENAME_LOCATION_TITLE:
@@ -601,12 +610,12 @@ def handle_locations_text(
         ctx.bot.send_message(
             message.chat.id,
             "✅ Локация переименована.",
-            reply_markup=ctx.locations_menu(),
+            reply_markup=ctx.saved_locations_management_menu(),
         )
         ctx.bot.send_message(
             message.chat.id,
             ctx.format_saved_locations(user_data),
-            reply_markup=ctx.locations_menu(),
+            reply_markup=ctx.saved_locations_management_menu(),
         )
         return True
 
@@ -633,7 +642,9 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "➕ Добавить локацию":
+        choice = (message.text or "").strip()
+
+        if choice in {"➕ Добавить локацию", "+ Добавить локацию"}:
             session_store.saved_location_drafts.pop(user_id, None)
             session_store.rename_location_drafts.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_NEW_SAVED_LOCATION_MENU
@@ -644,23 +655,23 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "📋 Показать мои локации":
+        if choice == "📋 Показать мои локации":
             user_data = ctx.load_user(user_id)
             ctx.bot.send_message(
                 message.chat.id,
                 ctx.format_saved_locations(user_data),
-                reply_markup=ctx.locations_menu(),
+                reply_markup=ctx.saved_locations_management_menu(),
             )
             return True
 
-        if message.text == "🗑 Удалить":
+        if choice in {"🗑 Удалить локацию", "🗑 Удалить"}:
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
                 ctx.bot.send_message(
                     message.chat.id,
                     "Сохранённых локаций пока нет.",
-                    reply_markup=ctx.locations_menu(),
+                    reply_markup=ctx.saved_locations_management_menu(),
                 )
                 return True
             ctx.bot.send_message(
@@ -670,14 +681,14 @@ def handle_locations_text(
             )
             return True
 
-        if message.text == "✏️ Переименовать":
+        if choice in {"✏️ Изменить локацию", "✏️ Переименовать"}:
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
                 ctx.bot.send_message(
                     message.chat.id,
                     "Сохранённых локаций пока нет.",
-                    reply_markup=ctx.locations_menu(),
+                    reply_markup=ctx.saved_locations_management_menu(),
                 )
                 return True
             ctx.bot.send_message(
@@ -685,6 +696,10 @@ def handle_locations_text(
                 "Выбери локацию для переименования:",
                 reply_markup=ctx.build_saved_locations_keyboard(saved_locations, "rename_location_pick"),
             )
+            return True
+
+        if choice in {"⚖️ Сравнить локации", "✨ Сравнить локации"}:
+            start_ai_compare_flow(message, user_id, ctx=ctx, session_store=session_store)
             return True
 
         ctx.bot.send_message(
@@ -896,7 +911,12 @@ def handle_locations_text(
 
     if state == WAITING_AI_COMPARE_MODE:
         choice = (message.text or "").strip()
-        if choice in {"🌤 Сейчас", "Сейчас"}:
+        if choice == "⬅️ Назад":
+            _ai_compare_reset(user_id, session_store=session_store)
+            session_store.user_states[user_id] = LOCATIONS_MENU
+            ctx.bot.send_message(message.chat.id, "Раздел локаций.", reply_markup=ctx.locations_menu())
+            return True
+        if choice in {"Сравнить сейчас", "🌤 Сейчас", "Сейчас"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}
@@ -909,7 +929,7 @@ def handle_locations_text(
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return True
-        if choice in {"📅 На дату", "На дату"}:
+        if choice in {"Сравнить на дату", "📅 На дату", "На дату"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}

@@ -13,9 +13,11 @@ class AppContext:
     load_all_users: Any
     save_all_users: Any
     main_menu: Any
+    weather_menu: Any
     alerts_menu: Any
     alerts_add_location_menu: Any
     locations_menu: Any
+    saved_locations_management_menu: Any
     add_saved_location_menu: Any
     ai_compare_mode_menu: Any
     ai_compare_location_method_menu: Any
