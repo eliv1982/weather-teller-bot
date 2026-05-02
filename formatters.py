@@ -2,6 +2,7 @@ from datetime import datetime
 
 from weather_app import analyze_air_pollution
 from weather.descriptions import normalize_weather_description
+from weather.pressure import get_pressure_note_hpa
 
 
 def wind_direction_ru(deg: float) -> str:
@@ -128,17 +129,21 @@ def format_weather_response(city_label: str, weather: dict) -> str:
     wind_deg = wind_data.get("deg")
 
     pressure_mmhg = round(pressure * 0.75006) if pressure is not None else None
+    pressure_note = get_pressure_note_hpa(pressure)
     wind_text = _wind_text_from_values(wind_speed, wind_deg)
 
-    return (
-        f"📍 Населённый пункт: {city_label}\n"
-        f"🌡 Температура: {temp if temp is not None else 'н/д'} °C\n"
-        f"🤔 Ощущается как: {feels_like if feels_like is not None else 'н/д'} °C\n"
-        f"☁️ Описание: {description}\n"
-        f"💧 Влажность: {humidity if humidity is not None else 'н/д'}%\n"
-        f"🩺 Давление: {pressure_mmhg if pressure_mmhg is not None else 'н/д'} мм рт. ст.\n"
-        f"🌬 Ветер: {wind_text}"
-    )
+    lines = [
+        f"📍 Населённый пункт: {city_label}",
+        f"🌡 Температура: {temp if temp is not None else 'н/д'} °C",
+        f"🤔 Ощущается как: {feels_like if feels_like is not None else 'н/д'} °C",
+        f"☁️ Описание: {description}",
+        f"💧 Влажность: {humidity if humidity is not None else 'н/д'}%",
+        f"🩺 Давление: {pressure_mmhg if pressure_mmhg is not None else 'н/д'} мм рт. ст.",
+    ]
+    if pressure_note:
+        lines.append(pressure_note)
+    lines.append(f"🌬 Ветер: {wind_text}")
+    return "\n".join(lines)
 
 
 def _format_hh_mm_from_unix(unix_ts: int | None) -> str:
@@ -184,6 +189,7 @@ def format_details_response(city_label: str, weather: dict, air_components: dict
     humidity = main_data.get("humidity")
     pressure = main_data.get("pressure")
     pressure_mmhg = round(pressure * 0.75006) if pressure is not None else None
+    pressure_note = get_pressure_note_hpa(pressure)
     wind_speed = wind_data.get("speed")
     wind_deg = wind_data.get("deg")
     clouds = clouds_data.get("all")
@@ -211,6 +217,8 @@ def format_details_response(city_label: str, weather: dict, air_components: dict
         f"🌅 Восход солнца: {sunrise}",
         f"🌇 Закат солнца: {sunset}",
     ]
+    if pressure_note:
+        lines.insert(6, pressure_note)
 
     if not air_components:
         lines.append("🌫 Данные о качестве воздуха недоступны.")

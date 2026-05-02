@@ -4,6 +4,7 @@ from datetime import datetime
 import re
 
 from weather.descriptions import normalize_weather_description
+from weather.pressure import get_pressure_note_hpa
 
 
 def fallback_current(city_label: str, weather_data: dict) -> str:
@@ -12,29 +13,30 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
     temp = main_data.get("temp")
     feels_like = main_data.get("feels_like")
+    pressure_note = get_pressure_note_hpa(main_data.get("pressure"))
     description = normalize_weather_description((weather_list[0].get("description") if weather_list else "") or "без описания")
     wind_speed = wind_data.get("speed")
     desc_lower = str(description).lower()
+    has_precipitation = any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег"))
     umbrella = (
         "Лучше взять зонт на всякий случай."
-        if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег"))
+        if has_precipitation
         else "Скорее всего, можно обойтись без зонта."
     )
+    cold_advice = False
     if isinstance(feels_like, (int, float)):
         if feels_like <= 0:
             clothes = "Лучше одеться заметно теплее."
+            cold_advice = True
         elif feels_like <= 12:
             clothes = "Лучше накинуть что-то тёплое."
+            cold_advice = True
         else:
             clothes = "Можно выбрать более лёгкую одежду."
     else:
         clothes = "Одежду лучше выбрать по ощущениям на месте."
-    comfort = (
-        "На улице в целом довольно комфортно."
-        if isinstance(temp, (int, float)) and -5 <= temp <= 25
-        else "На улице может быть не слишком комфортно."
-    )
     wind_note = ""
+    meaningful_wind = False
     if isinstance(wind_speed, (int, float)):
         ws = float(wind_speed)
         if ws < 3:
@@ -42,6 +44,7 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
         elif ws <= 5:
             wind_note = " Ветер умеренный: заметный, но без сильного влияния на комфорт."
         elif ws < 8:
+            meaningful_wind = True
             if any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег")) or (
                 isinstance(feels_like, (int, float)) and float(feels_like) < 8
             ):
@@ -49,11 +52,19 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
             else:
                 wind_note = " Ветер заметный, на открытых участках может ощущаться сильнее."
         else:
+            meaningful_wind = True
             wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
+    has_caution = has_precipitation or cold_advice or meaningful_wind or bool(pressure_note)
+    comfort = "" if has_caution else "По ощущениям погода без явного дискомфорта."
+    advice_parts = [umbrella, clothes]
+    if pressure_note:
+        advice_parts.append(pressure_note)
+    if comfort:
+        advice_parts.append(comfort)
     return (
         f"Сейчас в {city_label}: {description}, температура {temp if temp is not None else 'н/д'}°C, "
         f"ощущается как {feels_like if feels_like is not None else 'н/д'}°C.{wind_note} "
-        f"{umbrella} {clothes} {comfort}"
+        f"{' '.join(advice_parts)}"
     )
 
 
@@ -98,6 +109,7 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
     humidity = main_data.get("humidity")
     visibility = weather_data.get("visibility") if isinstance(weather_data, dict) else None
     wind_speed = wind_data.get("speed")
+    pressure_note = get_pressure_note_hpa(main_data.get("pressure"))
     pm25 = air_quality_data.get("pm2_5") if isinstance(air_quality_data, dict) else None
     humidity_note = (
         "Влажность высокая, поэтому воздух может ощущаться тяжёлым."
@@ -138,6 +150,7 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
         air_note = "Данные о качестве воздуха сейчас неполные."
     return (
         f"По {city_label}: {humidity_note} {wind_note} {visibility_note} {air_note} "
+        f"{pressure_note + ' ' if pressure_note else ''}"
         "Если планируешь долгую прогулку, ориентируйся в первую очередь на эти факторы."
     )
 
