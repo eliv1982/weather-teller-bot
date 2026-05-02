@@ -13,208 +13,206 @@ def _import_service_with_stubbed_postgres(monkeypatch):
     return module.AiWeatherService
 
 
-WINNER_STYLE_PHRASES = (
-    "лидер",
-    "победитель",
-    "выигрывает",
-    "лучше выглядит",
-    "однозначного лидера",
-    "для прогулки лучше",
-    "для поездки практичнее",
+BANNED_COMPARE_PHRASES = (
+    "теплее",
+    "прохладнее",
+    "холоднее",
+    "жарче",
+    "суше",
+    "влажнее",
+    "слабее",
+    "сильнее",
+    "лучше",
+    "хуже",
     "практичнее",
+    "удобнее",
+    "спокойнее",
+    "если важнее",
+    "у вариантов разные плюсы",
+    "условия близки",
+    "ориентируйся",
+    "выбирай",
+    "маршрут",
+    "прогулки",
+    "поездки",
 )
 
 
-def _assert_no_winner_style_phrases(text: str):
+def _assert_no_advisory_or_comparative_phrases(text: str):
     lowered = text.lower()
-    for phrase in WINNER_STYLE_PHRASES:
+    for phrase in BANNED_COMPARE_PHRASES:
         assert phrase not in lowered
 
 
-def test_compare_current_clear_uses_neutral_tradeoff(monkeypatch):
+def _short_comments(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("Кратко:")]
+
+
+def _current_payload(city_label: str, *, temp: float, feels_like: float, humidity: int, wind: float, description: str):
+    return {
+        "city_label": city_label,
+        "temperature": temp,
+        "feels_like": feels_like,
+        "description": description,
+        "humidity": humidity,
+        "wind_speed": wind,
+    }
+
+
+def _forecast_payload(
+    city_label: str,
+    *,
+    min_temp: float,
+    max_temp: float,
+    description: str,
+    max_pop: float,
+    avg_wind: float,
+    max_wind: float,
+):
+    return {
+        "city_label": city_label,
+        "selected_day": "05.05",
+        "min_temp": min_temp,
+        "max_temp": max_temp,
+        "dominant_description": description,
+        "precipitation_signal": {"rain_slots": 2, "max_pop": max_pop},
+        "wind_signal": {"avg_speed": avg_wind, "max_speed": max_wind},
+        "key_day_intervals": ["09:00", "12:00", "15:00"],
+    }
+
+
+def test_compare_current_outputs_factual_blocks(monkeypatch):
     AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
     service = AiWeatherService(api_key="")
 
-    text = service._render_compare_current_clear(
-        1,
-        "Екатеринбург",
-        "Сочи",
-        "Екатеринбург",
-        "Сочи",
-        warmer=1,
-        calmer=1,
-        drier=1,
-        no_rain=1,
+    text = service.compare_two_locations_current_with_ai(
+        _current_payload(
+            "Тольятти (Россия, Самарская область)",
+            temp=8,
+            feels_like=6,
+            humidity=35,
+            wind=4,
+            description="пасмурно",
+        ),
+        _current_payload(
+            "Санкт-Петербург (Россия)",
+            temp=18,
+            feels_like=17,
+            humidity=60,
+            wind=2,
+            description="ясно",
+        ),
+    )
+
+    assert "Тольятти" in text
+    assert "Санкт-Петербург" in text
+    assert text.count("📍") == 2
+    for label in ("🌡 Температура", "🤔 Ощущается как", "☁️ Описание", "💧 Влажность", "🌬 Ветер"):
+        assert label in text
+    assert text.count("Кратко:") == 2
+    assert "воздух сухой" in text
+    assert "влажность умеренная" in text
+    assert "ветер умеренный" in text
+    assert "ветер слабый" in text
+    for comment in _short_comments(text):
+        assert "Тольятти" not in comment
+        assert "Санкт-Петербург" not in comment
+        assert "в Москва" not in comment
+        assert "в Санкт-Петербург" not in comment
+    _assert_no_advisory_or_comparative_phrases(text)
+
+
+def test_compare_current_rain_uses_absolute_precipitation(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="")
+
+    text = service.compare_two_locations_current_with_ai(
+        _current_payload("Екатеринбург", temp=4, feels_like=2, humidity=75, wind=7, description="дождь"),
+        _current_payload("Москва", temp=-2, feels_like=-5, humidity=50, wind=10, description="снег"),
     )
 
     assert "Екатеринбург" in text
-    assert "Сочи" in text
-    assert "Если важнее" in text
-    _assert_no_winner_style_phrases(text)
+    assert "Москва" in text
+    assert "идёт дождь" in text.lower()
+    assert "возможен снег" in text.lower()
+    assert "ветер заметный" in text
+    assert "ветер сильный" in text
+    assert text.count("Кратко:") == 2
+    for comment in _short_comments(text):
+        assert "Екатеринбург" not in comment
+        assert "Москва" not in comment
+        assert "в Москва" not in comment
+    _assert_no_advisory_or_comparative_phrases(text)
 
 
-def test_compare_current_mixed_uses_priority_tradeoff(monkeypatch):
+def test_compare_forecast_outputs_factual_blocks(monkeypatch):
     AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
     service = AiWeatherService(api_key="")
 
-    text = service._render_compare_current_mixed(
-        "Екатеринбург",
-        "Москва",
-        "Екатеринбург",
-        "Москва",
-        warmer=1,
-        calmer=None,
-        drier=2,
-        no_rain=2,
+    text = service.compare_two_locations_forecast_day_with_ai(
+        _forecast_payload(
+            "Тольятти",
+            min_temp=5,
+            max_temp=12,
+            description="небольшой дождь",
+            max_pop=0.45,
+            avg_wind=4,
+            max_wind=7,
+        ),
+        _forecast_payload(
+            "Санкт-Петербург",
+            min_temp=14,
+            max_temp=21,
+            description="облачно",
+            max_pop=0.1,
+            avg_wind=2,
+            max_wind=4,
+        ),
+        "05.05",
     )
 
-    assert "Если важнее тепло" in text
-    assert "Если важнее сухо" in text
-    _assert_no_winner_style_phrases(text)
+    assert "Тольятти" in text
+    assert "Санкт-Петербург" in text
+    assert text.count("📍") == 2
+    for label in (
+        "📅 Дата",
+        "🌡 Температура",
+        "🌡 Средняя температура",
+        "☁️ Описание",
+        "🌧 Осадки",
+        "☔ Вероятность осадков",
+        "🌬 Ветер",
+    ):
+        assert label in text
+    assert "возможен дождь" in text
+    assert "без осадков" in text
+    assert text.count("Кратко:") == 2
+    for comment in _short_comments(text):
+        assert "Тольятти" not in comment
+        assert "Санкт-Петербург" not in comment
+        assert "в Санкт-Петербург" not in comment
+    _assert_no_advisory_or_comparative_phrases(text)
 
 
-def test_compare_by_date_near_identical_uses_neutral_location_pair(monkeypatch):
+def test_compare_forecast_legacy_renderers_are_factual(monkeypatch):
     AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
     service = AiWeatherService(api_key="")
-
-    profile_1 = {
-        "city_label": "Екатеринбург",
-        "temperature_note": "умеренно тепло",
-        "precipitation_risk": "low",
-        "wind_risk": "low",
-    }
-    profile_2 = {
-        "city_label": "Москва",
-        "temperature_note": "умеренно тепло",
-        "precipitation_risk": "low",
-        "wind_risk": "low",
-    }
-
-    text = service._render_compare_forecast_near_identical(
-        profile_1,
-        profile_2,
-        "Екатеринбург",
-        "Москва",
-        "Екатеринбург",
-        "Москва",
+    profile_1 = service._build_forecast_day_risk_profile(
+        _forecast_payload("Екатеринбург", min_temp=5, max_temp=12, description="дождь", max_pop=0.6, avg_wind=5, max_wind=8)
     )
-    assert "между Екатеринбург и Москва" not in text
-    assert "Для локаций «Екатеринбург» и «Москва»" in text
-    assert "В Москва" not in text
-    assert "Условия близки" in text
-    _assert_no_winner_style_phrases(text)
-
-
-def test_compare_by_date_mixed_does_not_contain_v_moskva(monkeypatch):
-    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
-    service = AiWeatherService(api_key="")
-
-    profile_1 = {
-        "city_label": "Екатеринбург",
-        "avg_temp": 10,
-        "precipitation_risk": "medium",
-        "precipitation_type": "rain",
-        "wind_risk": "medium",
-    }
-    profile_2 = {
-        "city_label": "Москва",
-        "avg_temp": 12,
-        "precipitation_risk": "low",
-        "precipitation_type": "none",
-        "wind_risk": "low",
-    }
-    verdict = {"warmer_city": "Москва", "drier_city": "Москва", "calmer_city": "Москва"}
-
-    text = service._render_compare_forecast_mixed(
-        profile_1,
-        profile_2,
-        verdict,
-        "Екатеринбург",
-        "Москва",
-        "Екатеринбург",
-        "Москва",
-        4.0,
-        3.0,
+    profile_2 = service._build_forecast_day_risk_profile(
+        _forecast_payload("Москва", min_temp=10, max_temp=18, description="ясно", max_pop=0.0, avg_wind=2, max_wind=3)
     )
-    assert "В Москва" not in text
+    verdict = service._build_forecast_compare_verdict(profile_1, profile_2)
 
+    outputs = [
+        service._render_compare_forecast_clear_winner(profile_1, profile_2, verdict, "Екатеринбург", "Москва", "Екатеринбург", "Москва"),
+        service._render_compare_forecast_near_identical(profile_1, profile_2, "Екатеринбург", "Москва", "Екатеринбург", "Москва"),
+        service._render_compare_forecast_mixed(profile_1, profile_2, verdict, "Екатеринбург", "Москва", "Екатеринбург", "Москва", 4.0, 3.0),
+    ]
 
-def test_compare_by_date_clear_uses_neutral_tradeoff(monkeypatch):
-    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
-    service = AiWeatherService(api_key="")
-
-    profile_1 = {
-        "city_label": "Екатеринбург",
-        "avg_temp": 12,
-        "precipitation_risk": "low",
-        "precipitation_type": "none",
-        "wind_risk": "low",
-    }
-    profile_2 = {
-        "city_label": "Сочи",
-        "avg_temp": 8,
-        "precipitation_risk": "medium",
-        "precipitation_type": "rain",
-        "wind_risk": "medium",
-    }
-    verdict = {
-        "winner": "Екатеринбург",
-        "warmer_city": "Екатеринбург",
-        "drier_city": "Екатеринбург",
-        "calmer_city": "Екатеринбург",
-    }
-
-    text = service._render_compare_forecast_clear_winner(
-        profile_1,
-        profile_2,
-        verdict,
-        "Екатеринбург",
-        "Сочи",
-        "Екатеринбург",
-        "Сочи",
-    )
-
-    assert "Екатеринбург" in text
-    assert "Сочи" in text
-    assert "Если важнее" in text
-    assert "Лучше выглядит" not in text
-    _assert_no_winner_style_phrases(text)
-
-
-def test_compare_by_date_mixed_uses_neutral_priority_wording(monkeypatch):
-    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
-    service = AiWeatherService(api_key="")
-
-    profile_1 = {
-        "city_label": "Екатеринбург",
-        "avg_temp": 12,
-        "precipitation_risk": "medium",
-        "precipitation_type": "rain",
-        "wind_risk": "medium",
-    }
-    profile_2 = {
-        "city_label": "Москва",
-        "avg_temp": 10,
-        "precipitation_risk": "low",
-        "precipitation_type": "none",
-        "wind_risk": "low",
-    }
-    verdict = {"warmer_city": "Екатеринбург", "drier_city": "Москва", "calmer_city": "Москва"}
-
-    text = service._render_compare_forecast_mixed(
-        profile_1,
-        profile_2,
-        verdict,
-        "Екатеринбург",
-        "Москва",
-        "Екатеринбург",
-        "Москва",
-        4.0,
-        3.0,
-    )
-
-    assert "Если важнее тепло" in text
-    assert "Если важнее" in text
-    assert "Для прогулки лучше" not in text
-    _assert_no_winner_style_phrases(text)
-
+    for text in outputs:
+        assert "Екатеринбург" in text
+        assert "Москва" in text
+        assert text.count("Кратко:") == 2
+        _assert_no_advisory_or_comparative_phrases(text)

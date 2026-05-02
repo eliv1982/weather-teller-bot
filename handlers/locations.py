@@ -346,21 +346,9 @@ def _ai_compare_after_two_locations(message: types.Message, user_id: int, *, ctx
         payload_1 = _ai_compare_current_payload(loc_1["city_label"], weather_1, location_meta=loc_1)
         payload_2 = _ai_compare_current_payload(loc_2["city_label"], weather_2, location_meta=loc_2)
         text = ctx.ai_weather_service.compare_two_locations_current_with_ai(payload_1, payload_2)
-        card_1 = ctx.format_weather_response(loc_1["city_label"], weather_1)
-        card_2 = ctx.format_weather_response(loc_2["city_label"], weather_2)
 
         _ai_compare_reset(user_id, session_store=session_store)
         session_store.user_states.pop(user_id, None)
-        ctx.bot.send_message(
-            message.chat.id,
-            card_1,
-            reply_markup=ctx.main_menu(),
-        )
-        ctx.bot.send_message(
-            message.chat.id,
-            card_2,
-            reply_markup=ctx.main_menu(),
-        )
         ctx.bot.send_message(
             message.chat.id,
             f"✨ Сравнить локации (сейчас)\n\n🪄 Вывод:\n{text}",

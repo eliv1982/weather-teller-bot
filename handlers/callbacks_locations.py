@@ -3,7 +3,6 @@ from .locations import (
     _ai_compare_reset,
     _ai_compare_set_location,
     _set_new_saved_location_candidate,
-    format_ai_compare_day_summary_message,
 )
 from .states import (
     LOCATIONS_MENU,
@@ -453,17 +452,12 @@ def handle_ai_compare_callback(
         ctx.bot.answer_callback_query(call.id)
         ctx.bot.send_message(
             chat_id,
-            format_ai_compare_day_summary_message(payload_1, selected_day, 1),
+            f"Вторая локация: {loc_2.get('city_label') or 'Локация 2'}. Сравниваю прогноз на {selected_day}.",
             reply_markup=ctx.main_menu(),
         )
         ctx.bot.send_message(
             chat_id,
-            format_ai_compare_day_summary_message(payload_2, selected_day, 2),
-            reply_markup=ctx.main_menu(),
-        )
-        ctx.bot.send_message(
-            chat_id,
-            f"✨ Сравнить локации ({selected_day})\n\n🪄 Вывод:\n{text}",
+            f"✨ Сравнить локации ({selected_day})\n\n✨ Сводка:\n{text}",
             reply_markup=ctx.main_menu(),
         )
         return

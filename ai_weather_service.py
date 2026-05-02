@@ -150,7 +150,7 @@ class AiWeatherService:
         signature = self._compare_current_signature(location_1_payload, location_2_payload)
         cache_key = self._build_cache_key("ai_compare_current", signature)
         cached = self._get_cached(cache_key)
-        if cached:
+        if cached and self._is_compare_text_factual(cached):
             logger.info("AI cache hit: scenario=ai_compare_current")
             return cached
         logger.info("AI cache miss: scenario=ai_compare_current")
@@ -171,11 +171,11 @@ class AiWeatherService:
         signature = self._compare_forecast_day_signature(location_1_payload, location_2_payload, selected_day)
         cache_key = self._build_cache_key("ai_compare_forecast_day", signature)
         cached = self._get_cached(cache_key)
-        if cached:
+        if cached and self._is_compare_text_factual(cached):
             logger.info("AI cache hit: scenario=ai_compare_forecast_day")
             return cached
         logger.info("AI cache miss: scenario=ai_compare_forecast_day")
-        final_text = self._build_deterministic_compare_forecast_day_text(profile_1, profile_2, verdict)
+        final_text = self._render_compare_forecast_factual(location_1_payload, location_2_payload, selected_day)
         self._save_cached(cache_key, "ai_compare_forecast_day", final_text, ttl_seconds=self.ttl_forecast_seconds)
         return final_text
 
@@ -358,8 +358,129 @@ class AiWeatherService:
         return fallbacks.fallback_details(city_label, weather_data, air_quality_data)
 
     def _fallback_compare_current(self, payload_1: dict, payload_2: dict) -> str:
-        """Короткий практичный fallback сравнения текущей погоды без субъективных оценок."""
-        return fallbacks.fallback_compare_current(self, payload_1, payload_2)
+        """Фактическая сводка по двум локациям без рекомендаций."""
+        return self._render_compare_current_factual(payload_1, payload_2)
+
+    def _format_number(self, value: object, suffix: str = "") -> str:
+        if isinstance(value, (int, float)):
+            return f"{float(value):.1f}{suffix}"
+        return "н/д"
+
+    def _is_compare_text_factual(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        banned = (
+            "теплее",
+            "прохладнее",
+            "холоднее",
+            "жарче",
+            "суше",
+            "влажнее",
+            "слабее",
+            "сильнее",
+            "лучше",
+            "хуже",
+            "практичнее",
+            "удобнее",
+            "спокойнее",
+            "если важнее",
+            "у вариантов разные плюсы",
+            "условия близки",
+            "ориентируйся",
+            "выбирай",
+            "маршрут",
+            "прогулки",
+            "поездки",
+        )
+        return not any(phrase in lowered for phrase in banned)
+
+    def _temperature_absolute_note(self, value: object) -> str:
+        if not isinstance(value, (int, float)):
+            return "температура не указана"
+        temp = float(value)
+        if temp <= 0:
+            return "холодно"
+        if temp < 10:
+            return "прохладно"
+        if temp < 16:
+            return "свежо"
+        if temp < 26:
+            return "тепло"
+        return "жарко"
+
+    def _humidity_absolute_note(self, value: object) -> str:
+        if not isinstance(value, (int, float)):
+            return "влажность не указана"
+        humidity = float(value)
+        if humidity < 40:
+            return "воздух сухой"
+        if humidity <= 70:
+            return "влажность умеренная"
+        return "влажно"
+
+    def _wind_absolute_note(self, value: object) -> str:
+        if not isinstance(value, (int, float)):
+            return "ветер не указан"
+        speed = float(value)
+        if speed < 3:
+            return "ветер слабый"
+        if speed < 6:
+            return "ветер умеренный"
+        if speed < 9:
+            return "ветер заметный"
+        return "ветер сильный"
+
+    def _precipitation_absolute_note(
+        self,
+        description: object,
+        *,
+        probability: object = None,
+        current: bool = False,
+    ) -> str:
+        desc = self._normalize_description(description)
+        has_snow = "снег" in desc
+        has_rain = any(marker in desc for marker in ("дожд", "лив", "гроза"))
+        likely = isinstance(probability, (int, float)) and float(probability) >= 0.2
+        if has_snow:
+            return "возможен снег"
+        if has_rain:
+            return "идёт дождь" if current else "возможен дождь"
+        if likely:
+            return "возможны осадки"
+        return "без осадков"
+
+    def _clean_compare_description(self, value: object) -> str:
+        text = str(value or "").strip()
+        return text if text else "н/д"
+
+    def _render_compare_current_block(self, payload: dict, fallback_name: str) -> str:
+        city = str(payload.get("city_label") or fallback_name)
+        temperature = payload.get("temperature")
+        feels_like = payload.get("feels_like")
+        humidity = payload.get("humidity")
+        wind_speed = payload.get("wind_speed")
+        description = self._clean_compare_description(payload.get("description"))
+        precipitation_note = self._precipitation_absolute_note(description, current=True)
+        short = (
+            f"Кратко: {self._temperature_absolute_note(feels_like if isinstance(feels_like, (int, float)) else temperature)}, "
+            f"{self._humidity_absolute_note(humidity)}, {self._wind_absolute_note(wind_speed)}. "
+            f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
+        )
+        return "\n".join([
+            f"📍 {city}",
+            f"🌡 Температура: {self._format_number(temperature, '°C')}",
+            f"🤔 Ощущается как: {self._format_number(feels_like, '°C')}",
+            f"☁️ Описание: {description}",
+            f"💧 Влажность: {self._format_number(humidity, '%')}",
+            f"🌬 Ветер: {self._format_number(wind_speed, ' м/с')}",
+            "",
+            short,
+        ])
+
+    def _render_compare_current_factual(self, payload_1: dict, payload_2: dict) -> str:
+        return "\n\n".join([
+            self._render_compare_current_block(payload_1, "Локация A"),
+            self._render_compare_current_block(payload_2, "Локация B"),
+        ])
 
     def _render_compare_current_clear(
         self,
@@ -373,44 +494,9 @@ class AiWeatherService:
         drier: int | None,
         no_rain: int | None,
     ) -> str:
-        """Рендер ветки compare current с заметным отличием по погодным условиям."""
-        def _parts_for(idx: int) -> list[str]:
-            parts: list[str] = []
-            if warmer == idx:
-                parts.append("теплее")
-            elif warmer == 3 - idx:
-                parts.append("прохладнее")
-            if calmer == idx:
-                parts.append("ветер слабее")
-            elif calmer == 3 - idx:
-                parts.append("ветер заметнее")
-            if drier == idx:
-                parts.append("воздух суше")
-            elif drier == 3 - idx:
-                parts.append("воздух влажнее")
-            if no_rain == idx:
-                parts.append("без осадков")
-            elif no_rain == 3 - idx:
-                parts.append("возможны осадки")
-            return parts[:3] or ["условия в целом ровные"]
-
-        tradeoffs: list[str] = []
-        if warmer in {1, 2}:
-            tradeoffs.append(f"Если важнее тепло — {name_1 if warmer == 1 else name_2}.")
-        if drier in {1, 2}:
-            tradeoffs.append(f"Если важнее сухой воздух — {name_1 if drier == 1 else name_2}.")
-        if calmer in {1, 2}:
-            tradeoffs.append(f"Если важнее слабый ветер — {name_1 if calmer == 1 else name_2}.")
-        if no_rain in {1, 2}:
-            tradeoffs.append(f"Если важнее без осадков — {name_1 if no_rain == 1 else name_2}.")
-        if not tradeoffs:
-            tradeoffs.append("Если важнее маршрут — ориентируйся на дорогу и время на улице.")
-
-        return "\n".join([
-            self._speak_about(city_1_label, f"сейчас {self._join_enumeration(_parts_for(1))}."),
-            self._speak_about(city_2_label, f"сейчас {self._join_enumeration(_parts_for(2))}."),
-            *tradeoffs[:3],
-        ])
+        """Совместимый factual-render для старого интерфейса ветки current."""
+        _ = (winner_idx, name_1, name_2, warmer, calmer, drier, no_rain)
+        return "\n\n".join([f"📍 {city_1_label}", "Кратко: факты по локации не переданы.", f"📍 {city_2_label}", "Кратко: факты по локации не переданы."])
 
     def _render_compare_current_near_identical(
         self,
@@ -419,27 +505,9 @@ class AiWeatherService:
         d_wind: float | None,
         d_hum: float | None,
     ) -> str:
-        """Рендер ветки compare current, когда погода почти одинаковая."""
-        wind_diff_visible = isinstance(d_wind, (int, float)) and abs(float(d_wind)) >= 0.7
-        hum_diff_visible = isinstance(d_hum, (int, float)) and abs(float(d_hum)) >= 5
-
-        if wind_diff_visible:
-            detail = "Температура и влажность близкие, заметнее всего отличается ветер."
-            calmer_name = name_1 if float(d_wind) <= 0 else name_2
-            prefer = f"Если важнее слабый ветер — {calmer_name}."
-        elif hum_diff_visible:
-            detail = "Температура и ветер близкие, заметнее всего отличается влажность."
-            drier_name = name_1 if float(d_hum) <= 0 else name_2
-            prefer = f"Если важнее сухой воздух — {drier_name}."
-        else:
-            detail = "Температура, влажность и ветер — всё очень близко."
-            prefer = "Разница настолько небольшая, что ориентируйся на удобство маршрута."
-
-        return "\n".join([
-            "Условия близки.",
-            detail,
-            prefer,
-        ])
+        """Совместимый factual-render для старого интерфейса ветки current."""
+        _ = (d_wind, d_hum)
+        return "\n\n".join([f"📍 {name_1}", "Кратко: факты по локации не переданы.", f"📍 {name_2}", "Кратко: факты по локации не переданы."])
 
     def _render_compare_current_mixed(
         self,
@@ -452,82 +520,9 @@ class AiWeatherService:
         drier: int | None,
         no_rain: int | None,
     ) -> str:
-        """Рендер ветки compare current, когда у каждой локации есть плюсы и минусы."""
-        if warmer is not None:
-            warmer_label = city_1_label if warmer == 1 else city_2_label
-            warmer_name = name_1 if warmer == 1 else name_2
-            cooler_label = city_2_label if warmer == 1 else city_1_label
-            cooler_name = name_2 if warmer == 1 else name_1
-            other_idx = 3 - warmer
-        else:
-            warmer_label = city_1_label
-            warmer_name = name_1
-            cooler_label = city_2_label
-            cooler_name = name_2
-            other_idx = 2
-
-        warmer_minuses: list[str] = []
-        if drier == other_idx:
-            warmer_minuses.append("влажнее")
-        if calmer == other_idx:
-            warmer_minuses.append("ветер чуть сильнее")
-        if no_rain == other_idx:
-            warmer_minuses.append("возможны осадки")
-        cooler_pluses: list[str] = []
-        if drier == other_idx:
-            cooler_pluses.append("воздух суше")
-        if calmer == other_idx:
-            cooler_pluses.append("ветер слабее")
-        if no_rain == other_idx:
-            cooler_pluses.append("без осадков")
-
-        if warmer is not None:
-            warmer_inner = (
-                f"теплее, но {self._join_enumeration(warmer_minuses[:2])}."
-                if warmer_minuses
-                else "теплее, но ровных плюсов меньше."
-            )
-            cooler_inner = (
-                f"прохладнее, зато {self._join_enumeration(cooler_pluses[:2])}."
-                if cooler_pluses
-                else "прохладнее, зато без сюрпризов."
-            )
-            line_warmer = self._speak_about(warmer_label, warmer_inner)
-            line_cooler = self._speak_about(cooler_label, cooler_inner)
-        else:
-            line_warmer = self._speak_about(
-                warmer_label,
-                "плюсы и минусы примерно равны.",
-            )
-            line_cooler = self._speak_about(
-                cooler_label,
-                "плюсы и минусы примерно равны.",
-            )
-
-        drier_name = None
-        if drier == 1:
-            drier_name = name_1
-        elif drier == 2:
-            drier_name = name_2
-        calmer_name = None
-        if calmer == 1:
-            calmer_name = name_1
-        elif calmer == 2:
-            calmer_name = name_2
-
-        if warmer is not None and drier_name and drier_name != warmer_name:
-            trip_text = f"Если важнее тепло — {warmer_name}. Если важнее сухо — {drier_name}."
-        elif warmer is not None and calmer_name and calmer_name != warmer_name:
-            trip_text = f"Если важнее тепло — {warmer_name}. Если важнее слабый ветер — {calmer_name}."
-        else:
-            trip_text = "Если важнее маршрут — ориентируйся на дорогу и время на улице."
-
-        return "\n".join([
-            "У вариантов разные плюсы.",
-            line_warmer,
-            line_cooler,
-            trip_text,
-        ])
+        """Совместимый factual-render для старого интерфейса ветки current."""
+        _ = (name_1, name_2, warmer, calmer, drier, no_rain)
+        return "\n\n".join([f"📍 {city_1_label}", "Кратко: факты по локации не переданы.", f"📍 {city_2_label}", "Кратко: факты по локации не переданы."])
 
     def _fallback_weather_alert(self, location_label: str, alert_payload: dict) -> str:
         """Детерминированный fallback для погодного уведомления (1-2 коротких предложения)."""
@@ -926,8 +921,92 @@ class AiWeatherService:
             return "ветер ощутимый"
         return "ветер умеренный"
 
+    def _forecast_probability_text(self, payload: dict) -> str:
+        signal = payload.get("precipitation_signal") if isinstance(payload.get("precipitation_signal"), dict) else {}
+        max_pop = signal.get("max_pop") if isinstance(signal, dict) else None
+        if isinstance(max_pop, (int, float)):
+            return f"{round(float(max_pop) * 100):.0f}%"
+        return "н/д"
+
+    def _forecast_precipitation_note(self, payload: dict) -> str:
+        signal = payload.get("precipitation_signal") if isinstance(payload.get("precipitation_signal"), dict) else {}
+        probability = signal.get("max_pop") if isinstance(signal, dict) else None
+        return self._precipitation_absolute_note(
+            payload.get("dominant_description"),
+            probability=probability,
+            current=False,
+        )
+
+    def _forecast_avg_temp(self, payload: dict) -> float | None:
+        min_temp = payload.get("min_temp")
+        max_temp = payload.get("max_temp")
+        if isinstance(min_temp, (int, float)) and isinstance(max_temp, (int, float)):
+            return (float(min_temp) + float(max_temp)) / 2.0
+        return None
+
+    def _render_compare_forecast_block(self, payload: dict, selected_day: str, fallback_name: str) -> str:
+        city = str(payload.get("city_label") or fallback_name)
+        description = self._clean_compare_description(payload.get("dominant_description"))
+        min_temp = payload.get("min_temp")
+        max_temp = payload.get("max_temp")
+        avg_temp = self._forecast_avg_temp(payload)
+        wind_signal = payload.get("wind_signal") if isinstance(payload.get("wind_signal"), dict) else {}
+        avg_wind = wind_signal.get("avg_speed") if isinstance(wind_signal, dict) else None
+        max_wind = wind_signal.get("max_speed") if isinstance(wind_signal, dict) else None
+        precipitation_note = self._forecast_precipitation_note(payload)
+        short = (
+            f"Кратко: {self._temperature_absolute_note(avg_temp)}, "
+            f"{self._wind_absolute_note(avg_wind)}. "
+            f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
+        )
+        lines = [
+            f"📍 {city}",
+            f"📅 Дата: {selected_day}",
+            f"🌡 Температура: от {self._format_number(min_temp, '°C')} до {self._format_number(max_temp, '°C')}",
+            f"🌡 Средняя температура: {self._format_number(avg_temp, '°C')}",
+            f"☁️ Описание: {description}",
+            f"🌧 Осадки: {precipitation_note}",
+            f"☔ Вероятность осадков: {self._forecast_probability_text(payload)}",
+        ]
+        if isinstance(avg_wind, (int, float)) and isinstance(max_wind, (int, float)):
+            lines.append(
+                f"🌬 Ветер: в среднем {self._format_number(avg_wind, ' м/с')}, до {self._format_number(max_wind, ' м/с')}"
+            )
+        elif isinstance(avg_wind, (int, float)):
+            lines.append(f"🌬 Ветер: в среднем {self._format_number(avg_wind, ' м/с')}")
+        elif isinstance(max_wind, (int, float)):
+            lines.append(f"🌬 Ветер: до {self._format_number(max_wind, ' м/с')}")
+        else:
+            lines.append("🌬 Ветер: н/д")
+        lines.extend(["", short])
+        return "\n".join(lines)
+
+    def _render_compare_forecast_factual(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
+        return "\n\n".join([
+            self._render_compare_forecast_block(payload_1, selected_day, "Локация A"),
+            self._render_compare_forecast_block(payload_2, selected_day, "Локация B"),
+        ])
+
+    def _render_compare_forecast_profile_factual(self, profile_1: dict, profile_2: dict) -> str:
+        def _from_profile(profile: dict) -> dict:
+            return {
+                "city_label": profile.get("city_label"),
+                "min_temp": profile.get("temp_min"),
+                "max_temp": profile.get("temp_max"),
+                "dominant_description": profile.get("summary"),
+                "wind_signal": {"avg_speed": None, "max_speed": None},
+                "precipitation_signal": {"max_pop": None},
+            }
+
+        return self._render_compare_forecast_factual(_from_profile(profile_1), _from_profile(profile_2), "выбранная дата")
+
     def _build_deterministic_compare_forecast_day_text(self, profile_1: dict, profile_2: dict, verdict: dict) -> str:
-        """Строит финальный compare-by-date текст человеческим языком, с 3 ветками."""
+        """Строит финальный compare-by-date текст как две фактические карточки."""
+        _ = verdict
+        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
+
+    def _build_legacy_deterministic_compare_forecast_day_text(self, profile_1: dict, profile_2: dict, verdict: dict) -> str:
+        """Старая ветвящаяся логика оставлена для совместимости внутренних вызовов."""
         city_1_full = str(profile_1.get("city_label") or "Локация 1")
         city_2_full = str(profile_2.get("city_label") or "Локация 2")
         name_1 = self._get_short_location_name(city_1_full)
@@ -979,32 +1058,9 @@ class AiWeatherService:
         name_1: str,
         name_2: str,
     ) -> str:
-        """Рендер compare-by-date: есть заметное отличие по погодным условиям."""
-        winner_full = str(verdict.get("winner") or "")
-        winner_name = self._get_short_location_name(winner_full)
-
-        warmer_name = self._get_short_location_name(str(verdict.get("warmer_city") or ""))
-        drier_name = self._get_short_location_name(str(verdict.get("drier_city") or ""))
-        calmer_name = self._get_short_location_name(str(verdict.get("calmer_city") or ""))
-
-        tradeoffs: list[str] = []
-        if warmer_name in {name_1, name_2}:
-            tradeoffs.append(f"Если важнее тепло — {warmer_name}.")
-        if drier_name in {name_1, name_2}:
-            tradeoffs.append(f"Если важнее сухо — {drier_name}.")
-        if calmer_name in {name_1, name_2}:
-            tradeoffs.append(f"Если важнее слабый ветер — {calmer_name}.")
-        if winner_name in {name_1, name_2}:
-            tradeoffs.append(f"Если нужен самый спокойный вариант для прогулки — {winner_name}: меньше погодных помех.")
-        if not tradeoffs:
-            tradeoffs.append("Если важнее маршрут — ориентируйся на дорогу и время на улице.")
-
-        return "\n".join([
-            self._build_city_tradeoff_line(profile_1, profile_2),
-            self._build_city_tradeoff_line(profile_2, profile_1),
-            "",
-            *tradeoffs[:3],
-        ])
+        """Совместимый factual-render для старой ветки compare-by-date."""
+        _ = (verdict, city_1_full, city_2_full, name_1, name_2)
+        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
 
     def _render_compare_forecast_near_identical(
         self,
@@ -1015,59 +1071,9 @@ class AiWeatherService:
         name_1: str,
         name_2: str,
     ) -> str:
-        """Рендер compare-by-date: погода почти одинаковая."""
-        wind_rank = {"low": 0, "medium": 1, "high": 2}
-        w1 = wind_rank.get(str(profile_1.get("wind_risk") or "medium"), 1)
-        w2 = wind_rank.get(str(profile_2.get("wind_risk") or "medium"), 1)
-
-        if w1 != w2:
-            if w1 > w2:
-                windier_label, calmer_label = city_1_full, city_2_full
-                windier_name, calmer_name = name_1, name_2
-            else:
-                windier_label, calmer_label = city_2_full, city_1_full
-                windier_name, calmer_name = name_2, name_1
-            windier_phrase = self._speak_about(windier_label, "ветер чуть сильнее")
-            calmer_phrase_inner = "разница по температуре почти не ощущается"
-            prep_calmer = self._get_prepositional_location_name(calmer_label)
-            if prep_calmer:
-                calmer_phrase = f"в {prep_calmer} {calmer_phrase_inner}"
-            else:
-                calmer_phrase = f"{calmer_name}: {calmer_phrase_inner}"
-            detail_line = f"{windier_phrase}, {calmer_phrase}."
-            prefer_line = f"Если важнее слабый ветер — {calmer_name}."
-        else:
-            pair = self._format_location_pair(name_1, name_2)
-            detail_line = f"Для {pair} разница по ветру и температуре почти не ощущается."
-            prefer_line = "Если важен меньший ветер, ориентируйся на прогноз ближе к дате."
-
-        temp_note_1 = str(profile_1.get("temperature_note") or "умеренно тепло")
-        temp_note_2 = str(profile_2.get("temperature_note") or "умеренно тепло")
-        common_temp = temp_note_1 if temp_note_1 == temp_note_2 else "переменная температура"
-
-        precip_any = (
-            str(profile_1.get("precipitation_risk")) in {"medium", "high"}
-            or str(profile_2.get("precipitation_risk")) in {"medium", "high"}
-        )
-        wind_any = (
-            str(profile_1.get("wind_risk")) in {"medium", "high"}
-            or str(profile_2.get("wind_risk")) in {"medium", "high"}
-        )
-        context_parts = [f"в обеих локациях {common_temp}"]
-        if precip_any:
-            context_parts.append("возможны осадки")
-        if wind_any:
-            context_parts.append("заметный ветер")
-        context_raw = self._join_enumeration(context_parts)
-        context_line = context_raw[:1].upper() + context_raw[1:] + "."
-
-        return (
-            "Условия близки.\n\n"
-            f"{context_line}\n"
-            f"{detail_line}\n\n"
-            "Разница небольшая, поэтому можно выбирать по маршруту.\n"
-            f"{prefer_line}"
-        )
+        """Совместимый factual-render для старой ветки compare-by-date."""
+        _ = (city_1_full, city_2_full, name_1, name_2)
+        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
 
     def _render_compare_forecast_mixed(
         self,
@@ -1081,79 +1087,6 @@ class AiWeatherService:
         risk_1: float,
         risk_2: float,
     ) -> str:
-        """Рендер compare-by-date: у каждой локации свой плюс и свой минус."""
-        warmer_full = verdict.get("warmer_city")
-        drier_full = verdict.get("drier_city")
-        calmer_full = verdict.get("calmer_city")
-        warmer_name = self._get_short_location_name(str(warmer_full)) if warmer_full else None
-        drier_name = self._get_short_location_name(str(drier_full)) if drier_full else None
-        calmer_name = self._get_short_location_name(str(calmer_full)) if calmer_full else None
-
-        if warmer_name in {name_1, name_2}:
-            if warmer_name == name_1:
-                warmer_label, warmer_profile = city_1_full, profile_1
-                cooler_label, cooler_profile = city_2_full, profile_2
-                cooler_name = name_2
-            else:
-                warmer_label, warmer_profile = city_2_full, profile_2
-                cooler_label, cooler_profile = city_1_full, profile_1
-                cooler_name = name_1
-        else:
-            warmer_label, warmer_profile = city_1_full, profile_1
-            cooler_label, cooler_profile = city_2_full, profile_2
-            warmer_name = name_1
-            cooler_name = name_2
-
-        warmer_minus = self._precipitation_comparison_phrase(warmer_profile, cooler_profile)
-        if warmer_minus in {"ниже риск осадков", "без существенных осадков"}:
-            wind_cmp = self._wind_comparison_phrase(warmer_profile, cooler_profile)
-            if wind_cmp == "ветер заметнее":
-                warmer_minus = "ветер ощутимее"
-            else:
-                warmer_minus = "иных плюсов меньше"
-
-        cooler_plus = self._precipitation_comparison_phrase(cooler_profile, warmer_profile)
-        if cooler_plus in {"выше риск осадков", "выше шанс дождя", "ожидается снег"}:
-            wind_cmp = self._wind_comparison_phrase(cooler_profile, warmer_profile)
-            if wind_cmp == "ветер слабее":
-                cooler_plus = "ветер слабее"
-            else:
-                cooler_plus = "суше воздуха меньше, но условия ровнее"
-
-        warmer_inner = f"немного теплее, но {warmer_minus}."
-        cooler_inner = f"чуть прохладнее, зато {cooler_plus}."
-
-        prep_warmer = self._get_prepositional_location_name(warmer_label)
-        prep_cooler = self._get_prepositional_location_name(cooler_label)
-        line_warmer = (
-            f"В {prep_warmer} {warmer_inner}" if prep_warmer
-            else f"{warmer_name} {warmer_inner}"
-        )
-        line_cooler = (
-            f"В {prep_cooler} {cooler_inner}" if prep_cooler
-            else f"{cooler_name} {cooler_inner}"
-        )
-
-        walk_city = drier_name or calmer_name or (name_1 if risk_1 < risk_2 else name_2)
-        walk_text = f"Если нужен самый спокойный вариант для прогулки — {walk_city}: ниже сумма погодных рисков."
-
-        if warmer_name and drier_name and warmer_name != drier_name:
-            trip_text = (
-                f"Если важнее тепло — {warmer_name}. "
-                f"Если важнее меньше осадков — {drier_name}."
-            )
-        elif warmer_name and calmer_name and warmer_name != calmer_name:
-            trip_text = (
-                f"Если важнее тепло — {warmer_name}. "
-                f"Если важнее слабый ветер — {calmer_name}."
-            )
-        else:
-            trip_text = "Если важнее дорога — смотри на риск осадков и ветер ближе к выходу."
-
-        return (
-            "У вариантов разные плюсы.\n\n"
-            f"{line_warmer}\n"
-            f"{line_cooler}\n\n"
-            f"{walk_text}\n"
-            f"{trip_text}"
-        )
+        """Совместимый factual-render для старой ветки compare-by-date."""
+        _ = (verdict, city_1_full, city_2_full, name_1, name_2, risk_1, risk_2)
+        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
