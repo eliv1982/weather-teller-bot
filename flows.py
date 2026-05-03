@@ -10,8 +10,10 @@ from handlers.states import (
     WAITING_DETAILS_CITY,
     WAITING_FORECAST_CITY,
     WAITING_GEO_LOCATION,
+    WAITING_SOURCE_COMPARE_CITY,
     WAITING_TOMORROW_FORECAST_CITY,
 )
+from source_compare_service import compare_tomorrow_sources
 
 
 def _get_favorite_location(user_data: dict) -> dict | None:
@@ -145,6 +147,22 @@ def start_tomorrow_forecast_flow(message: types.Message, *, ctx, session_store) 
     has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
 
     session_store.user_states[user_id] = WAITING_TOMORROW_FORECAST_CITY
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название населённого пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_source_compare_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Запускает сценарий сверки завтрашнего прогноза по двум источникам."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий сверки источников для пользователя %s.", user_id)
+    session_store.source_compare_location_choices.pop(user_id, None)
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+
+    session_store.user_states[user_id] = WAITING_SOURCE_COMPARE_CITY
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
@@ -401,6 +419,41 @@ def send_tomorrow_forecast_by_coordinates(
             f"ai_tomorrow_forecast_day:{tomorrow_day}",
         ),
     )
+    return True
+
+
+def send_source_compare_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Сверяет прогноз на завтра из OpenWeather и Open-Meteo для одной локации."""
+    city_label = preferred_city_label or city_fallback or "Выбранная локация"
+    result = compare_tomorrow_sources(lat, lon, city_label)
+    session_store.user_states.pop(user_id, None)
+    session_store.source_compare_location_choices.pop(user_id, None)
+
+    if not result.get("ok"):
+        ctx.bot.send_message(
+            message.chat.id,
+            str(result.get("error_message") or "Не удалось сверить источники: один из прогнозов сейчас недоступен."),
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    text = ctx.format_source_compare_response(
+        city_label,
+        result["openweather"],
+        result["open_meteo"],
+    )
+    ctx.bot.send_message(message.chat.id, "Сверка прогноза готова.", reply_markup=types.ReplyKeyboardRemove())
+    ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.main_menu())
     return True
 
 

@@ -20,6 +20,7 @@ class SessionStore:
         self.alerts_location_choices: dict[int, list] = {}
         self.details_location_choices: dict[int, list] = {}
         self.forecast_location_choices: dict[int, list] = {}
+        self.source_compare_location_choices: dict[int, list] = {}
         self.compare_location_choices: dict[int, dict] = {}
         self.ai_compare_location_choices: dict[int, list] = {}
         self.saved_location_drafts: dict[int, dict] = {}
@@ -45,6 +46,7 @@ class SessionStore:
         self.alerts_location_choices.pop(user_id, None)
         self.details_location_choices.pop(user_id, None)
         self.forecast_location_choices.pop(user_id, None)
+        self.source_compare_location_choices.pop(user_id, None)
         self.compare_location_choices.pop(user_id, None)
         self.ai_compare_location_choices.pop(user_id, None)
 

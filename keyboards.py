@@ -16,6 +16,7 @@ def weather_menu() -> types.ReplyKeyboardMarkup:
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(types.KeyboardButton("☀️ Прогноз на сегодня"), types.KeyboardButton("🌤 Прогноз на завтра"))
     keyboard.row(types.KeyboardButton("📅 Прогноз на 5 дней"), types.KeyboardButton("🧭 Расширенные данные"))
+    keyboard.row(types.KeyboardButton("🔎 Сверить источники"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -291,6 +292,8 @@ def build_scenario_location_choice_keyboard(
         return build_location_pick_keyboard(locations, "details_pick", "details_cancel")
     if scenario == "forecast":
         return build_location_pick_keyboard(locations, "forecast_pick", "forecast_cancel")
+    if scenario == "source_compare":
+        return build_location_pick_keyboard(locations, "source_compare_pick", "source_compare_cancel")
     if scenario == "compare":
         if compare_step not in (1, 2):
             raise ValueError("Для сценария compare нужен compare_step равный 1 или 2.")

@@ -41,6 +41,7 @@ class AppContext:
     format_compare_response: Any
     format_details_response: Any
     format_saved_locations: Any
+    format_source_compare_response: Any
     format_tomorrow_forecast_response: Any
     format_weather_response: Any
     help_text: Any

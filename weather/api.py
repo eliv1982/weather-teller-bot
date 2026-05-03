@@ -144,6 +144,8 @@ TTL_FORECAST_SECONDS = 15 * 60
 TTL_AIR_SECONDS = 15 * 60
 TTL_GEOCODE_SECONDS = 30 * 60
 TTL_REVERSE_GEOCODE_SECONDS = 30 * 60
+
+
 def _normalize_query_for_key(query: str) -> str:
     return " ".join(str(query or "").strip().lower().split())
 
@@ -404,23 +406,10 @@ def get_forecast_5d3h(lat: float, lon: float) -> list[dict] | None:
     enriched: list[dict] = []
     ow_ok = False
     if response is not None and response.status_code == 200:
-        try:
-            data = response.json()
-        except ValueError:
-            data = None
-        else:
-            if isinstance(data, dict):
-                items = data.get("list")
-                city = data.get("city")
-                tz_offset = city.get("timezone", 0) if isinstance(city, dict) else 0
-                if isinstance(items, list):
-                    ow_ok = True
-                    for item in items:
-                        if not isinstance(item, dict):
-                            continue
-                        row = dict(item)
-                        row["_timezone_offset"] = int(tz_offset) if isinstance(tz_offset, (int, float)) else 0
-                        enriched.append(row)
+        enriched = _parse_openweather_forecast_response(response)
+        ow_ok = enriched is not None
+        if enriched is None:
+            enriched = []
 
     if enriched:
         API_CACHE.set(cache_key, enriched, ttl_seconds=TTL_FORECAST_SECONDS)
@@ -439,6 +428,80 @@ def get_forecast_5d3h(lat: float, lon: float) -> list[dict] | None:
     if om_slots:
         return om_slots
     return None
+
+
+def _parse_openweather_forecast_response(response: requests.Response) -> list[dict] | None:
+    """Parses OpenWeather 5d/3h response into enriched OpenWeather-like slots."""
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    items = data.get("list")
+    city = data.get("city")
+    tz_offset = city.get("timezone", 0) if isinstance(city, dict) else 0
+    if not isinstance(items, list):
+        return []
+
+    enriched: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        row["_timezone_offset"] = int(tz_offset) if isinstance(tz_offset, (int, float)) else 0
+        enriched.append(row)
+    return enriched
+
+
+def get_forecast_5d3h_openweather_only(lat: float, lon: float) -> list[dict] | None:
+    """Fetches OpenWeather 5d/3h forecast without any Open-Meteo fallback."""
+    if not OW_API_KEY:
+        return None
+    cache_key = _coord_cache_key("forecast_ow_direct", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("forecast_ow_direct", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("forecast_ow_direct", cache_key)
+    url = "https://api.openweathermap.org/data/2.5/forecast"
+    params = {"lat": lat, "lon": lon, "appid": OW_API_KEY, "units": "metric", "lang": "ru"}
+    response = safe_request(url, params)
+    if response is None or response.status_code != 200:
+        return None
+    enriched = _parse_openweather_forecast_response(response)
+    if enriched is None:
+        return None
+    API_CACHE.set(cache_key, enriched, ttl_seconds=TTL_FORECAST_SECONDS)
+    _log_cache_set("forecast_ow_direct", cache_key, TTL_FORECAST_SECONDS)
+    return enriched
+
+
+def get_forecast_5d3h_open_meteo_direct(lat: float, lon: float) -> list[dict] | None:
+    """Fetches Open-Meteo forecast and maps it to OpenWeather-like slots."""
+    cache_key = _coord_cache_key("forecast_om_direct", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("forecast_om_direct", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("forecast_om_direct", cache_key)
+    try:
+        om_root = fetch_open_meteo_forecast_bundle(lat, lon)
+    except Exception:
+        logger.warning("Open-Meteo direct forecast fetch raised", exc_info=True)
+        return None
+    if not isinstance(om_root, dict):
+        return None
+    try:
+        slots = map_open_meteo_to_forecast_slots(om_root)
+    except Exception:
+        logger.warning("Open-Meteo direct forecast mapping raised", exc_info=True)
+        return None
+    if not slots:
+        return None
+    API_CACHE.set(cache_key, slots, ttl_seconds=TTL_FORECAST_SECONDS)
+    _log_cache_set("forecast_om_direct", cache_key, TTL_FORECAST_SECONDS)
+    return slots
 
 
 def get_air_pollution(lat: float, lon: float) -> dict | None:

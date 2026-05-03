@@ -123,6 +123,21 @@ def _format_temp_range(values: list[float]) -> str:
     return f"{min_value:.1f}...{max_value:.1f} °C"
 
 
+def _format_temp_band(min_temp: object, max_temp: object) -> str:
+    """Formats min/max temperatures for deterministic day summaries."""
+    if not isinstance(min_temp, (int, float)) and not isinstance(max_temp, (int, float)):
+        return "н/д"
+    if not isinstance(min_temp, (int, float)):
+        return f"{float(max_temp):.0f} °C"
+    if not isinstance(max_temp, (int, float)):
+        return f"{float(min_temp):.0f} °C"
+    min_value = round(float(min_temp))
+    max_value = round(float(max_temp))
+    if min_value == max_value:
+        return f"{min_value} °C"
+    return f"{min_value}-{max_value} °C"
+
+
 def _average_numeric(values: list[object]) -> float | None:
     numeric_values = [float(value) for value in values if isinstance(value, (int, float))]
     if not numeric_values:
@@ -370,3 +385,78 @@ def format_compare_response(city_1: str, weather_1: dict, city_2: str, weather_2
         f"🌬 Ветер: {wind_text_2}\n\n"
         f"📌 Итог:\n• {temp_summary}\n• {wind_summary}"
     )
+
+
+def _source_compare_precip_line(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return "н/д"
+    if normalized == "без существенных осадков":
+        return "не ожидаются"
+    return normalized
+
+
+def _temperature_gap_label(openweather_payload: dict, open_meteo_payload: dict) -> str:
+    ow_values = [
+        value
+        for value in (openweather_payload.get("min_temp"), openweather_payload.get("max_temp"))
+        if isinstance(value, (int, float))
+    ]
+    om_values = [
+        value
+        for value in (open_meteo_payload.get("min_temp"), open_meteo_payload.get("max_temp"))
+        if isinstance(value, (int, float))
+    ]
+    if len(ow_values) < 2 or len(om_values) < 2:
+        return "разница по температуре неочевидна"
+    delta = max(
+        abs(float(openweather_payload["min_temp"]) - float(open_meteo_payload["min_temp"])),
+        abs(float(openweather_payload["max_temp"]) - float(open_meteo_payload["max_temp"])),
+    )
+    if delta <= 2:
+        return "температура близкая"
+    if delta <= 4:
+        return "температура отличается умеренно"
+    return "температура заметно отличается"
+
+
+def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload: dict) -> str:
+    ow_precip = str(openweather_payload.get("precipitation_text") or "").strip()
+    om_precip = str(open_meteo_payload.get("precipitation_text") or "").strip()
+    if ow_precip and om_precip and ow_precip != om_precip:
+        return (
+            "Источники расходятся по осадкам: "
+            f"OpenWeather показывает {ow_precip}, Open-Meteo - {om_precip}."
+        )
+
+    temp_label = _temperature_gap_label(openweather_payload, open_meteo_payload)
+    if ow_precip == "без существенных осадков":
+        return f"Источники в целом сходятся: существенных осадков не ожидается, {temp_label}."
+    if ow_precip:
+        return f"Источники в целом сходятся: оба прогноза показывают {ow_precip}, {temp_label}."
+    return f"Источники в целом сходятся, {temp_label}."
+
+
+def format_source_compare_response(city_label: str, openweather_payload: dict, open_meteo_payload: dict) -> str:
+    """Formats deterministic tomorrow comparison between OpenWeather and Open-Meteo."""
+    lines = [
+        "🔎 Сверка прогноза на завтра",
+        "",
+        f"📍 {city_label}",
+        "",
+        "OpenWeather:",
+        f"• температура: {_format_temp_band(openweather_payload.get('min_temp'), openweather_payload.get('max_temp'))}",
+        f"• условия: {openweather_payload.get('dominant_description') or 'н/д'}",
+        f"• осадки: {_source_compare_precip_line(str(openweather_payload.get('precipitation_text') or ''))}",
+        f"• ветер: {openweather_payload.get('wind_text') or 'н/д'}",
+        "",
+        "Open-Meteo:",
+        f"• температура: {_format_temp_band(open_meteo_payload.get('min_temp'), open_meteo_payload.get('max_temp'))}",
+        f"• условия: {open_meteo_payload.get('dominant_description') or 'н/д'}",
+        f"• осадки: {_source_compare_precip_line(str(open_meteo_payload.get('precipitation_text') or ''))}",
+        f"• ветер: {open_meteo_payload.get('wind_text') or 'н/д'}",
+        "",
+        "Кратко:",
+        _build_source_compare_summary(openweather_payload, open_meteo_payload),
+    ]
+    return "\n".join(lines)

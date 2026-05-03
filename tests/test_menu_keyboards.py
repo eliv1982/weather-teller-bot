@@ -73,6 +73,7 @@ def test_weather_menu_contains_expected_submenu_buttons(monkeypatch):
         "🌤 Прогноз на завтра",
         "📅 Прогноз на 5 дней",
         "🧭 Расширенные данные",
+        "🔎 Сверить источники",
         "⬅️ В меню",
     ]
 

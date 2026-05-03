@@ -31,6 +31,11 @@ WAITING_TOMORROW_FORECAST_PICK = "waiting_tomorrow_forecast_pick"
 WAITING_TOMORROW_FORECAST_SAVED_PICK = "waiting_tomorrow_forecast_saved_pick"
 WAITING_TOMORROW_FORECAST_COORDS = "waiting_tomorrow_forecast_coords"
 WAITING_TOMORROW_FORECAST_GEO = "waiting_tomorrow_forecast_geo"
+WAITING_SOURCE_COMPARE_CITY = "waiting_source_compare_city"
+WAITING_SOURCE_COMPARE_PICK = "waiting_source_compare_pick"
+WAITING_SOURCE_COMPARE_SAVED_PICK = "waiting_source_compare_saved_pick"
+WAITING_SOURCE_COMPARE_COORDS = "waiting_source_compare_coords"
+WAITING_SOURCE_COMPARE_GEO = "waiting_source_compare_geo"
 
 # Состояния сценария сравнения
 WAITING_COMPARE_CITY_1 = "waiting_compare_city_1"
@@ -110,6 +115,11 @@ FORECAST_STATES = {
     WAITING_TOMORROW_FORECAST_SAVED_PICK,
     WAITING_TOMORROW_FORECAST_COORDS,
     WAITING_TOMORROW_FORECAST_GEO,
+    WAITING_SOURCE_COMPARE_CITY,
+    WAITING_SOURCE_COMPARE_PICK,
+    WAITING_SOURCE_COMPARE_SAVED_PICK,
+    WAITING_SOURCE_COMPARE_COORDS,
+    WAITING_SOURCE_COMPARE_GEO,
 }
 
 COMPARE_STATES = {
