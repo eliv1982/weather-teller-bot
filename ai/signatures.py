@@ -116,6 +116,25 @@ def forecast_signature(city_label: str, day_forecast_data: list[dict]) -> dict:
     return {"location": str(city_label).strip().lower(), "slots": slots}
 
 
+def tomorrow_forecast_signature(city_label: str, day_forecast_data: list[dict]) -> dict:
+    signature = forecast_signature(city_label, day_forecast_data)
+    slots: list[dict] = []
+    for item in day_forecast_data if isinstance(day_forecast_data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
+        wind_data = item.get("wind", {}) if isinstance(item.get("wind"), dict) else {}
+        slots.append(
+            {
+                "dt_txt": item.get("dt_txt"),
+                "feels_like": main_data.get("feels_like"),
+                "pressure": as_int(main_data.get("pressure")),
+                "wind_speed": round_step(wind_data.get("speed"), step=1.0),
+            }
+        )
+    return {**signature, "mode": "tomorrow_forecast", "format_version": "tomorrow_ai_v2", "tomorrow_slots": slots}
+
+
 def details_signature(city_label: str, weather_data: dict, air_quality_data: dict | None) -> dict:
     main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}

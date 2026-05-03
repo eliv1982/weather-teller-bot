@@ -8,6 +8,11 @@ from .states import (
     WAITING_FORECAST_SAVED_PICK,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
+    WAITING_TOMORROW_FORECAST_CITY,
+    WAITING_TOMORROW_FORECAST_COORDS,
+    WAITING_TOMORROW_FORECAST_GEO,
+    WAITING_TOMORROW_FORECAST_PICK,
+    WAITING_TOMORROW_FORECAST_SAVED_PICK,
 )
 from coordinates_parser import parse_coordinates
 from location_query_assist import find_locations_with_assist
@@ -21,8 +26,22 @@ def handle_forecast_text(
     ctx,
     session_store,
     send_forecast_by_coordinates,
+    send_tomorrow_forecast_by_coordinates,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария прогноза."""
+    is_tomorrow = state in {
+        WAITING_TOMORROW_FORECAST_CITY,
+        WAITING_TOMORROW_FORECAST_COORDS,
+        WAITING_TOMORROW_FORECAST_GEO,
+        WAITING_TOMORROW_FORECAST_PICK,
+        WAITING_TOMORROW_FORECAST_SAVED_PICK,
+    }
+    send_selected_forecast = send_tomorrow_forecast_by_coordinates if is_tomorrow else send_forecast_by_coordinates
+    coords_state = WAITING_TOMORROW_FORECAST_COORDS if is_tomorrow else WAITING_FORECAST_COORDS
+    geo_state = WAITING_TOMORROW_FORECAST_GEO if is_tomorrow else WAITING_FORECAST_GEO
+    pick_state = WAITING_TOMORROW_FORECAST_PICK if is_tomorrow else WAITING_FORECAST_PICK
+    saved_pick_state = WAITING_TOMORROW_FORECAST_SAVED_PICK if is_tomorrow else WAITING_FORECAST_SAVED_PICK
+
     if state == WAITING_FORECAST_USE_FAVORITE:
         answer = (message.text or "").strip().lower()
         yes_values = {"да", "д", "yes", "y"}
@@ -130,7 +149,7 @@ def handle_forecast_text(
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
         return True
 
-    if state == WAITING_FORECAST_CITY:
+    if state in {WAITING_FORECAST_CITY, WAITING_TOMORROW_FORECAST_CITY}:
         query = (message.text or "").strip()
         if query == "⭐ Из сохранённых":
             user_data = ctx.load_user(user_id)
@@ -142,7 +161,7 @@ def handle_forecast_text(
                     reply_markup=ctx.location_input_menu(has_saved_locations=False),
                 )
                 return True
-            session_store.user_states[user_id] = WAITING_FORECAST_SAVED_PICK
+            session_store.user_states[user_id] = saved_pick_state
             ctx.bot.send_message(
                 message.chat.id,
                 "Выбери сохранённую локацию:",
@@ -150,7 +169,7 @@ def handle_forecast_text(
             )
             return True
         if query in {"🧭 Координаты", "Ввести координаты"}:
-            session_store.user_states[user_id] = WAITING_FORECAST_COORDS
+            session_store.user_states[user_id] = coords_state
             ctx.bot.send_message(
                 message.chat.id,
                 "Введи координаты в формате: 55.5789, 37.9051",
@@ -158,7 +177,7 @@ def handle_forecast_text(
             )
             return True
         if query in {"📍 Отправить геолокацию", "📍 Геолокация", "Отправить геолокацию"}:
-            session_store.user_states[user_id] = WAITING_FORECAST_GEO
+            session_store.user_states[user_id] = geo_state
             ctx.bot.send_message(
                 message.chat.id,
                 "Отправь геолокацию через кнопку ниже.",
@@ -171,7 +190,7 @@ def handle_forecast_text(
             lat, lon = parsed
             location = ctx.get_location_by_coordinates(lat, lon)
             city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
-            send_forecast_by_coordinates(
+            send_selected_forecast(
                 message,
                 user_id,
                 float(lat),
@@ -216,7 +235,7 @@ def handle_forecast_text(
                     reply_markup=ctx.main_menu(),
                 )
                 return True
-            if send_forecast_by_coordinates(
+            if send_selected_forecast(
                 message,
                 user_id,
                 float(lat),
@@ -229,7 +248,7 @@ def handle_forecast_text(
             return True
 
         session_store.forecast_location_choices[user_id] = locations
-        session_store.user_states[user_id] = WAITING_FORECAST_PICK
+        session_store.user_states[user_id] = pick_state
         ctx.logger.info(
             "Найдено несколько вариантов (%s) для прогноза у пользователя %s: %s",
             len(locations),
@@ -243,7 +262,7 @@ def handle_forecast_text(
         )
         return True
 
-    if state == WAITING_FORECAST_COORDS:
+    if state in {WAITING_FORECAST_COORDS, WAITING_TOMORROW_FORECAST_COORDS}:
         parsed = parse_coordinates(message.text or "")
         if parsed is None:
             ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
@@ -251,7 +270,7 @@ def handle_forecast_text(
         lat, lon = parsed
         location = ctx.get_location_by_coordinates(lat, lon)
         city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
-        send_forecast_by_coordinates(
+        send_selected_forecast(
             message,
             user_id,
             float(lat),
@@ -262,7 +281,7 @@ def handle_forecast_text(
         )
         return True
 
-    if state == WAITING_FORECAST_PICK:
+    if state in {WAITING_FORECAST_PICK, WAITING_TOMORROW_FORECAST_PICK}:
         if not session_store.forecast_location_choices.get(user_id):
             session_store.user_states.pop(user_id, None)
             ctx.bot.send_message(
@@ -277,14 +296,14 @@ def handle_forecast_text(
         )
         return True
 
-    if state == WAITING_FORECAST_SAVED_PICK:
+    if state in {WAITING_FORECAST_SAVED_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
         ctx.bot.send_message(
             message.chat.id,
             "Выбери сохранённую локацию кнопкой ниже или нажми «⬅️ В меню».",
         )
         return True
 
-    if state == WAITING_FORECAST_GEO:
+    if state in {WAITING_FORECAST_GEO, WAITING_TOMORROW_FORECAST_GEO}:
         ctx.bot.send_message(
             message.chat.id,
             "Отправь геолокацию через кнопку ниже.",

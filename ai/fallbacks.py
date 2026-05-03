@@ -74,13 +74,18 @@ def fallback_day_forecast(city_label: str, day_items: list[dict]) -> str:
     rain_slots = 0
     best_slot = None
     best_temp = None
+    pressure_values = []
     for item in day_items:
         weather_list = item.get("weather")
         weather_item = weather_list[0] if isinstance(weather_list, list) and weather_list and isinstance(weather_list[0], dict) else {}
         weather_desc = str(weather_item.get("description", "")).lower()
         if any(x in weather_desc for x in ("дожд", "лив", "гроза", "снег")):
             rain_slots += 1
-        temp = item.get("main", {}).get("temp")
+        main_data = item.get("main", {})
+        temp = main_data.get("temp")
+        pressure = main_data.get("pressure")
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
         dt_txt = str(item.get("dt_txt") or "")
         if isinstance(temp, (int, float)) and (best_temp is None or temp > best_temp):
             best_temp = float(temp)
@@ -97,10 +102,116 @@ def fallback_day_forecast(city_label: str, day_items: list[dict]) -> str:
             slot_note = f"Лучшее окно для выхода — около {slot_dt.strftime('%H:%M')}."
         except ValueError:
             slot_note = ""
+    pressure_note = ""
+    if pressure_values:
+        avg_pressure = sum(pressure_values) / len(pressure_values)
+        pressure_mmhg = round(avg_pressure * 0.75006)
+        if avg_pressure <= 1000:
+            pressure_note = f"Давление около {pressure_mmhg} мм рт. ст., заметно ниже обычного."
+        elif avg_pressure >= 1025:
+            pressure_note = f"Давление около {pressure_mmhg} мм рт. ст., заметно выше обычного."
+        else:
+            pressure_note = "Давление в пределах нормы."
+    notes = [rain_note]
+    if slot_note:
+        notes.append(slot_note)
+    if pressure_note:
+        notes.append(pressure_note)
+    notes.append("В течение дня температура может заметно меняться, поэтому перед выходом лучше быстро проверить прогноз ещё раз.")
+    return f"По {city_label}: {' '.join(notes)}"
+
+
+def _range_text(values: list[float], suffix: str = "") -> str:
+    if not values:
+        return "н/д"
+    min_value = min(values)
+    max_value = max(values)
+    if round(min_value, 1) == round(max_value, 1):
+        return f"{min_value:.1f}{suffix}"
+    return f"{min_value:.1f}...{max_value:.1f}{suffix}"
+
+
+def _dominant_description(day_items: list[dict]) -> str:
+    descriptions: dict[str, int] = {}
+    for item in day_items:
+        weather_list = item.get("weather") if isinstance(item, dict) else None
+        weather_item = weather_list[0] if isinstance(weather_list, list) and weather_list and isinstance(weather_list[0], dict) else {}
+        description = normalize_weather_description(weather_item.get("description") or "без описания")
+        descriptions[description] = descriptions.get(description, 0) + 1
+    if not descriptions:
+        return "без описания"
+    return max(descriptions, key=descriptions.get)
+
+
+def _tomorrow_pressure_note(pressure_values: list[float]) -> str:
+    if not pressure_values:
+        return "Данные по давлению ограничены."
+    min_pressure = min(pressure_values)
+    max_pressure = max(pressure_values)
+    avg_pressure = sum(pressure_values) / len(pressure_values)
+    min_mmhg = round(min_pressure * 0.75006)
+    max_mmhg = round(max_pressure * 0.75006)
+    avg_mmhg = round(avg_pressure * 0.75006)
+    if max_mmhg - min_mmhg <= 2:
+        pressure_text = f"{avg_mmhg} мм рт. ст."
+    else:
+        pressure_text = f"{min_mmhg}-{max_mmhg} мм рт. ст."
+    if avg_pressure <= 1000:
+        return f"Давление: {pressure_text}, ниже обычного."
+    if avg_pressure >= 1025:
+        return f"Давление: {pressure_text}, выше обычного."
+    return f"Давление: {pressure_text}, в пределах нормы."
+
+
+def _tomorrow_wind_note(wind_speeds: list[float]) -> str:
+    if not wind_speeds:
+        return "Данные по ветру ограничены."
+    max_wind = max(wind_speeds)
+    if max_wind < 3:
+        return "Ветер слабый."
+    if max_wind <= 5:
+        return "Ветер умеренный."
+    if max_wind < 8:
+        return "Ветер заметный, но не сильный."
+    return "Ветер сильный."
+
+
+def fallback_tomorrow_forecast(city_label: str, day_items: list[dict]) -> str:
+    if not isinstance(day_items, list) or not day_items:
+        return f"По {city_label} пока недостаточно данных, чтобы пояснить прогноз на завтра."
+    temps: list[float] = []
+    feels_like_values: list[float] = []
+    pressure_values: list[float] = []
+    wind_speeds: list[float] = []
+    precip_slots = 0
+    for item in day_items:
+        main_data = item.get("main", {}) if isinstance(item, dict) else {}
+        wind_data = item.get("wind", {}) if isinstance(item, dict) else {}
+        weather_list = item.get("weather") if isinstance(item, dict) else None
+        weather_item = weather_list[0] if isinstance(weather_list, list) and weather_list and isinstance(weather_list[0], dict) else {}
+        weather_desc = str(weather_item.get("description") or "").lower()
+        if any(x in weather_desc for x in ("дожд", "лив", "гроза", "снег")):
+            precip_slots += 1
+        temp = main_data.get("temp")
+        feels_like = main_data.get("feels_like")
+        pressure = main_data.get("pressure")
+        wind_speed = wind_data.get("speed")
+        if isinstance(temp, (int, float)):
+            temps.append(float(temp))
+        if isinstance(feels_like, (int, float)):
+            feels_like_values.append(float(feels_like))
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
+        if isinstance(wind_speed, (int, float)):
+            wind_speeds.append(float(wind_speed))
+
+    precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
     return (
-        f"По {city_label}: {rain_note} {slot_note} В течение дня температура может заметно меняться, "
-        "поэтому перед выходом лучше быстро проверить прогноз ещё раз."
-    ).strip()
+        f"Завтра в {city_label} ожидается {_dominant_description(day_items)}. "
+        f"Температура будет примерно {_range_text(temps, '°C')}, "
+        f"по ощущениям {_range_text(feels_like_values, '°C')}. "
+        f"{precip_note} {_tomorrow_wind_note(wind_speeds)} {_tomorrow_pressure_note(pressure_values)}"
+    )
 
 
 def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:

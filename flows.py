@@ -10,6 +10,7 @@ from handlers.states import (
     WAITING_DETAILS_CITY,
     WAITING_FORECAST_CITY,
     WAITING_GEO_LOCATION,
+    WAITING_TOMORROW_FORECAST_CITY,
 )
 
 
@@ -127,6 +128,23 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
 
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название населённого пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_tomorrow_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Запускает сценарий прогноза на завтра."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий прогноза на завтра для пользователя %s.", user_id)
+    session_store.forecast_location_choices.pop(user_id, None)
+    session_store.forecast_favorite_drafts.pop(user_id, None)
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+
+    session_store.user_states[user_id] = WAITING_TOMORROW_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
@@ -300,6 +318,89 @@ def send_forecast_by_coordinates(
     session_store.forecast_saved_drafts.pop(user_id, None)
     session_store.forecast_location_choices.pop(user_id, None)
     show_forecast_days_message(message, user_id, ctx=ctx, session_store=session_store)
+    return True
+
+
+def send_tomorrow_forecast_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    save_location: bool,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Получает 5-дневный прогноз и сразу показывает день завтрашнего прогноза."""
+    forecast_items = ctx.get_forecast_5d3h(lat, lon)
+    if not forecast_items:
+        ctx.logger.warning(
+            "Не удалось получить прогноз на завтра для пользователя %s (населённый пункт: %s, lat: %s, lon: %s).",
+            user_id,
+            city_fallback,
+            lat,
+            lon,
+        )
+        session_store.user_states.pop(user_id, None)
+        session_store.forecast_saved_drafts.pop(user_id, None)
+        session_store.forecast_cache.pop(user_id, None)
+        session_store.forecast_location_choices.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Не удалось получить прогноз. Попробуй позже.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    if preferred_city_label:
+        city_label = preferred_city_label
+    elif city_fallback:
+        city_label = city_fallback
+    else:
+        location = ctx.get_location_by_coordinates(lat, lon)
+        city_label = ctx.build_location_label(location, show_coords=False) if location else "Выбранная локация"
+
+    grouped = ctx.group_forecast_by_day(forecast_items)
+    tomorrow = ctx.get_tomorrow_forecast_day(grouped)
+    if tomorrow is None:
+        ctx.logger.warning("Прогноз на завтра не найден в ответе сервиса для пользователя %s.", user_id)
+        session_store.user_states.pop(user_id, None)
+        session_store.forecast_saved_drafts.pop(user_id, None)
+        session_store.forecast_cache.pop(user_id, None)
+        session_store.forecast_location_choices.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Не нашла прогноз на завтра в ответе погодного сервиса. Попробуй открыть прогноз на 5 дней.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    if save_location:
+        user_data = ctx.load_user(user_id)
+        user_data["city"] = city_label
+        user_data["lat"] = lat
+        user_data["lon"] = lon
+        ctx.save_user(user_id, user_data)
+
+    tomorrow_day, tomorrow_items = tomorrow
+    session_store.forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
+    session_store.user_states.pop(user_id, None)
+    session_store.forecast_saved_drafts.pop(user_id, None)
+    session_store.forecast_location_choices.pop(user_id, None)
+
+    text = ctx.format_tomorrow_forecast_response(city_label, tomorrow_day, tomorrow_items)
+    ctx.bot.send_message(message.chat.id, "Прогноз на завтра готов.", reply_markup=types.ReplyKeyboardRemove())
+    ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.main_menu())
+    ctx.bot.send_message(
+        message.chat.id,
+        "✨ Хочешь короткое пояснение прогноза?",
+        reply_markup=ctx.build_ai_action_keyboard(
+            "✨ Короткое пояснение прогноза",
+            f"ai_tomorrow_forecast_day:{tomorrow_day}",
+        ),
+    )
     return True
 
 

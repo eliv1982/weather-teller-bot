@@ -108,6 +108,24 @@ class AiWeatherService:
         logger.info("AI fallback used: scenario=forecast_day")
         return fallback
 
+    def explain_tomorrow_forecast(self, city_label: str, day_forecast_data: list[dict]) -> str:
+        """Поясняет прогноз на завтра в стиле отдельного экрана."""
+        fallback = self._fallback_tomorrow_forecast(city_label, day_forecast_data)
+        signature = self._tomorrow_forecast_signature(city_label, day_forecast_data)
+        cache_key = self._build_cache_key("tomorrow_forecast", signature)
+        cached = self._get_cached(cache_key)
+        if cached:
+            logger.info("AI cache hit: scenario=tomorrow_forecast")
+            return cached
+        logger.info("AI cache miss: scenario=tomorrow_forecast")
+        prompt = prompts.build_tomorrow_forecast_prompt(city_label, day_forecast_data)
+        model_answer = self._call_model(prompt, max_output_tokens=self.max_output_tokens_forecast_day)
+        if model_answer:
+            self._save_cached(cache_key, "tomorrow_forecast", model_answer, ttl_seconds=self.ttl_forecast_seconds)
+            return model_answer
+        logger.info("AI fallback used: scenario=tomorrow_forecast")
+        return fallback
+
     def explain_weather_details(self, city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:
         """Поясняет расширенные погодные данные и качество воздуха."""
         fallback = self._fallback_details(city_label, weather_data, air_quality_data)
@@ -229,6 +247,10 @@ class AiWeatherService:
     def _forecast_signature(self, city_label: str, day_forecast_data: list[dict]) -> dict:
         """Возвращает сигнатуру дневного прогноза из ключевых полей каждого слота."""
         return signatures.forecast_signature(city_label, day_forecast_data)
+
+    def _tomorrow_forecast_signature(self, city_label: str, day_forecast_data: list[dict]) -> dict:
+        """Возвращает сигнатуру прогноза на завтра."""
+        return signatures.tomorrow_forecast_signature(city_label, day_forecast_data)
 
     def _details_signature(self, city_label: str, weather_data: dict, air_quality_data: dict | None) -> dict:
         """Возвращает сигнатуру расширенных данных погоды и воздуха."""
@@ -352,6 +374,10 @@ class AiWeatherService:
     def _fallback_day_forecast(self, city_label: str, day_items: list[dict]) -> str:
         """Детерминированный fallback для дневного прогноза без OpenAI."""
         return fallbacks.fallback_day_forecast(city_label, day_items)
+
+    def _fallback_tomorrow_forecast(self, city_label: str, day_items: list[dict]) -> str:
+        """Детерминированный fallback для прогноза на завтра без OpenAI."""
+        return fallbacks.fallback_tomorrow_forecast(city_label, day_items)
 
     def _fallback_details(self, city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:
         """Детерминированный fallback для расширенных данных без OpenAI."""

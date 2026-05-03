@@ -49,3 +49,19 @@ def test_compare_current_signature_has_both_location_blocks():
     assert isinstance(result["location_1"], dict)
     assert isinstance(result["location_2"], dict)
 
+
+def test_tomorrow_forecast_signature_has_prompt_cache_version():
+    payload = [
+        {
+            "dt_txt": "2026-05-04 12:00:00",
+            "main": {"temp": 12, "feels_like": 10, "pressure": 1012},
+            "wind": {"speed": 4},
+            "weather": [{"description": "ясно"}],
+        }
+    ]
+
+    result = signatures.tomorrow_forecast_signature("Москва", payload)
+
+    assert result["mode"] == "tomorrow_forecast"
+    assert result["format_version"] == "tomorrow_ai_v2"
+

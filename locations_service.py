@@ -275,8 +275,8 @@ def complete_current_weather_from_location(
     bot.send_message(chat_id, answer, reply_markup=main_menu())
     bot.send_message(
         chat_id,
-        "✨ Хочешь короткий и понятный разбор?",
-        reply_markup=build_ai_action_keyboard("✨ Объяснить по-человечески", callback_data),
+        "✨ Хочешь короткое пояснение погоды?",
+        reply_markup=build_ai_action_keyboard("✨ Короткое пояснение погоды", callback_data),
     )
 
 

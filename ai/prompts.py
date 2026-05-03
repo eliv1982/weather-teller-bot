@@ -28,6 +28,103 @@ def _normalize_ai_weather_payload(value: object) -> object:
     return normalized
 
 
+def _format_tomorrow_pressure_note(day_forecast_data: list[dict]) -> str:
+    pressure_values: list[float] = []
+    for item in day_forecast_data if isinstance(day_forecast_data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
+        pressure = main_data.get("pressure")
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
+    if not pressure_values:
+        return "Данные по давлению ограничены."
+
+    min_pressure = min(pressure_values)
+    max_pressure = max(pressure_values)
+    avg_pressure = sum(pressure_values) / len(pressure_values)
+    min_mmhg = round(min_pressure * 0.75006)
+    max_mmhg = round(max_pressure * 0.75006)
+    avg_mmhg = round(avg_pressure * 0.75006)
+    if max_mmhg - min_mmhg <= 2:
+        pressure_text = f"{avg_mmhg} мм рт. ст."
+    else:
+        pressure_text = f"{min_mmhg}-{max_mmhg} мм рт. ст."
+    if avg_pressure <= 1000:
+        return f"Давление: {pressure_text}, ниже обычного."
+    if avg_pressure >= 1025:
+        return f"Давление: {pressure_text}, выше обычного."
+    return f"Давление: {pressure_text}, в пределах нормы."
+
+
+def _tomorrow_ai_payload(day_forecast_data: list[dict]) -> dict:
+    temps: list[float] = []
+    feels_like_values: list[float] = []
+    humidity_values: list[float] = []
+    wind_speeds: list[float] = []
+    descriptions: dict[str, int] = {}
+    precipitation_slots = 0
+    date_label = ""
+    for item in day_forecast_data if isinstance(day_forecast_data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if not date_label:
+            dt_txt = str(item.get("dt_txt") or "")
+            date_label = dt_txt.split(" ", 1)[0] if dt_txt else ""
+        main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
+        wind_data = item.get("wind", {}) if isinstance(item.get("wind"), dict) else {}
+        weather_list = item.get("weather")
+        weather_item = weather_list[0] if isinstance(weather_list, list) and weather_list and isinstance(weather_list[0], dict) else {}
+        description = normalize_weather_description(weather_item.get("description") or "без описания")
+        descriptions[description] = descriptions.get(description, 0) + 1
+        if any(x in description.lower() for x in ("дожд", "лив", "гроза", "снег")):
+            precipitation_slots += 1
+        for target, key in (
+            (temps, "temp"),
+            (feels_like_values, "feels_like"),
+            (humidity_values, "humidity"),
+        ):
+            value = main_data.get(key)
+            if isinstance(value, (int, float)):
+                target.append(float(value))
+        wind_speed = wind_data.get("speed")
+        if isinstance(wind_speed, (int, float)):
+            wind_speeds.append(float(wind_speed))
+    return {
+        "date": date_label or "завтра",
+        "temperature": _format_tomorrow_range(temps, "°C"),
+        "feels_like": _format_tomorrow_range(feels_like_values, "°C"),
+        "description": max(descriptions, key=descriptions.get) if descriptions else "без описания",
+        "humidity": _format_tomorrow_range(humidity_values, "%", precision=0),
+        "wind": _format_tomorrow_wind_text(wind_speeds),
+        "precipitation": "Возможны осадки." if precipitation_slots else "Существенных осадков не ожидается.",
+        "pressure": _format_tomorrow_pressure_note(day_forecast_data),
+    }
+
+
+def _format_tomorrow_range(values: list[float], suffix: str, *, precision: int = 1) -> str:
+    if not values:
+        return "нет данных"
+    min_value = min(values)
+    max_value = max(values)
+    if round(min_value, precision) == round(max_value, precision):
+        return f"{min_value:.{precision}f}{suffix}"
+    return f"{min_value:.{precision}f}-{max_value:.{precision}f}{suffix}"
+
+
+def _format_tomorrow_wind_text(wind_speeds: list[float]) -> str:
+    if not wind_speeds:
+        return "Данные по ветру ограничены."
+    max_wind = max(wind_speeds)
+    if max_wind < 3:
+        return "Ветер слабый."
+    if max_wind <= 5:
+        return "Ветер умеренный."
+    if max_wind < 8:
+        return "Ветер заметный, но не сильный."
+    return "Ветер сильный."
+
+
 def build_location_assist_prompt(user_input: str, context: dict | None = None) -> str:
     return (
         "Ты помогаешь уточнить пользовательский запрос локации для геокодинга OpenWeather.\n"
@@ -68,11 +165,14 @@ def build_current_prompt(city_label: str, weather_data: dict) -> str:
         "Используй только переданные данные, ничего не выдумывай.\n"
         "Обязательно скажи: как ощущается погода, нужен ли зонт, как лучше одеться, "
         "насколько комфортно сейчас на улице.\n"
-        "Давление упоминай только если оно явно низкое (<=1000 hPa) или явно высокое (>=1025 hPa); "
-        "без медицинских утверждений, только как мягкий фактор, который можно учесть.\n"
+        "Давление упоминай только если оно явно низкое (около <=1000 в исходных данных) "
+        "или явно высокое (около >=1025 в исходных данных); "
+        "без медицинских утверждений, только как мягкий фактор, который можно учесть. "
+        "Если пишешь давление, переводи его в мм рт. ст.; при нормальном давлении формулируй: "
+        "«Давление в пределах нормы.»\n"
         "Правила формулировок по ветру:\n"
         "- <3 м/с: слабый ветер, почти не мешает;\n"
-        "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
+        "- 3-5 м/с: умеренный ветер;\n"
         "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
         "- >=8 м/с: сильный ветер, реально влияет на комфорт.\n"
         "Не используй при ветре <=5 м/с формулировки: "
@@ -93,9 +193,36 @@ def build_forecast_day_prompt(city_label: str, day_forecast_data: list[dict]) ->
         "Используй только переданные данные, ничего не выдумывай.\n"
         "Обязательно укажи: лучшее окно для прогулки, осадки и главное изменение погоды в течение дня.\n"
         "Финал сделай практичным и привязанным к погоде: зонт или непромокаемая одежда при дожде, "
-        "одеться теплее при холоде, учитывать ветер только если он заметный.\n\n"
+        "одеться теплее при холоде, учитывать ветер только если он заметный.\n"
+        "Избегай фраз про отсутствие суеты и расплывчатых формулировок про отсутствие акцентов. "
+        "Если упоминаешь давление, переводи значение давления в мм рт. ст.; при нормальном давлении пиши: "
+        "«Давление в пределах нормы.»\n\n"
         f"Локация: {city_label}\n"
         f"Слоты прогноза за день: {ai_day_forecast_data}"
+    )
+
+
+def build_tomorrow_forecast_prompt(city_label: str, day_forecast_data: list[dict]) -> str:
+    ai_day_forecast_data = _tomorrow_ai_payload(day_forecast_data)
+    return (
+        "Поясни прогноз на завтра простым русским языком.\n"
+        "Требования: 4-5 коротких предложений, дружелюбно и по делу, без канцелярита, "
+        "без сарказма, без клоунады, без дисклеймеров и без воды.\n"
+        "Это не рекомендация на день и не экран прогноза на 5 дней. Не пиши заголовок.\n"
+        "Используй только переданные данные, ничего не выдумывай.\n"
+        "Скажи: какая погода ожидается завтра, диапазон температуры, как будет ощущаться, "
+        "осадки, ветер и давление.\n"
+        "Не используй фразы про выбор лучшего времени для прогулки, главное изменение погоды, "
+        "отсутствие суеты, отсутствие акцентов и драматизацию.\n"
+        "Используй поле pressure как готовый текст о давлении и не меняй числа в нём. "
+        "Не добавляй другие значения давления и не пиши конвертацию. "
+        "Никаких медицинских утверждений.\n"
+        "Ветер описывай одной ясной категорией: «Ветер слабый.», «Ветер умеренный.», "
+        "«Ветер заметный, но не сильный.» или «Ветер сильный.» Не описывай ветер диапазоном.\n"
+        "Если дождя по данным нет, пиши «Дождь не ожидается.» или "
+        "«Существенных осадков не ожидается.»\n\n"
+        f"Локация: {city_label}\n"
+        f"Сводка прогноза на завтра: {ai_day_forecast_data}"
     )
 
 
@@ -108,11 +235,14 @@ def build_details_prompt(city_label: str, weather_data: dict, air_quality_data: 
         "Используй только переданные данные, ничего не выдумывай.\n"
         "Не перечисляй всё подряд: выдели 1-2 самых важных фактора сейчас и объясни, "
         "почему именно они важны прямо сейчас.\n\n"
-        "Давление упоминай только если оно явно низкое (<=1000 hPa) или явно высокое (>=1025 hPa); "
-        "без медицинских утверждений, только как мягкий фактор, который можно учесть.\n\n"
+        "Давление упоминай только если оно явно низкое (около <=1000 в исходных данных) "
+        "или явно высокое (около >=1025 в исходных данных); "
+        "без медицинских утверждений, только как мягкий фактор, который можно учесть. "
+        "Если пишешь давление, переводи его в мм рт. ст.; при нормальном давлении формулируй: "
+        "«Давление в пределах нормы.»\n\n"
         "Правила формулировок по ветру:\n"
         "- <3 м/с: слабый ветер, почти не мешает;\n"
-        "- 3-5 м/с: умеренный ветер, заметный, но без драматизации;\n"
+        "- 3-5 м/с: умеренный ветер;\n"
         "- 5-7 м/с: заметный ветер, может усилить ощущение прохлады при дожде/холоде;\n"
         "- >=8 м/с: сильный ветер, влияет на комфорт.\n"
         "При ветре <=5 м/с избегай фраз о сильном негативном влиянии ветра.\n"
@@ -129,7 +259,7 @@ def build_weather_alert_prompt(location_label: str, alert_payload: dict) -> str:
     return (
         "Объясни погодное уведомление коротко и практично.\n"
         "Требования: русский язык, 1-2 коротких предложения, без воды, без дисклеймеров, "
-        "без драматизации и без длинного прогноза.\n"
+        "без преувеличений и без длинного прогноза.\n"
         "Используй только переданные данные, ничего не выдумывай.\n"
         "Дай конкретный совет для ближайшей активности: зонт и непромокаемая одежда при дожде, "
         "одеться теплее при холоде, выбрать менее открытый маршрут при заметном ветре.\n\n"

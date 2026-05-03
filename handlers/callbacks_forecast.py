@@ -1,3 +1,6 @@
+from .states import WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK
+
+
 def handle_forecast_callback(
     call,
     *,
@@ -5,10 +8,17 @@ def handle_forecast_callback(
     session_store,
     _message_stub_for_chat,
     send_forecast_by_coordinates,
+    send_tomorrow_forecast_by_coordinates,
 ) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
+    state = session_store.get_state(user_id)
+    send_selected_forecast = (
+        send_tomorrow_forecast_by_coordinates
+        if state in {WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}
+        else send_forecast_by_coordinates
+    )
 
     if call.data == "forecast_cancel":
         session_store.forecast_location_choices.pop(user_id, None)
@@ -64,7 +74,7 @@ def handle_forecast_callback(
                 reply_markup=ctx.main_menu(),
             )
             return
-        send_forecast_by_coordinates(
+        send_selected_forecast(
             stub,
             user_id,
             float(lat),
@@ -102,7 +112,7 @@ def handle_forecast_callback(
             return
         ctx.bot.answer_callback_query(call.id)
         stub = _message_stub_for_chat(chat_id)
-        send_forecast_by_coordinates(
+        send_selected_forecast(
             stub,
             user_id,
             float(lat),

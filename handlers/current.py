@@ -93,9 +93,9 @@ def handle_current_text(
             ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
             ctx.bot.send_message(
                 message.chat.id,
-                "✨ Хочешь короткий и понятный разбор?",
+                "✨ Хочешь короткое пояснение погоды?",
                 reply_markup=ctx.build_ai_action_keyboard(
-                    "✨ Объяснить по-человечески",
+                    "✨ Короткое пояснение погоды",
                     f"ai_current_explain:{snapshot_id}",
                 ),
             )
@@ -194,9 +194,9 @@ def handle_current_text(
         ctx.bot.send_message(message.chat.id, ctx.format_weather_response(city_label, weather), reply_markup=ctx.main_menu())
         ctx.bot.send_message(
             message.chat.id,
-            "✨ Хочешь короткий и понятный разбор?",
+            "✨ Хочешь короткое пояснение погоды?",
             reply_markup=ctx.build_ai_action_keyboard(
-                "✨ Объяснить по-человечески",
+                "✨ Короткое пояснение погоды",
                 f"ai_current_explain:{snapshot_id}",
             ),
         )

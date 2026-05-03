@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 
 def group_forecast_by_day(forecast_items: list[dict]) -> dict[str, list[dict]]:
@@ -15,6 +15,22 @@ def group_forecast_by_day(forecast_items: list[dict]) -> dict[str, list[dict]]:
             continue
         grouped.setdefault(day_key, []).append(item)
     return grouped
+
+
+def get_tomorrow_forecast_day(
+    grouped: dict[str, list[dict]],
+    *,
+    today: date | None = None,
+) -> tuple[str, list[dict]] | None:
+    """Возвращает прогноз на завтра из уже сгруппированного 5-дневного прогноза."""
+    if not isinstance(grouped, dict):
+        return None
+    base_day = today or date.today()
+    tomorrow_key = (base_day + timedelta(days=1)).strftime("%d.%m")
+    day_items = grouped.get(tomorrow_key)
+    if not isinstance(day_items, list) or not day_items:
+        return None
+    return tomorrow_key, day_items
 
 
 def _forecast_min_temp(day_items: list[dict]) -> float | None:

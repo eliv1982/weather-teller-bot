@@ -22,6 +22,7 @@ def test_ai_weather_service_public_facade_and_fallback_paths(monkeypatch):
         "assist_location_query",
         "explain_current_weather",
         "summarize_day_forecast",
+        "explain_tomorrow_forecast",
         "explain_weather_details",
         "explain_weather_alert",
         "compare_two_locations_current_with_ai",
@@ -48,6 +49,15 @@ def test_ai_weather_service_public_facade_and_fallback_paths(monkeypatch):
         ],
     )
     assert isinstance(forecast, str) and forecast.strip()
+
+    tomorrow = service.explain_tomorrow_forecast(
+        "Москва",
+        [
+            {"dt_txt": "2026-01-02 09:00:00", "main": {"temp": 5, "feels_like": 3, "pressure": 1013}, "wind": {"speed": 2}, "weather": [{"description": "ясно"}]},
+            {"dt_txt": "2026-01-02 12:00:00", "main": {"temp": 8, "feels_like": 7, "pressure": 1013}, "wind": {"speed": 4}, "weather": [{"description": "облачно"}]},
+        ],
+    )
+    assert isinstance(tomorrow, str) and tomorrow.strip()
 
     details = service.explain_weather_details(
         "Москва",

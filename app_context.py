@@ -40,6 +40,7 @@ class AppContext:
     format_compare_response: Any
     format_details_response: Any
     format_saved_locations: Any
+    format_tomorrow_forecast_response: Any
     format_weather_response: Any
     help_text: Any
     alerts_subscription_service: Any
@@ -53,6 +54,7 @@ class AppContext:
     complete_current_weather_from_location: Any
     complete_alerts_location_from_item: Any
     group_forecast_by_day: Any
+    get_tomorrow_forecast_day: Any
     format_forecast_day: Any
     build_geocode_item_with_disambiguated_label: Any
     rank_locations: Any
