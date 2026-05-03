@@ -1,3 +1,4 @@
+import math
 import re
 
 # ISO 3166-1 alpha-2 → русское название страны (для подписей локаций).
@@ -387,6 +388,221 @@ def _name_match_score(query: str, location: dict) -> float:
         elif q in s or s in q:
             best = max(best, 150.0)
     return best
+
+
+def _normalize_location_match_text(value: object) -> str:
+    """Нормализует текст для эвристик сравнения кандидатов геокодинга."""
+    text = str(value or "").strip().lower().replace("ё", "е")
+    text = re.sub(r"[^\wа-яА-ЯёЁ]+", " ", text, flags=re.UNICODE)
+    return " ".join(text.split())
+
+
+def _location_name_variants(location: dict) -> list[str]:
+    local_names = location.get("local_names") or {}
+    values = [
+        location.get("local_name"),
+        get_city_name_ru(location),
+        location.get("name"),
+        local_names.get("ru"),
+        local_names.get("en"),
+        location.get("label"),
+    ]
+    result: list[str] = []
+    for value in values:
+        normalized = _normalize_location_match_text(value)
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _is_noisy_poi_like_location(location: dict) -> bool:
+    """Консервативно определяет ЖК/POI-like кандидаты по имени и подписи."""
+    local_names = location.get("local_names") or {}
+    text = " ".join(
+        str(value or "")
+        for value in (
+            location.get("name"),
+            location.get("local_name"),
+            location.get("label"),
+            local_names.get("ru"),
+            local_names.get("en"),
+        )
+    )
+    normalized = _normalize_location_match_text(text)
+    noisy_phrases = (
+        "жилой комплекс",
+        "residential complex",
+    )
+    if any(phrase in text.lower().replace("ё", "е") for phrase in noisy_phrases):
+        return True
+    tokens = set(normalized.split())
+    return "жк" in tokens
+
+
+def _is_exact_location_name_match(query: str, location: dict) -> bool:
+    normalized_query = _normalize_location_match_text(query)
+    if not normalized_query:
+        return False
+    return normalized_query in _location_name_variants(location)
+
+
+def _same_or_similar_location_name(left: dict, right: dict) -> bool:
+    left_names = _location_name_variants(left)
+    right_names = _location_name_variants(right)
+    for left_name in left_names:
+        for right_name in right_names:
+            if left_name == right_name:
+                return True
+            if min(len(left_name), len(right_name)) >= 5 and (
+                left_name in right_name or right_name in left_name
+            ):
+                return True
+    return False
+
+
+def _edit_distance_limited(left: str, right: str, *, max_distance: int) -> int:
+    if abs(len(left) - len(right)) > max_distance:
+        return max_distance + 1
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        row_min = current[0]
+        for right_index, right_char in enumerate(right, start=1):
+            cost = 0 if left_char == right_char else 1
+            value = min(
+                previous[right_index] + 1,
+                current[right_index - 1] + 1,
+                previous[right_index - 1] + cost,
+            )
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > max_distance:
+            return max_distance + 1
+        previous = current
+    return previous[-1]
+
+
+def _is_strong_location_match(query: str, location: dict) -> bool:
+    normalized_query = _normalize_location_match_text(query)
+    if not normalized_query:
+        return False
+    query_tokens = normalized_query.split()
+    if len(query_tokens) != 1:
+        return _is_exact_location_name_match(query, location)
+    for name in _location_name_variants(location):
+        if name == normalized_query:
+            return True
+        if len(name.split()) == 1 and _edit_distance_limited(normalized_query, name, max_distance=1) <= 1:
+            return True
+        if (
+            (name.startswith(normalized_query) or normalized_query.startswith(name))
+            and _edit_distance_limited(normalized_query, name, max_distance=1) <= 1
+        ):
+            return True
+    return False
+
+
+def _is_weak_derivative_location_match(query: str, location: dict) -> bool:
+    if _is_strong_location_match(query, location):
+        return False
+    semantic_noise_words = {
+        "остров",
+        "острова",
+        "island",
+        "islands",
+        "архипелаг",
+        "archipelago",
+        "гора",
+        "горы",
+        "mount",
+        "mountain",
+        "mountains",
+        "залив",
+        "bay",
+        "мыс",
+        "cape",
+    }
+    for name in _location_name_variants(location):
+        tokens = set(name.split())
+        if tokens & semantic_noise_words:
+            return True
+    return False
+
+
+def _coordinate_distance_km(left: dict, right: dict) -> float | None:
+    try:
+        left_lat = float(left.get("lat"))
+        left_lon = float(left.get("lon"))
+        right_lat = float(right.get("lat"))
+        right_lon = float(right.get("lon"))
+    except (TypeError, ValueError):
+        return None
+    radius_km = 6371.0
+    d_lat = math.radians(right_lat - left_lat)
+    d_lon = math.radians(right_lon - left_lon)
+    lat_1 = math.radians(left_lat)
+    lat_2 = math.radians(right_lat)
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(lat_1) * math.cos(lat_2) * math.sin(d_lon / 2) ** 2
+    )
+    return radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _coordinates_are_city_level_close(left: dict, right: dict, *, threshold_km: float = 15.0) -> bool:
+    distance = _coordinate_distance_km(left, right)
+    return distance is not None and distance <= threshold_km
+
+
+def _same_country_state(left: dict, right: dict) -> bool:
+    left_country = str(left.get("country") or "").strip().upper()
+    right_country = str(right.get("country") or "").strip().upper()
+    if not left_country or not right_country or left_country != right_country:
+        return False
+    left_state = _normalize_location_match_text(left.get("state"))
+    right_state = _normalize_location_match_text(right.get("state"))
+    if left_state and right_state and left_state != right_state:
+        return False
+    return True
+
+
+def _are_near_duplicate_locations(left: dict, right: dict) -> bool:
+    return (
+        _same_country_state(left, right)
+        and _same_or_similar_location_name(left, right)
+        and _coordinates_are_city_level_close(left, right)
+    )
+
+
+def _dedupe_near_identical_locations(query: str, locations: list[dict]) -> list[dict]:
+    ranked = rank_locations(query, locations)
+    result: list[dict] = []
+    for location in ranked:
+        if any(_are_near_duplicate_locations(location, existing) for existing in result):
+            continue
+        result.append(location)
+    return result
+
+
+def cleanup_location_candidates(query: str, locations: list[dict], *, limit: int = 3) -> list[dict]:
+    """Финально чистит варианты геокодинга перед показом пользователю."""
+    if not locations:
+        return []
+    cap = max(1, limit)
+    ranked = rank_locations(query, locations)
+
+    non_noisy = [loc for loc in ranked if not _is_noisy_poi_like_location(loc)]
+    if non_noisy:
+        ranked = non_noisy
+
+    strong_matches = [loc for loc in ranked if _is_strong_location_match(query, loc)]
+    if strong_matches:
+        ranked = strong_matches
+
+    deduped = _dedupe_near_identical_locations(query, ranked)
+    if len(deduped) == 1 and _is_weak_derivative_location_match(query, deduped[0]):
+        return []
+    return deduped[:cap]
 
 
 def _country_priority_score(query: str, location: dict) -> float:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from weather.locations import cleanup_location_candidates
+
 
 GENERIC_CENTER_QUERIES = {
     "центр",
@@ -75,7 +77,8 @@ def find_locations_with_assist(
 
     def _search_once(search_query: str) -> list[dict]:
         found = ctx.get_locations(search_query, limit=5)
-        return ctx.rank_locations(search_query, found)[:3]
+        ranked = ctx.rank_locations(search_query, found)
+        return cleanup_location_candidates(search_query, ranked, limit=3)
 
     tried_queries: list[str] = []
 
