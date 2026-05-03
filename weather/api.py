@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from .locations import _dedupe_geocode_sorted, _enrich_location_item, _location_relevance_score, contains_cyrillic
 from .open_meteo import (
     fetch_open_meteo_forecast_bundle,
+    fetch_open_meteo_geocode,
+    map_open_meteo_geocode_to_ow_candidates,
     map_open_meteo_to_current_weather,
     map_open_meteo_to_forecast_slots,
 )
@@ -21,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _open_meteo_fallback_enabled() -> bool:
-    """OPEN_METEO_FALLBACK=1 enables Open-Meteo forecast/current fallback when OpenWeather fails."""
+    """OPEN_METEO_FALLBACK=1 enables Open-Meteo forecast/current/geocode fallback when OpenWeather fails."""
     return os.getenv("OPEN_METEO_FALLBACK", "").strip() == "1"
 
 
@@ -271,10 +273,11 @@ def get_locations(query: str, limit: int = 5) -> list[dict] | None:
     Ищет населённые пункты и локации по строке запроса (OpenWeather Geocoding API).
     Возвращает список словарей с полями ответа API плюс local_name и label.
     """
-    if not OW_API_KEY:
-        return None
     q = (query or "").strip()
     if not q:
+        return None
+    om_fallback = _open_meteo_fallback_enabled()
+    if not OW_API_KEY and not om_fallback:
         return None
     cap = min(max(1, limit), 5)
     cache_key = _query_cache_key("geocode", q, limit=cap)
@@ -284,6 +287,20 @@ def get_locations(query: str, limit: int = 5) -> list[dict] | None:
         return cached  # type: ignore[return-value]
     _log_cache_miss("geocode", cache_key, query=_normalize_query_for_key(q))
     candidates = _collect_geocode_candidates(q)
+    if not candidates and om_fallback:
+        om_root = None
+        try:
+            om_root = fetch_open_meteo_geocode(q, count=10)
+        except Exception:
+            logger.warning("Open-Meteo geocode fetch raised (ignored)", exc_info=True)
+        om_candidates = map_open_meteo_geocode_to_ow_candidates(om_root)
+        if om_candidates:
+            logger.info(
+                "geocode: provider=open_meteo_fallback query=%s results=%s",
+                _normalize_query_for_key(q),
+                len(om_candidates),
+            )
+            candidates = om_candidates
     if not candidates:
         return None
     candidates.sort(

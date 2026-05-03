@@ -6,8 +6,8 @@ Open-Meteo forecast data is licensed under CC BY 4.0
 intended for non-commercial fair-use; see Open-Meteo documentation for
 rate limits and attribution requirements.
 
-This module is intentionally unwired from bot flows: it only exposes HTTP
-fetch helpers and pure mapping functions for later fallback / dual-source UX.
+This module exposes HTTP fetch helpers and pure mapping functions for
+Open-Meteo forecast/current/geocode fallbacks behind env flags in ``weather.api``.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 _CURRENT_VARS = (
     "temperature_2m,apparent_temperature,relative_humidity_2m,"
@@ -141,6 +142,89 @@ def fetch_open_meteo_forecast_bundle(
     if not isinstance(data, dict):
         return None
     return data
+
+
+def fetch_open_meteo_geocode(
+    name: str,
+    *,
+    count: int = 10,
+    language: str = "ru",
+    timeout: int = 10,
+) -> dict[str, Any] | None:
+    """
+    GET Open-Meteo geocoding ``/v1/search``. No API key.
+    Returns parsed JSON root or None on failure / empty name.
+    """
+    query = (name or "").strip()
+    if len(query) < 2:
+        return None
+    params = {
+        "name": query,
+        "count": max(1, min(int(count), 100)),
+        "language": (language or "en").lower(),
+        "format": "json",
+    }
+    try:
+        response = requests.get(OPEN_METEO_GEOCODE_URL, params=params, timeout=timeout)
+    except requests.RequestException:
+        logger.warning("Open-Meteo geocode request failed for name=%r", query, exc_info=True)
+        return None
+    if response.status_code != 200:
+        logger.warning("Open-Meteo geocode HTTP %s for name=%r", response.status_code, query)
+        return None
+    try:
+        data = response.json()
+    except ValueError:
+        logger.warning("Open-Meteo geocode invalid JSON for name=%r", query)
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def map_open_meteo_geocode_to_ow_candidates(root: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """
+    Map Open-Meteo ``/v1/search`` JSON to OpenWeather geo/1.0/direct-like dicts
+    for ``_enrich_location_item`` / ``rank_locations`` / ``cleanup_location_candidates``.
+    """
+    if not isinstance(root, dict):
+        return []
+    raw_results = root.get("results")
+    if not isinstance(raw_results, list) or not raw_results:
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        try:
+            lat_f = float(item.get("latitude"))
+            lon_f = float(item.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        cc = item.get("country_code")
+        if not isinstance(cc, str) or len(cc.strip()) != 2:
+            continue
+        nm = item.get("name")
+        if not isinstance(nm, str) or not nm.strip():
+            continue
+        admin1 = item.get("admin1")
+        state = admin1.strip() if isinstance(admin1, str) else ""
+        row: dict[str, Any] = {
+            "name": nm.strip(),
+            "lat": lat_f,
+            "lon": lon_f,
+            "country": cc.strip().upper(),
+            "state": state,
+            "local_names": {"ru": nm.strip()},
+            "_provider": "open_meteo",
+        }
+        pop = item.get("population")
+        if isinstance(pop, int):
+            row["population"] = pop
+        elif isinstance(pop, float) and pop.is_integer():
+            row["population"] = int(pop)
+        out.append(row)
+    return out
 
 
 def map_open_meteo_to_current_weather(om: dict[str, Any]) -> dict[str, Any] | None:
