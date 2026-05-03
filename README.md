@@ -1,90 +1,108 @@
 # Weather Teller Telegram Bot
 
-## English summary
+## English Summary
 
-Weather Teller is a Telegram weather bot built with Python, PostgreSQL, Docker, OpenWeather API and OpenAI API.  
-It provides current weather, 5-day forecasts, extended weather metrics, air quality data, smart location comparison, saved locations and multi-location alerts.  
-The project includes AI-powered explanations, weather alert advice, location query assistance and short TTL API caching.  
-The bot is designed as a portfolio-ready educational project with a production-like Docker Compose setup.  
-It runs both locally and in Docker Compose with PostgreSQL as the primary storage.
+Weather Teller is a deployed Telegram weather assistant built with Python, PostgreSQL, Docker Compose, OpenWeather API and OpenAI API.
+It provides current weather, tomorrow forecast, 5-day forecast, saved locations, location comparison, subscriptions and short AI explanations.
+The project is in active beta testing and is designed to run locally or as a Docker Compose deployment.
 
-## Описание проекта
+## Описание
 
-Weather Teller — Telegram-бот для получения погоды, мониторинга изменений, сравнения локаций и хранения часто используемых мест.
+Weather Teller — Telegram-бот для погоды и погодных сценариев на каждый день. Он помогает быстро посмотреть прогноз, сохранить важные локации, сравнить погоду в двух местах и настроить подписки на погодные обновления.
 
-## Основные возможности
+Текущий статус: **v1.2 beta-ready / active beta testing**.
 
-### Погода
+## Возможности
+
+### Меню
+
+Главное меню сгруппировано по разделам:
+
+- 🌦 Прогноз погоды
+- 📍 Локации
+- 🔔 Подписки
+- ℹ️ Помощь
+
+### Прогноз погоды
 
 - текущая погода;
+- прогноз на завтра;
 - прогноз на 5 дней;
-- расширенные данные;
-- качество воздуха;
+- расширенные погодные данные;
+- AI-пояснение текущей погоды;
+- AI-пояснение прогноза на завтра;
+- AI-пояснение выбранного дня прогноза;
 - ввод локации текстом, координатами, геолокацией или через сохранённые локации.
 
 ### Локации
 
-- сохранение часто используемых локаций;
+- сохранение важных локаций;
 - добавление через город, координаты или геолокацию;
 - переименование и удаление;
 - защита от дублей;
-- выбор сохранённых локаций в погоде, прогнозе, расширенных данных, уведомлениях и сравнении;
-- обработка неоднозначных запросов:
-  - Питер / СПб;
-  - мск;
-  - центр;
-  - центр Москвы;
-  - центр Екатеринбурга;
-  - Заречный Свердловская область.
+- использование сохранённых локаций в погоде, прогнозе, расширенных данных, подписках и сравнении.
 
-### Сравнение локаций
+### Сравнение
 
-- режим «Сейчас»;
-- режим «На дату»;
-- выбор каждой из двух локаций любым способом;
-- защита от сравнения одной и той же точки;
-- короткий понятный вывод по погодным условиям;
-- deterministic verdicts для более стабильных формулировок.
+- сравнение локаций сейчас;
+- сравнение прогноза по двум локациям на дату;
+- выбор каждой локации любым доступным способом;
+- фактический нейтральный вывод без навязчивых рекомендаций.
 
-### Уведомления
+### Подписки
 
-- подписки по нескольким локациям;
+- подписки на погодные обновления по нескольким локациям;
 - настройка интервала;
-- включение/выключение;
+- включение и выключение подписки;
 - удаление подписки;
-- AI-совет в уведомлении;
-- уведомления показывают фактический населённый пункт, а не только пользовательское название.
+- хранение подписок в PostgreSQL.
 
-### AI-функции
+### AI и кэширование
 
-- объяснение текущей погоды простым языком;
-- объяснение расширенных данных и качества воздуха;
-- рекомендация по прогнозу дня;
-- совет в уведомлениях;
-- помощь при неоднозначном вводе локации;
-- fallback-режим, если OpenAI API недоступен.
+- OpenAI API для коротких погодных пояснений;
+- deterministic fallback, если OpenAI API недоступен;
+- OpenWeather API cache для погодных запросов;
+- PostgreSQL AI cache для AI-ответов.
 
-### Кэширование
+## Команды
 
-- short TTL in-memory API-cache для OpenWeather:
-  - current weather;
-  - forecast;
-  - air pollution;
-  - geocoding;
-  - reverse geocoding;
-- PostgreSQL AI-cache для AI-ответов;
-- cache hit/miss logging.
+Видимые команды для BotFather:
+
+```text
+start - Главное меню
+weather - Прогноз погоды
+locations - Локации
+subscriptions - Подписки
+help - Помощь
+```
+
+Команды в боте:
+
+- `/start` — главное меню
+- `/weather` — прогноз погоды
+- `/locations` — локации
+- `/subscriptions` — подписки
+- `/help` — помощь
+
+Дополнительно могут работать старые быстрые команды:
+
+- `/current`
+- `/tomorrow`
+- `/forecast`
+- `/details`
+- `/compare`
+- `/alerts`
+- `/geo`
 
 ## Стек
 
 - Python
 - pyTelegramBotAPI
+- Docker Compose
+- PostgreSQL
 - OpenWeather API
 - OpenAI API
-- PostgreSQL
-- Docker / Docker Compose
-- psycopg v3
-- python-dotenv
+- pytest
 
 ## Структура проекта
 
@@ -93,6 +111,7 @@ bot.py
 flows.py
 handlers/
 weather/
+ai/
 ai_weather_service.py
 postgres_storage.py
 alerts_subscription_service.py
@@ -103,53 +122,54 @@ keyboards.py
 Dockerfile
 docker-compose.yml
 docker-compose.postgres.yml
-.env.example
-.env.docker.example
+tests/
 ```
 
-- `bot.py` — точка входа, регистрация обработчиков, запуск polling и фонового worker.
-- `flows.py` — сценарные flow-функции и логика оркестрации уведомлений.
-- `handlers/` — текстовые и callback-обработчики по сценариям.
-- `weather/` — модуль OpenWeather API, геокодинг, reverse geocoding, API-cache.
-- `ai_weather_service.py` — AI-объяснения, AI-assist, deterministic fallback и AI-cache интеграция.
-- `postgres_storage.py` — слой хранения данных в PostgreSQL.
-- `alerts_subscription_service.py` — доменная логика подписок уведомлений.
-- `app_context.py` — контейнер зависимостей приложения.
-- `session_store.py` — runtime-состояния и FSM-данные.
-- `formatters.py` — форматирование пользовательских сообщений.
-- `keyboards.py` — reply/inline клавиатуры.
+Ключевые модули:
+
+- `bot.py` — точка входа, регистрация обработчиков, polling и фоновые процессы.
+- `flows.py` — сценарии погодных flow.
+- `handlers/` — текстовые и callback-обработчики.
+- `weather/` — OpenWeather API, геокодинг, air quality и погодные helpers.
+- `ai/` и `ai_weather_service.py` — prompt builders, fallback-логика, signatures и AI-интеграция.
+- `postgres_storage.py` — хранение данных в PostgreSQL.
+- `alerts_subscription_service.py` — логика подписок.
+- `formatters.py` — пользовательские тексты.
+- `keyboards.py` — reply и inline клавиатуры.
 
 ## Переменные окружения
 
-Пример (`.env`):
+Пример `.env` без секретов:
 
 ```env
-BOT_TOKEN=your_telegram_token
-OW_API_KEY=your_openweather_key
+BOT_TOKEN=your_telegram_bot_token
+OW_API_KEY=your_openweather_api_key
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=your_openai_model
+
 PGHOST=localhost
 PGPORT=5432
 PGDATABASE=weather_teller
 PGUSER=weather_user
-PGPASSWORD=change_me_strong_password
-OPENAI_API_KEY=
-OPENAI_MODEL=your_openai_model
+PGPASSWORD=change_me
 ```
 
 Важно:
 
-- для локального запуска вне Docker обычно `PGHOST=localhost`;
-- для запуска в Docker Compose (когда бот в контейнере) должен быть `PGHOST=postgres`;
-- `OPENAI_API_KEY` опционален;
-- `OPENAI_MODEL` опционален;
-- если `OPENAI_API_KEY` не задан, основные погодные сценарии не падают и работают через fallback.
+- не коммить реальные токены, IP-адреса серверов и production credentials;
+- для локального запуска обычно используется `PGHOST=localhost`;
+- для Docker Compose внутри контейнерной сети обычно используется `PGHOST=postgres`;
+- `OPENAI_API_KEY` опционален: при его отсутствии погодные сценарии продолжают работать через fallback.
 
 ## Локальный запуск
 
-### 1) Создать и активировать виртуальное окружение
+1. Создать виртуальное окружение:
 
 ```bash
 python -m venv venv
 ```
+
+2. Активировать окружение.
 
 Windows PowerShell:
 
@@ -163,13 +183,13 @@ Windows CMD:
 venv\Scripts\activate.bat
 ```
 
-### 2) Установить зависимости
+3. Установить зависимости:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3) Подготовить `.env`
+4. Подготовить `.env`:
 
 ```bash
 cp .env.example .env
@@ -181,23 +201,19 @@ Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-Заполни реальные значения `BOT_TOKEN`, `OW_API_KEY`, `PGPASSWORD`.
+5. Заполнить `BOT_TOKEN`, `OW_API_KEY`, параметры PostgreSQL и при необходимости `OPENAI_API_KEY`.
 
-### 4) При необходимости поднять PostgreSQL
+6. Запустить PostgreSQL локально или через Docker Compose.
 
-Если PostgreSQL не запущен локально отдельно, подними его через Docker (см. раздел ниже).
-
-### 5) Запустить бота
+7. Запустить бота:
 
 ```bash
 python bot.py
 ```
 
-## Запуск PostgreSQL в Docker
+## Docker Compose
 
-Этот режим поднимает только базу, бот запускается локально из Python.
-
-Запуск:
+Запуск PostgreSQL отдельно для локальной разработки:
 
 ```bash
 docker compose -f docker-compose.postgres.yml up -d
@@ -209,105 +225,69 @@ docker compose -f docker-compose.postgres.yml up -d
 docker compose -f docker-compose.postgres.yml down
 ```
 
-## Запуск всего проекта в Docker Compose
-
-Этот режим поднимает оба сервиса: `postgres` и `weather_bot`.  
-Проект использует production-like Docker Compose setup: healthcheck PostgreSQL, запуск бота после `service_healthy`, и дополнительную retry-логику подключения к БД в приложении.
-
-### 1) Подготовить docker-совместимый `.env`
-
-```bash
-cp .env.docker.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.docker.example .env
-```
-
-Заполни реальные `BOT_TOKEN`, `OW_API_KEY`, `PGPASSWORD`.
-
-Важно: для этого режима внутри `.env` должен быть `PGHOST=postgres`.
-
-### 2) Запуск полного стека
+Запуск полного стека:
 
 ```bash
 docker compose up -d --build
 ```
 
-### 3) Остановка
+Остановка полного стека:
 
 ```bash
 docker compose down
 ```
 
-## Просмотр таблиц PostgreSQL в Docker
+Для Docker Compose проверь, что в `.env` указан контейнерный хост PostgreSQL, например `PGHOST=postgres`.
 
-Вход в `psql` с отключённым пейджером:
+## PostgreSQL
+
+В базе хранятся:
+
+- `users` — пользовательские настройки и последняя рабочая локация;
+- `saved_locations` — сохранённые локации;
+- `alert_subscriptions` — подписки на погодные обновления;
+- `ai_response_cache` — кэш AI-ответов.
+
+Пример входа в `psql` внутри контейнера:
 
 ```bash
 docker exec -it weather_postgres psql -U weather_user -d weather_teller -P pager=off
 ```
 
-Список таблиц:
+## Тесты
 
-```sql
-\dt
+Запуск тестов:
+
+```bash
+pytest
 ```
 
-Просмотр данных:
+Проверка компиляции Python-файлов:
 
-```sql
-SELECT * FROM users;
-SELECT * FROM saved_locations;
-SELECT * FROM alert_subscriptions;
-SELECT * FROM ai_response_cache;
+```bash
+python -m compileall .
 ```
 
-Выход:
+## Roadmap
 
-```sql
-\q
-```
+### Near-term
 
-## Что хранится в базе
+- location-not-found copy polish;
+- more beta wording fixes.
 
-- `users` — служебные пользовательские настройки и последняя рабочая локация.
-- `saved_locations` — пользовательские сохранённые локации.
-- `alert_subscriptions` — подписки уведомлений по нескольким локациям (статус, интервал, служебные поля worker).
-- `ai_response_cache` — кэш AI-ответов в PostgreSQL.
+### Experimental, not merged yet
 
-## Команды бота
+- Open-Meteo fallback if OpenWeather fails;
+- compare forecast across two sources.
 
-- `/start` — главное меню
-- `/current` — текущая погода
-- `/forecast` — прогноз на 5 дней
-- `/details` — расширенные данные
-- `/alerts` — уведомления
-- `/compare` — сравнение локаций
-- `/geo` — погода по геолокации
-- `/help` — справка
+### Later
 
-Основной UX реализован через кнопочное меню, а команды сохранены как shortcuts/backward compatibility.
-
-## Текущий статус проекта
-
-- v1 feature-complete;
-- протестирован локально и в Docker Compose;
-- поддерживает серверный деплой;
-- далее запланированы архитектурный рефакторинг и расширение тестового покрытия.
-
-## Future improvements / Roadmap
-
-- split `ai_weather_service.py` into prompts/fallbacks/signatures modules;
-- extract shared location input pipeline;
-- move notifications worker into dedicated service;
-- add tests for critical state transitions;
-- improve observability;
-- optional multilingual mode.
+- voice input;
+- TTS for AI explanations;
+- climate/historical context;
+- separate air quality module.
 
 ## Автор
 
-Автор: Елена Шленскова  
+Автор: Елена Шленскова
 Telegram: @elena_shlenskova
