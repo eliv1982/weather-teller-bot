@@ -229,6 +229,16 @@ def build_ai_compare_days_keyboard(days: list[str]) -> types.InlineKeyboardMarku
     return keyboard
 
 
+def build_ai_compare_date_post_result_keyboard() -> types.InlineKeyboardMarkup:
+    """Действия после результата AI-сравнения на дату (ещё одна дата или выход в меню)."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(
+        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data="aicmp_date_another"),
+        types.InlineKeyboardButton(text="⬅️ В меню", callback_data="yn_menu"),
+    )
+    return keyboard
+
+
 def build_location_pick_keyboard(
     locations: list[dict],
     pick_callback_prefix: str,

@@ -1,3 +1,6 @@
+from .callbacks_common import mark_location_choice_selected
+
+
 def handle_current_weather_callback(
     call,
     *,
@@ -49,6 +52,7 @@ def handle_current_weather_callback(
             location_item.get("label"),
         )
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)))
         ctx.complete_current_weather_from_location(
             ctx.bot,
             chat_id,
@@ -87,6 +91,7 @@ def handle_current_weather_callback(
             "label": target.get("label") or target.get("title") or "Сохранённая локация",
         }
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(location_item["label"]))
         ctx.complete_current_weather_from_location(
             ctx.bot,
             chat_id,

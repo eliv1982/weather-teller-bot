@@ -35,6 +35,7 @@ class AppContext:
     build_ai_action_keyboard: Any
     build_ai_compare_saved_locations_keyboard: Any
     build_ai_compare_days_keyboard: Any
+    build_ai_compare_date_post_result_keyboard: Any
     format_alerts_status: Any
     format_alert_subscriptions: Any
     format_compare_response: Any

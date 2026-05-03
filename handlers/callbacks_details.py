@@ -1,3 +1,6 @@
+from .callbacks_common import mark_location_choice_selected
+
+
 def handle_details_location_callback(
     call,
     *,
@@ -64,6 +67,7 @@ def handle_details_location_callback(
                 reply_markup=ctx.main_menu(),
             )
             return
+        mark_location_choice_selected(call, ctx, str(city))
         send_details_by_coordinates(
             stub,
             user_id,
@@ -100,6 +104,7 @@ def handle_details_location_callback(
             ctx.bot.send_message(chat_id, "⚠️ У сохранённой локации нет координат.", reply_markup=ctx.main_menu())
             return
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, city)
         stub = _message_stub_for_chat(chat_id)
         send_details_by_coordinates(
             stub,

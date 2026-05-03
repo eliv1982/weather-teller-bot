@@ -1,3 +1,6 @@
+from .callbacks_common import mark_location_choice_selected
+
+
 def handle_compare_location_callback(
     call,
     *,
@@ -99,6 +102,7 @@ def handle_compare_location_callback(
         city_label,
     )
     ctx.bot.answer_callback_query(call.id)
+    mark_location_choice_selected(call, ctx, str(city_label))
 
     if step == 1:
         session_store.compare_drafts[user_id] = {

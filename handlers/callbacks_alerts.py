@@ -1,3 +1,6 @@
+from .callbacks_common import mark_location_choice_selected
+
+
 def handle_alerts_location_callback(
     call,
     *,
@@ -74,6 +77,7 @@ def handle_alerts_location_callback(
         if added:
             ctx.save_user(user_id, user_data)
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(label))
         session_store.alerts_location_choices.pop(user_id, None)
         session_store.user_states[user_id] = ALERTS_MENU
         ctx.bot.send_message(chat_id, "✅ Подписка добавлена." if added else "Такая подписка уже существует.", reply_markup=ctx.alerts_menu())
@@ -144,6 +148,7 @@ def handle_alerts_location_callback(
         session_store.user_states[user_id] = ALERTS_MENU
 
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(label))
         ctx.bot.send_message(
             chat_id,
             "✅ Подписка добавлена." if added else "Такая подписка уже существует.",

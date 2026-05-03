@@ -4,6 +4,7 @@ from .locations import (
     _ai_compare_set_location,
     _set_new_saved_location_candidate,
 )
+from .callbacks_common import mark_location_choice_selected
 from .states import (
     LOCATIONS_MENU,
     WAITING_AI_COMPARE_DATE_PICK,
@@ -223,6 +224,7 @@ def handle_saved_location_pick_callback(
             return
 
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(label))
         _set_new_saved_location_candidate(
             call.message,
             user_id,
@@ -308,6 +310,43 @@ def handle_ai_compare_callback(
         ctx.bot.send_message(chat_id, "Сравнение отменено.", reply_markup=ctx.main_menu())
         return
 
+    if data == "aicmp_date_another":
+        draft = session_store.ai_compare_drafts.get(user_id)
+        available_days = draft.get("available_days") if isinstance(draft, dict) else None
+        mode = draft.get("mode") if isinstance(draft, dict) else None
+        loc_1 = draft.get("loc_1") if isinstance(draft, dict) else None
+        loc_2 = draft.get("loc_2") if isinstance(draft, dict) else None
+        grouped_1 = draft.get("grouped_1") if isinstance(draft, dict) else None
+        grouped_2 = draft.get("grouped_2") if isinstance(draft, dict) else None
+        if (
+            not isinstance(draft, dict)
+            or mode != "date"
+            or not isinstance(available_days, list)
+            or not available_days
+            or not isinstance(loc_1, dict)
+            or not isinstance(loc_2, dict)
+            or not isinstance(grouped_1, dict)
+            or not isinstance(grouped_2, dict)
+        ):
+            _ai_compare_reset(user_id, session_store=session_store)
+            session_store.user_states.pop(user_id, None)
+            ctx.bot.answer_callback_query(call.id)
+            ctx.bot.send_message(
+                chat_id,
+                "Не нашла предыдущие локации для сравнения. Запусти сравнение заново.",
+                reply_markup=ctx.main_menu(),
+            )
+            return
+        ctx.bot.answer_callback_query(call.id)
+        draft["date_repick"] = True
+        session_store.user_states[user_id] = WAITING_AI_COMPARE_DATE_PICK
+        ctx.bot.send_message(
+            chat_id,
+            "Выбери дату для сравнения:",
+            reply_markup=ctx.build_ai_compare_days_keyboard(available_days),
+        )
+        return
+
     if data.startswith("aicmp_geo_pick:"):
         parts = data.split(":")
         if len(parts) != 3:
@@ -338,6 +377,7 @@ def handle_ai_compare_callback(
             return
         city_label = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, str(city_label))
         stub = type("MsgStub", (), {"chat": type("ChatStub", (), {"id": chat_id})()})()
         _ai_compare_set_location(
             stub,
@@ -442,23 +482,29 @@ def handle_ai_compare_callback(
             day_items_2,
             location_meta=loc_2,
         )
+        ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, selected_day)
         text = ctx.ai_weather_service.compare_two_locations_forecast_day_with_ai(
             payload_1,
             payload_2,
             selected_day,
         )
-        _ai_compare_reset(user_id, session_store=session_store)
+        session_store.ai_compare_location_choices.pop(user_id, None)
         session_store.user_states.pop(user_id, None)
-        ctx.bot.answer_callback_query(call.id)
+        if draft.get("date_repick"):
+            interim_text = f"Обновляю сравнение на {selected_day}."
+            draft.pop("date_repick", None)
+        else:
+            interim_text = f"Сравниваю прогноз на {selected_day}."
         ctx.bot.send_message(
             chat_id,
-            f"Вторая локация: {loc_2.get('city_label') or 'Локация 2'}. Сравниваю прогноз на {selected_day}.",
+            interim_text,
             reply_markup=ctx.main_menu(),
         )
         ctx.bot.send_message(
             chat_id,
             f"✨ Сравнить локации ({selected_day})\n\n✨ Сводка:\n{text}",
-            reply_markup=ctx.main_menu(),
+            reply_markup=ctx.build_ai_compare_date_post_result_keyboard(),
         )
         return
 
