@@ -26,13 +26,11 @@ def help_text() -> str:
     return (
         "ℹ️ Доступные команды:\n"
         "/start — главное меню\n"
-        "/current — текущая погода\n"
-        "/forecast — прогноз на 5 дней\n"
-        "/geo — погода по геолокации\n"
-        "/compare — сравнить города\n"
-        "/details — расширенные данные\n"
-        "/alerts — уведомления\n"
-        "/locations — мои локации"
+        "/weather — прогноз погоды\n"
+        "/locations — локации\n"
+        "/subscriptions — подписки\n"
+        "/help — помощь\n\n"
+        "Дополнительно работают быстрые команды: /current, /tomorrow, /forecast, /details, /compare, /geo."
     )
 
 

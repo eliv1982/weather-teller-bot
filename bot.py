@@ -318,11 +318,25 @@ def handle_help(message: types.Message) -> None:
     bot.send_message(message.chat.id, help_text(), reply_markup=main_menu())
 
 
+@bot.message_handler(commands=["weather"])
+def handle_weather(message: types.Message) -> None:
+    """Открывает раздел прогноза погоды через slash-команду."""
+    logger.info("Получена команда /weather от пользователя %s.", message.from_user.id)
+    bot.send_message(message.chat.id, "Выбери погодный раздел.", reply_markup=weather_menu())
+
+
 @bot.message_handler(commands=["current"])
 def handle_current(message: types.Message) -> None:
     """Запускает сценарий текущей погоды через slash-команду."""
     logger.info("Получена команда /current от пользователя %s.", message.from_user.id)
     start_current_weather_flow(message)
+
+
+@bot.message_handler(commands=["tomorrow"])
+def handle_tomorrow(message: types.Message) -> None:
+    """Запускает сценарий прогноза на завтра через slash-команду."""
+    logger.info("Получена команда /tomorrow от пользователя %s.", message.from_user.id)
+    start_tomorrow_forecast_flow(message)
 
 
 @bot.message_handler(commands=["forecast"])
@@ -357,6 +371,13 @@ def handle_compare(message: types.Message) -> None:
 def handle_alerts(message: types.Message) -> None:
     """Запускает сценарий уведомлений через slash-команду."""
     logger.info("Получена команда /alerts от пользователя %s.", message.from_user.id)
+    start_alerts_flow(message)
+
+
+@bot.message_handler(commands=["subscriptions"])
+def handle_subscriptions(message: types.Message) -> None:
+    """Запускает раздел подписок через slash-команду."""
+    logger.info("Получена команда /subscriptions от пользователя %s.", message.from_user.id)
     start_alerts_flow(message)
 
 
