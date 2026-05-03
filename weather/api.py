@@ -7,7 +7,11 @@ import requests
 from dotenv import load_dotenv
 
 from .locations import _dedupe_geocode_sorted, _enrich_location_item, _location_relevance_score, contains_cyrillic
-from .open_meteo import fetch_open_meteo_forecast_bundle, map_open_meteo_to_forecast_slots
+from .open_meteo import (
+    fetch_open_meteo_forecast_bundle,
+    map_open_meteo_to_current_weather,
+    map_open_meteo_to_forecast_slots,
+)
 
 load_dotenv()
 OW_API_KEY = os.getenv("OW_API_KEY")
@@ -16,9 +20,56 @@ LAST_ERROR_TYPE = None  # None | "network" | "rate_limit"
 logger = logging.getLogger(__name__)
 
 
-def _open_meteo_forecast_fallback_enabled() -> bool:
-    """OPEN_METEO_FALLBACK=1 enables Open-Meteo forecast fallback when OpenWeather fails."""
+def _open_meteo_fallback_enabled() -> bool:
+    """OPEN_METEO_FALLBACK=1 enables Open-Meteo forecast/current fallback when OpenWeather fails."""
     return os.getenv("OPEN_METEO_FALLBACK", "").strip() == "1"
+
+
+def _mapped_current_weather_usable(mapped: dict) -> bool:
+    """Shape checks for Open-Meteo current mapping (format_weather_response / prompts)."""
+    if not isinstance(mapped, dict):
+        return False
+    main = mapped.get("main")
+    if not isinstance(main, dict) or main.get("temp") is None:
+        return False
+    weather = mapped.get("weather")
+    if not isinstance(weather, list) or not weather:
+        return False
+    w0 = weather[0]
+    if not isinstance(w0, dict) or not isinstance(w0.get("description"), str):
+        return False
+    wind = mapped.get("wind")
+    if not isinstance(wind, dict):
+        return False
+    return True
+
+
+def _try_current_from_open_meteo(lat: float, lon: float, cache_key: str) -> dict | None:
+    """
+    Best-effort Open-Meteo current conditions mapped to OpenWeather-like dict.
+    Caches under the same key as OpenWeather success for identical downstream UX.
+    """
+    if not _open_meteo_fallback_enabled():
+        return None
+    try:
+        om = fetch_open_meteo_forecast_bundle(lat, lon)
+    except Exception:
+        logger.warning("Open-Meteo current fetch raised (ignored)", exc_info=True)
+        return None
+    if not isinstance(om, dict):
+        return None
+    try:
+        mapped = map_open_meteo_to_current_weather(om)
+    except Exception:
+        logger.warning("Open-Meteo current mapping raised (ignored)", exc_info=True)
+        return None
+    if mapped is None or not _mapped_current_weather_usable(mapped):
+        logger.info("current_weather: open_meteo_fallback unusable payload lat=%s lon=%s", lat, lon)
+        return None
+    logger.info("current_weather: provider=open_meteo_fallback lat=%s lon=%s", lat, lon)
+    API_CACHE.set(cache_key, mapped, ttl_seconds=TTL_CURRENT_SECONDS)
+    _log_cache_set("current_weather", cache_key, TTL_CURRENT_SECONDS)
+    return mapped
 
 
 def _try_forecast_from_open_meteo(lat: float, lon: float, cache_key: str) -> list[dict] | None:
@@ -26,7 +77,7 @@ def _try_forecast_from_open_meteo(lat: float, lon: float, cache_key: str) -> lis
     Best-effort Open-Meteo forecast mapped to OpenWeather-like slots.
     Caches under the same key as OpenWeather success for identical downstream UX.
     """
-    if not _open_meteo_forecast_fallback_enabled():
+    if not _open_meteo_fallback_enabled():
         return None
     try:
         om = fetch_open_meteo_forecast_bundle(lat, lon)
@@ -288,15 +339,20 @@ def get_current_weather(lat: float, lon: float) -> dict | None:
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "appid": OW_API_KEY, "units": "metric", "lang": "ru"}
     response = safe_request(url, params)
-    if response is None or response.status_code != 200:
-        return None
-    try:
-        result = response.json()
-    except ValueError:
-        return None
-    API_CACHE.set(cache_key, result, ttl_seconds=TTL_CURRENT_SECONDS)
-    _log_cache_set("current_weather", cache_key, TTL_CURRENT_SECONDS)
-    return result
+    if response is not None and response.status_code == 200:
+        try:
+            result = response.json()
+        except ValueError:
+            result = None
+        else:
+            API_CACHE.set(cache_key, result, ttl_seconds=TTL_CURRENT_SECONDS)
+            _log_cache_set("current_weather", cache_key, TTL_CURRENT_SECONDS)
+            return result
+
+    om_current = _try_current_from_open_meteo(lat, lon, cache_key)
+    if om_current:
+        return om_current
+    return None
 
 
 def get_coordinates(query: str, limit: int = 1) -> tuple[float, float] | None:
