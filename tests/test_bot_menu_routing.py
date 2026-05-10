@@ -56,6 +56,69 @@ def test_weather_menu_button_routes_to_source_compare(monkeypatch):
     assert calls == ["🔎 Сравнить источники"]
 
 
+def test_source_compare_menu_mode_button_sets_current_mode_and_asks_for_location(monkeypatch):
+    telebot_module = types.ModuleType("telebot")
+    telebot_module.TeleBot = _FakeTeleBot
+    telebot_module.types = types.SimpleNamespace(
+        Message=object,
+        CallbackQuery=object,
+        ReplyKeyboardMarkup=object,
+        KeyboardButton=object,
+        InlineKeyboardMarkup=object,
+        InlineKeyboardButton=object,
+        ReplyKeyboardRemove=lambda: "reply-keyboard-remove",
+    )
+    dotenv_module = types.ModuleType("dotenv")
+    dotenv_module.load_dotenv = lambda: None
+
+    monkeypatch.setenv("BOT_TOKEN", "test-bot-token")
+    monkeypatch.setitem(sys.modules, "telebot", telebot_module)
+    monkeypatch.setitem(sys.modules, "dotenv", dotenv_module)
+    sys.modules.pop("bot", None)
+    bot = importlib.import_module("bot")
+
+    calls = []
+    monkeypatch.setattr(bot, "start_source_compare_mode_flow", lambda message, mode: calls.append((message.text, mode)))
+    bot.session_store.user_states[1] = bot.SOURCE_COMPARE_MENU
+    message = types.SimpleNamespace(text="🌡 Сейчас", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
+
+    bot.handle_menu_buttons(message)
+
+    assert calls == [("🌡 Сейчас", "current")]
+
+
+def test_unknown_text_in_source_compare_menu_reshows_same_keyboard(monkeypatch):
+    telebot_module = types.ModuleType("telebot")
+    telebot_module.TeleBot = _FakeTeleBot
+    telebot_module.types = types.SimpleNamespace(
+        Message=object,
+        CallbackQuery=object,
+        ReplyKeyboardMarkup=object,
+        KeyboardButton=object,
+        InlineKeyboardMarkup=object,
+        InlineKeyboardButton=object,
+        ReplyKeyboardRemove=lambda: "reply-keyboard-remove",
+    )
+    dotenv_module = types.ModuleType("dotenv")
+    dotenv_module.load_dotenv = lambda: None
+
+    monkeypatch.setenv("BOT_TOKEN", "test-bot-token")
+    monkeypatch.setitem(sys.modules, "telebot", telebot_module)
+    monkeypatch.setitem(sys.modules, "dotenv", dotenv_module)
+    sys.modules.pop("bot", None)
+    bot = importlib.import_module("bot")
+
+    sent = []
+    monkeypatch.setattr(bot.bot, "send_message", lambda *args, **kwargs: sent.append((args, kwargs)))
+    monkeypatch.setattr(bot, "source_compare_mode_menu", lambda: "source-compare-menu")
+    bot.session_store.user_states[1] = bot.SOURCE_COMPARE_MENU
+    message = types.SimpleNamespace(text="непонятно", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
+
+    bot.handle_unknown_text(message)
+
+    assert sent == [((2, "Выбери режим сравнения источников."), {"reply_markup": "source-compare-menu"})]
+
+
 def test_weather_menu_button_routes_current_weather_via_new_visible_label(monkeypatch):
     telebot_module = types.ModuleType("telebot")
     telebot_module.TeleBot = _FakeTeleBot

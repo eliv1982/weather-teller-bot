@@ -30,6 +30,15 @@ def weather_menu() -> types.ReplyKeyboardMarkup:
     return keyboard
 
 
+def source_compare_mode_menu() -> types.ReplyKeyboardMarkup:
+    """Подменю выбора режима сравнения OpenWeather и Open-Meteo."""
+    keyboard = _persistent_reply_keyboard()
+    keyboard.row(types.KeyboardButton("🌡 Сейчас"), types.KeyboardButton("☀️ Сегодня"))
+    keyboard.row(types.KeyboardButton("🌤 Завтра"), types.KeyboardButton("📅 На дату"))
+    keyboard.row(types.KeyboardButton("⬅️ Назад"))
+    return keyboard
+
+
 def geo_request_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт клавиатуру для запроса геолокации."""
     keyboard = _persistent_reply_keyboard()
@@ -244,6 +253,25 @@ def build_ai_compare_date_post_result_keyboard() -> types.InlineKeyboardMarkup:
     keyboard = types.InlineKeyboardMarkup()
     keyboard.row(
         types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data="aicmp_date_another"),
+        types.InlineKeyboardButton(text="⬅️ В меню", callback_data="yn_menu"),
+    )
+    return keyboard
+
+
+def build_source_compare_days_keyboard(days: list[str]) -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора даты для сравнения источников."""
+    keyboard = types.InlineKeyboardMarkup()
+    for day in days:
+        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"source_compare_date_pick:{day}"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="source_compare_date_cancel"))
+    return keyboard
+
+
+def build_source_compare_date_post_result_keyboard() -> types.InlineKeyboardMarkup:
+    """Действия после сравнения источников на выбранную дату."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(
+        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data="source_compare_date_another"),
         types.InlineKeyboardButton(text="⬅️ В меню", callback_data="yn_menu"),
     )
     return keyboard

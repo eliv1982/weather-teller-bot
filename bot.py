@@ -35,12 +35,15 @@ from keyboards import (
     build_location_pick_keyboard,
     build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard,
+    build_source_compare_date_post_result_keyboard,
+    build_source_compare_days_keyboard,
     build_ai_action_keyboard,
     geo_request_menu,
     location_input_menu,
     locations_menu,
     main_menu,
     saved_locations_management_menu,
+    source_compare_mode_menu,
     weather_menu,
     yes_no_menu,
 )
@@ -51,6 +54,7 @@ from formatters import (
     format_compare_response,
     format_details_response,
     format_saved_locations,
+    format_source_compare_current_response,
     format_source_compare_response,
     format_today_forecast_response,
     format_tomorrow_forecast_response,
@@ -105,6 +109,7 @@ from handlers.states import (
     LOCATIONS_STATES,
     ALERTS_MENU,
     LOCATIONS_MENU,
+    SOURCE_COMPARE_MENU,
     WEATHER_MENU,
     WAITING_ALERTS_ADD_GEO,
     WAITING_ALERTS_ADD_MENU,
@@ -139,6 +144,7 @@ from handlers.states import (
     WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
     WAITING_SOURCE_COMPARE_CITY,
+    WAITING_SOURCE_COMPARE_DATE_PICK,
     WAITING_SOURCE_COMPARE_COORDS,
     WAITING_SOURCE_COMPARE_GEO,
     WAITING_SOURCE_COMPARE_PICK,
@@ -170,6 +176,7 @@ from flows import (
     send_details_by_coordinates as flow_send_details_by_coordinates,
     send_forecast_by_coordinates as flow_send_forecast_by_coordinates,
     send_source_compare_by_coordinates as flow_send_source_compare_by_coordinates,
+    send_source_compare_by_selected_date as flow_send_source_compare_by_selected_date,
     send_today_forecast_by_coordinates as flow_send_today_forecast_by_coordinates,
     send_tomorrow_forecast_by_coordinates as flow_send_tomorrow_forecast_by_coordinates,
     start_alerts_flow as flow_start_alerts_flow,
@@ -180,6 +187,7 @@ from flows import (
     start_geo_weather_flow as flow_start_geo_weather_flow,
     start_locations_flow as flow_start_locations_flow,
     start_source_compare_flow as flow_start_source_compare_flow,
+    start_source_compare_mode_flow as flow_start_source_compare_mode_flow,
     start_weather_menu_flow as flow_start_weather_menu_flow,
     start_today_forecast_flow as flow_start_today_forecast_flow,
     start_tomorrow_forecast_flow as flow_start_tomorrow_forecast_flow,
@@ -227,6 +235,7 @@ ctx = AppContext(
     add_saved_location_menu=add_saved_location_menu,
     ai_compare_mode_menu=ai_compare_mode_menu,
     ai_compare_location_method_menu=ai_compare_location_method_menu,
+    source_compare_mode_menu=source_compare_mode_menu,
     location_input_menu=location_input_menu,
     geo_request_menu=geo_request_menu,
     yes_no_menu=yes_no_menu,
@@ -237,6 +246,8 @@ ctx = AppContext(
     build_alert_subscriptions_keyboard=build_alert_subscriptions_keyboard,
     build_saved_locations_keyboard=build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
+    build_source_compare_days_keyboard=build_source_compare_days_keyboard,
+    build_source_compare_date_post_result_keyboard=build_source_compare_date_post_result_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
     build_ai_action_keyboard=build_ai_action_keyboard,
     build_ai_compare_saved_locations_keyboard=build_ai_compare_saved_locations_keyboard,
@@ -247,6 +258,7 @@ ctx = AppContext(
     format_compare_response=format_compare_response,
     format_details_response=format_details_response,
     format_saved_locations=format_saved_locations,
+    format_source_compare_current_response=format_source_compare_current_response,
     format_source_compare_response=format_source_compare_response,
     format_today_forecast_response=format_today_forecast_response,
     format_tomorrow_forecast_response=format_tomorrow_forecast_response,
@@ -284,12 +296,14 @@ start_details_flow = partial(flow_start_details_flow, ctx=ctx, session_store=ses
 start_compare_flow = partial(flow_start_compare_flow, ctx=ctx, session_store=session_store)
 start_forecast_flow = partial(flow_start_forecast_flow, ctx=ctx, session_store=session_store)
 start_source_compare_flow = partial(flow_start_source_compare_flow, ctx=ctx, session_store=session_store)
+start_source_compare_mode_flow = partial(flow_start_source_compare_mode_flow, ctx=ctx, session_store=session_store)
 start_weather_menu_flow = partial(flow_start_weather_menu_flow, ctx=ctx, session_store=session_store)
 start_today_forecast_flow = partial(flow_start_today_forecast_flow, ctx=ctx, session_store=session_store)
 start_tomorrow_forecast_flow = partial(flow_start_tomorrow_forecast_flow, ctx=ctx, session_store=session_store)
 send_details_by_coordinates = partial(flow_send_details_by_coordinates, ctx=ctx, session_store=session_store)
 send_forecast_by_coordinates = partial(flow_send_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 send_source_compare_by_coordinates = partial(flow_send_source_compare_by_coordinates, ctx=ctx, session_store=session_store)
+send_source_compare_by_selected_date = partial(flow_send_source_compare_by_selected_date, ctx=ctx, session_store=session_store)
 send_today_forecast_by_coordinates = partial(flow_send_today_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 send_tomorrow_forecast_by_coordinates = partial(flow_send_tomorrow_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 complete_compare_two_locations = partial(flow_complete_compare_two_locations, ctx=ctx, session_store=session_store)
@@ -305,6 +319,10 @@ MENU_BUTTONS = [
     "🧭 Расширенные данные",
     "🔎 Сравнить источники",
     "🔎 Сверить источники",
+    "🌡 Сейчас",
+    "☀️ Сегодня",
+    "🌤 Завтра",
+    "📅 На дату",
     "⚖️ Сравнить локации",
     "🌤 Текущая погода",
     "📅 Прогноз на 5 дней",
@@ -422,6 +440,7 @@ def handle_locations(message: types.Message) -> None:
 def handle_menu_buttons(message: types.Message) -> None:
     """Обрабатывает нажатия кнопок главного меню."""
     section_name = message.text
+    state = session_store.get_state(message.from_user.id)
     logger.info("Пользователь %s нажал кнопку меню: %s", message.from_user.id, section_name)
 
     if section_name in {"🌦 Прогноз погоды", "Прогноз погоды"}:
@@ -441,6 +460,15 @@ def handle_menu_buttons(message: types.Message) -> None:
         return
     if section_name in {"🔎 Сравнить источники", "Сравнить источники", "🔎 Сверить источники", "Сверить источники"}:
         start_source_compare_flow(message)
+        return
+    if state == SOURCE_COMPARE_MENU and section_name in {"🌡 Сейчас", "☀️ Сегодня", "🌤 Завтра", "📅 На дату"}:
+        mode_map = {
+            "🌡 Сейчас": "current",
+            "☀️ Сегодня": "today",
+            "🌤 Завтра": "tomorrow",
+            "📅 На дату": "date",
+        }
+        start_source_compare_mode_flow(message, mode_map[section_name])
         return
 
     if section_name in {"❓ Помощь", "ℹ️ Помощь", "Помощь"}:
@@ -587,6 +615,7 @@ def handle_location_message(message: types.Message) -> None:
         lon = location_data.longitude
         location = get_location_by_coordinates(lat, lon)
         city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
         send_source_compare_by_coordinates(
             message,
             user_id,
@@ -918,6 +947,7 @@ def handle_source_compare_callback(call: types.CallbackQuery) -> None:
         ctx=ctx,
         session_store=session_store,
         send_source_compare_by_coordinates=send_source_compare_by_coordinates,
+        send_source_compare_by_selected_date=send_source_compare_by_selected_date,
         _message_stub_for_chat=_message_stub_for_chat,
     )
 
@@ -970,6 +1000,17 @@ def handle_unknown_text(message: types.Message) -> None:
     if message.text in MENU_BUTTONS:
         return
 
+    if state == SOURCE_COMPARE_MENU:
+        if message.text == "⬅️ Назад":
+            start_weather_menu_flow(message)
+            return
+        bot.send_message(
+            message.chat.id,
+            "Выбери режим сравнения источников.",
+            reply_markup=source_compare_mode_menu(),
+        )
+        return
+
     if state == WEATHER_MENU:
         bot.send_message(
             message.chat.id,
@@ -1020,6 +1061,7 @@ def handle_unknown_text(message: types.Message) -> None:
 
     if state in {
         WAITING_SOURCE_COMPARE_CITY,
+        WAITING_SOURCE_COMPARE_DATE_PICK,
         WAITING_SOURCE_COMPARE_COORDS,
         WAITING_SOURCE_COMPARE_GEO,
         WAITING_SOURCE_COMPARE_PICK,

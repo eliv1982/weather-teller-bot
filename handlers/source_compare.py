@@ -3,8 +3,10 @@ from telebot import types
 from coordinates_parser import parse_coordinates
 from location_query_assist import find_locations_with_assist
 from .states import (
+    SOURCE_COMPARE_MENU,
     WAITING_SOURCE_COMPARE_CITY,
     WAITING_SOURCE_COMPARE_COORDS,
+    WAITING_SOURCE_COMPARE_DATE_PICK,
     WAITING_SOURCE_COMPARE_GEO,
     WAITING_SOURCE_COMPARE_PICK,
     WAITING_SOURCE_COMPARE_SAVED_PICK,
@@ -21,6 +23,24 @@ def handle_source_compare_text(
     send_source_compare_by_coordinates,
 ) -> bool:
     """Handles location input for source-compare flow."""
+    if state == SOURCE_COMPARE_MENU:
+        text = (message.text or "").strip()
+        if text == "⬅️ Назад":
+            session_store.user_states.pop(user_id, None)
+            session_store.source_compare_drafts.pop(user_id, None)
+            ctx.bot.send_message(
+                message.chat.id,
+                "Выбери раздел в меню ниже.",
+                reply_markup=ctx.weather_menu(),
+            )
+            return True
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери режим сравнения источников.",
+            reply_markup=ctx.source_compare_mode_menu(),
+        )
+        return True
+
     if state == WAITING_SOURCE_COMPARE_CITY:
         query = (message.text or "").strip()
         if query == "⭐ Из сохранённых":
@@ -62,6 +82,7 @@ def handle_source_compare_text(
             lat, lon = parsed
             location = ctx.get_location_by_coordinates(lat, lon)
             city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+            ctx.bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
             send_source_compare_by_coordinates(
                 message,
                 user_id,
@@ -105,6 +126,7 @@ def handle_source_compare_text(
                     reply_markup=ctx.main_menu(),
                 )
                 return True
+            ctx.bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
             send_source_compare_by_coordinates(
                 message,
                 user_id,
@@ -132,6 +154,7 @@ def handle_source_compare_text(
         lat, lon = parsed
         location = ctx.get_location_by_coordinates(lat, lon)
         city = ctx.build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        ctx.bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
         send_source_compare_by_coordinates(
             message,
             user_id,
@@ -169,6 +192,13 @@ def handle_source_compare_text(
             message.chat.id,
             "Отправь геолокацию через кнопку ниже.",
             reply_markup=ctx.geo_request_menu(),
+        )
+        return True
+
+    if state == WAITING_SOURCE_COMPARE_DATE_PICK:
+        ctx.bot.send_message(
+            message.chat.id,
+            "Выбери дату кнопкой ниже или нажми «⬅️ Отмена».",
         )
         return True
 

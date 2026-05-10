@@ -374,6 +374,59 @@ def get_current_weather(lat: float, lon: float) -> dict | None:
     return None
 
 
+def get_current_weather_openweather_only(lat: float, lon: float) -> dict | None:
+    """Fetches OpenWeather current weather without any Open-Meteo fallback."""
+    if not OW_API_KEY:
+        return None
+    cache_key = _coord_cache_key("current_ow_direct", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("current_ow_direct", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("current_ow_direct", cache_key)
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {"lat": lat, "lon": lon, "appid": OW_API_KEY, "units": "metric", "lang": "ru"}
+    response = safe_request(url, params)
+    if response is None or response.status_code != 200:
+        return None
+    try:
+        result = response.json()
+    except ValueError:
+        return None
+    if not isinstance(result, dict):
+        return None
+    API_CACHE.set(cache_key, result, ttl_seconds=TTL_CURRENT_SECONDS)
+    _log_cache_set("current_ow_direct", cache_key, TTL_CURRENT_SECONDS)
+    return result
+
+
+def get_current_weather_open_meteo_direct(lat: float, lon: float) -> dict | None:
+    """Fetches Open-Meteo current conditions mapped to OpenWeather-like dict."""
+    cache_key = _coord_cache_key("current_om_direct", lat, lon)
+    cached = API_CACHE.get(cache_key)
+    if cached is not None:
+        _log_cache_hit("current_om_direct", cache_key)
+        return cached  # type: ignore[return-value]
+    _log_cache_miss("current_om_direct", cache_key)
+    try:
+        om_root = fetch_open_meteo_forecast_bundle(lat, lon)
+    except Exception:
+        logger.warning("Open-Meteo direct current fetch raised", exc_info=True)
+        return None
+    if not isinstance(om_root, dict):
+        return None
+    try:
+        mapped = map_open_meteo_to_current_weather(om_root)
+    except Exception:
+        logger.warning("Open-Meteo direct current mapping raised", exc_info=True)
+        return None
+    if mapped is None or not _mapped_current_weather_usable(mapped):
+        return None
+    API_CACHE.set(cache_key, mapped, ttl_seconds=TTL_CURRENT_SECONDS)
+    _log_cache_set("current_om_direct", cache_key, TTL_CURRENT_SECONDS)
+    return mapped
+
+
 def get_coordinates(query: str, limit: int = 1) -> tuple[float, float] | None:
     """
     Возвращает координаты (широта, долгота) первой найденной локации по запросу.

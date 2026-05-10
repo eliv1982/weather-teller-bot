@@ -1,4 +1,5 @@
 from .callbacks_common import mark_location_choice_selected
+from .states import WAITING_SOURCE_COMPARE_DATE_PICK
 
 
 def handle_source_compare_callback(
@@ -7,6 +8,7 @@ def handle_source_compare_callback(
     ctx,
     session_store,
     send_source_compare_by_coordinates,
+    send_source_compare_by_selected_date,
     _message_stub_for_chat,
 ) -> None:
     """Handles inline location choice for source-compare flow."""
@@ -108,6 +110,52 @@ def handle_source_compare_callback(
             float(lon),
             city,
             preferred_city_label=city,
+        )
+        return
+
+    if call.data == "source_compare_date_cancel":
+        session_store.source_compare_drafts.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(chat_id, "Выбор даты отменён.", reply_markup=ctx.main_menu())
+        return
+
+    if call.data == "source_compare_date_another":
+        draft = session_store.source_compare_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")
+            return
+        available_days = draft.get("available_days")
+        city_label = str(draft.get("city_label") or "локации")
+        if not isinstance(available_days, list) or not available_days:
+            ctx.bot.answer_callback_query(call.id, "Даты недоступны.")
+            return
+        session_store.user_states[user_id] = WAITING_SOURCE_COMPARE_DATE_PICK
+        ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(
+            chat_id,
+            f"Выбери дату прогноза для {city_label}:",
+            reply_markup=ctx.build_source_compare_days_keyboard(available_days),
+        )
+        return
+
+    if call.data.startswith("source_compare_date_pick:"):
+        selected_day = call.data.split(":", 1)[1] if ":" in call.data else ""
+        draft = session_store.source_compare_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")
+            return
+        available_days = draft.get("available_days")
+        if not isinstance(available_days, list) or selected_day not in available_days:
+            ctx.bot.answer_callback_query(call.id, "Дата недоступна.")
+            return
+        ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, selected_day)
+        stub = _message_stub_for_chat(chat_id)
+        send_source_compare_by_selected_date(
+            stub,
+            user_id,
+            selected_day,
         )
         return
 

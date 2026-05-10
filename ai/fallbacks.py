@@ -17,11 +17,21 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
     description = normalize_weather_description((weather_list[0].get("description") if weather_list else "") or "без описания")
     wind_speed = wind_data.get("speed")
     desc_lower = str(description).lower()
-    has_precipitation = any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег"))
+    has_rain = any(x in desc_lower for x in ("дожд", "лив", "морось"))
+    has_snow = "снег" in desc_lower
+    has_thunder = "гроза" in desc_lower
     precipitation_note = (
-        "По текущим данным, осадки сейчас есть."
-        if has_precipitation
-        else "По текущим данным, осадков сейчас нет."
+        "По текущим данным, сейчас идёт дождь."
+        if has_rain
+        else (
+            "По текущим данным, сейчас идёт снег."
+            if has_snow
+            else (
+                "По текущим данным, сейчас возможна гроза."
+                if has_thunder
+                else "По текущим данным, осадков сейчас нет."
+            )
+        )
     )
     cold_advice = False
     if isinstance(feels_like, (int, float)):
@@ -54,7 +64,7 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
         else:
             meaningful_wind = True
             wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
-    has_caution = has_precipitation or cold_advice or meaningful_wind or bool(pressure_note)
+    has_caution = has_rain or has_snow or has_thunder or cold_advice or meaningful_wind or bool(pressure_note)
     comfort = "" if has_caution else "По ощущениям погода без явного дискомфорта."
     advice_parts = [precipitation_note, clothes]
     if pressure_note:
@@ -90,11 +100,7 @@ def fallback_day_forecast(city_label: str, day_items: list[dict]) -> str:
         if isinstance(temp, (int, float)) and (best_temp is None or temp > best_temp):
             best_temp = float(temp)
             best_slot = dt_txt
-    rain_note = (
-        "В течение дня возможны осадки, зонт лучше взять с собой."
-        if rain_slots > 0
-        else "Существенных осадков по прогнозу не видно."
-    )
+    rain_note = "В течение дня возможны осадки." if rain_slots > 0 else "Существенных осадков по прогнозу не видно."
     slot_note = ""
     if best_slot and " " in best_slot:
         try:
@@ -205,7 +211,13 @@ def fallback_tomorrow_forecast(city_label: str, day_items: list[dict]) -> str:
         if isinstance(wind_speed, (int, float)):
             wind_speeds.append(float(wind_speed))
 
-    precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
+    dominant = _dominant_description(day_items).lower()
+    if "снег" in dominant:
+        precip_note = "Ожидается снег." if precip_slots else "Существенных осадков не ожидается."
+    elif any(x in dominant for x in ("дожд", "лив", "гроза", "морось")):
+        precip_note = f"Ожидается {dominant}." if precip_slots else "Существенных осадков не ожидается."
+    else:
+        precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
     return (
         f"Завтра в локации {city_label} ожидается {_dominant_description(day_items)}. "
         f"Температура будет примерно {_range_text(temps, '°C')}, "
@@ -245,7 +257,13 @@ def fallback_today_forecast(city_label: str, day_items: list[dict], *, is_remain
             wind_speeds.append(float(wind_speed))
 
     prefix = "Сегодня"
-    precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
+    dominant = _dominant_description(day_items).lower()
+    if "снег" in dominant:
+        precip_note = "Ожидается снег." if precip_slots else "Существенных осадков не ожидается."
+    elif any(x in dominant for x in ("дожд", "лив", "гроза", "морось")):
+        precip_note = f"Ожидается {dominant}." if precip_slots else "Существенных осадков не ожидается."
+    else:
+        precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
     return (
         f"{prefix} в локации {city_label} ожидается {_dominant_description(day_items)}. "
         f"Температура будет примерно {_range_text(temps, '°C')}, "

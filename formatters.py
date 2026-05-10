@@ -413,6 +413,103 @@ def _source_compare_precip_line(text: str) -> str:
     return normalized
 
 
+def _normalize_precip_text(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _detect_precipitation_type(description: object, precipitation_text: object) -> str:
+    combined = " ".join(
+        part for part in (
+            _normalize_precip_text(description),
+            _normalize_precip_text(precipitation_text),
+        ) if part
+    )
+    if any(marker in combined for marker in ("гроза",)):
+        return "thunderstorm"
+    if "мокрый снег" in combined:
+        return "sleet"
+    if any(marker in combined for marker in ("снег",)):
+        return "snow"
+    if any(marker in combined for marker in ("дожд", "лив", "морось")):
+        return "rain"
+    return "unknown"
+
+
+def _precipitation_type_label(precip_type: str, *, current: bool = False, likely: bool = False) -> str:
+    if precip_type == "thunderstorm":
+        return "возможна гроза" if likely or current else "гроза"
+    if precip_type == "sleet":
+        return "возможен мокрый снег" if likely or current else "мокрый снег"
+    if precip_type == "snow":
+        return "идёт снег" if current else ("возможен снег" if likely else "снег")
+    if precip_type == "rain":
+        return "идёт дождь" if current else ("возможен дождь" if likely else "дождь")
+    return "возможны осадки" if likely else "осадки"
+
+
+def _build_precipitation_profile(payload: dict, *, current: bool = False) -> dict[str, object]:
+    precipitation_text = _normalize_precip_text(payload.get("precipitation_text"))
+    description = payload.get("dominant_description")
+    precip_type = _detect_precipitation_type(description, precipitation_text)
+    signal = payload.get("precipitation_signal") if isinstance(payload.get("precipitation_signal"), dict) else {}
+    max_pop = signal.get("max_pop") if isinstance(signal, dict) else None
+    has_probability = isinstance(max_pop, (int, float))
+    max_pop_value = float(max_pop) if has_probability else None
+    no_precip = any(
+        marker in precipitation_text
+        for marker in ("без осадков", "без существенных осадков", "не ожидаются")
+    )
+    high = any(marker in precipitation_text for marker in ("высокий шанс",)) or (has_probability and max_pop_value >= 0.7)
+    medium = any(marker in precipitation_text for marker in ("возможен", "возможна", "умеренный")) or (
+        has_probability and max_pop_value >= 0.35
+    )
+    low = any(marker in precipitation_text for marker in ("маловероят", "низкий")) or (
+        has_probability and 0.0 < max_pop_value < 0.35
+    )
+    if no_precip:
+        presence = "none"
+        confidence = "none"
+    elif precip_type != "unknown" or high or medium or low or (has_probability and max_pop_value >= 0.2):
+        presence = "risk"
+        if high:
+            confidence = "high"
+        elif medium:
+            confidence = "medium"
+        elif low:
+            confidence = "low"
+        else:
+            confidence = "risk"
+    else:
+        presence = "unknown"
+        confidence = "unknown"
+    return {
+        "type": precip_type,
+        "presence": presence,
+        "confidence": confidence,
+        "probability": max_pop_value,
+        "display": _source_compare_precip_line(str(payload.get("precipitation_text") or "")),
+        "specific": _precipitation_type_label(
+            precip_type,
+            current=current,
+            likely=presence == "risk",
+        ) if precip_type != "unknown" else ("без осадков" if presence == "none" else "возможны осадки"),
+    }
+
+
+def _precipitation_amount_label(payload: dict) -> str:
+    precip_type = _detect_precipitation_type(
+        payload.get("dominant_description"),
+        payload.get("precipitation_text"),
+    )
+    if precip_type == "rain":
+        return "количество дождя"
+    if precip_type == "snow":
+        return "количество снега"
+    if precip_type == "sleet":
+        return "количество мокрого снега"
+    return "количество осадков"
+
+
 def _format_percent(value: object) -> str | None:
     if isinstance(value, (int, float)):
         return f"до {round(float(value) * 100):.0f}%"
@@ -498,7 +595,7 @@ def _format_source_compare_provider_block(provider_name: str, payload: dict) -> 
         lines.append(f"• вероятность осадков: {probability_text}")
     precipitation_amount_text = _format_mm((payload.get("precipitation_signal") or {}).get("max_amount") if isinstance(payload.get("precipitation_signal"), dict) else None)
     if precipitation_amount_text:
-        lines.append(f"• количество осадков: {precipitation_amount_text}")
+        lines.append(f"• {_precipitation_amount_label(payload)}: {precipitation_amount_text}")
     wind_line = _format_wind_numeric_band(payload)
     if wind_line:
         lines.append(f"• ветер: {wind_line}")
@@ -508,6 +605,28 @@ def _format_source_compare_provider_block(provider_name: str, payload: dict) -> 
     pressure_line = _format_pressure_band_mmhg(payload.get("min_pressure"), payload.get("max_pressure"))
     if pressure_line:
         lines.append(f"• давление: {pressure_line}")
+    return lines
+
+
+def _format_source_compare_current_provider_block(provider_name: str, payload: dict) -> list[str]:
+    lines = [f"{provider_name}:"]
+    temperature = payload.get("temperature")
+    feels_like = payload.get("feels_like")
+    humidity = payload.get("humidity")
+    pressure = payload.get("pressure")
+    wind_line = _format_wind_numeric_band(payload)
+    if isinstance(temperature, (int, float)):
+        lines.append(f"• температура: {float(temperature):.1f} °C")
+    if isinstance(feels_like, (int, float)):
+        lines.append(f"• ощущается как: {float(feels_like):.1f} °C")
+    lines.append(f"• условия: {payload.get('dominant_description') or 'н/д'}")
+    if isinstance(humidity, (int, float)):
+        lines.append(f"• влажность: {round(float(humidity))}%")
+    pressure_line = _format_pressure_band_mmhg(pressure, pressure)
+    if pressure_line:
+        lines.append(f"• давление: {pressure_line}")
+    if wind_line:
+        lines.append(f"• ветер: {wind_line}")
     return lines
 
 
@@ -619,30 +738,125 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
             return "По ветру различия небольшие."
         return "По ветру данных недостаточно."
 
-    ow_precip = str(openweather_payload.get("precipitation_text") or "").strip()
-    om_precip = str(open_meteo_payload.get("precipitation_text") or "").strip()
+    ow_precip = _build_precipitation_profile(openweather_payload)
+    om_precip = _build_precipitation_profile(open_meteo_payload)
     temperature_sentence = _temperature_sentence()
     wind_sentence = _wind_sentence()
-    if ow_precip and om_precip and ow_precip != om_precip:
-        return (
-            "Источники расходятся по осадкам: "
-            f"OpenWeather показывает {ow_precip}, Open-Meteo — {om_precip}. "
-            f"{temperature_sentence} {wind_sentence}"
-        )
 
-    if ow_precip == "без существенных осадков":
-        if temperature_sentence == "По температуре прогнозы близки.":
-            return f"Источники в целом сходятся: температура близкая, существенных осадков не ожидается. {wind_sentence}"
-        return f"Источники в целом сходятся: существенных осадков не ожидается. {temperature_sentence} {wind_sentence}"
-    if ow_precip:
-        return f"Источники в целом сходятся: оба прогноза показывают {ow_precip}. {temperature_sentence} {wind_sentence}"
-    return f"Источники в целом сходятся. {temperature_sentence} {wind_sentence}"
+    def _prob_text(profile: dict[str, object], fallback: str) -> str:
+        probability = profile.get("probability")
+        if isinstance(probability, float):
+            return f"до {round(probability * 100):.0f}%"
+        confidence = str(profile.get("confidence") or "")
+        mapping = {
+            "high": "высокий шанс",
+            "medium": "умеренную вероятность",
+            "low": "низкую вероятность",
+            "risk": "возможный риск",
+        }
+        return mapping.get(confidence, fallback)
+
+    def _precip_sentence() -> str:
+        ow_presence = str(ow_precip.get("presence") or "")
+        om_presence = str(om_precip.get("presence") or "")
+        ow_type = str(ow_precip.get("type") or "")
+        om_type = str(om_precip.get("type") or "")
+        type_names = {
+            "rain": "дождь",
+            "snow": "снег",
+            "thunderstorm": "грозу",
+            "sleet": "мокрый снег",
+        }
+        if ow_presence == "none" and om_presence == "none":
+            return "По осадкам источники сходятся: существенных осадков не ожидается."
+        if ow_presence == "risk" and om_presence == "risk":
+            if ow_type == om_type and ow_type != "unknown":
+                shared_type = type_names.get(ow_type, "осадки")
+                if isinstance(ow_precip.get("probability"), float) and isinstance(om_precip.get("probability"), float):
+                    ow_prob = _prob_text(ow_precip, "высокую")
+                    om_prob = _prob_text(om_precip, "умеренную")
+                    if ow_prob != om_prob:
+                        return (
+                            f"Оба источника допускают {shared_type}, но OpenWeather оценивает вероятность выше: "
+                            f"{ow_prob} против {om_prob}."
+                        )
+                if str(ow_precip.get("confidence")) != str(om_precip.get("confidence")):
+                    return (
+                        f"Оба источника допускают {shared_type}, но по-разному оценивают вероятность: "
+                        f"OpenWeather показывает {_prob_text(ow_precip, 'высокий шанс')}, "
+                        f"Open-Meteo — {_prob_text(om_precip, 'умеренную вероятность')}."
+                    )
+                return f"По осадкам источники сходятся: оба прогноза допускают {shared_type}."
+            if ow_type != om_type and ow_type != "unknown" and om_type != "unknown":
+                return (
+                    "Источники расходятся по типу осадков: "
+                    f"OpenWeather показывает {_precipitation_type_label(ow_type)}, "
+                    f"Open-Meteo — {_precipitation_type_label(om_type)}."
+                )
+        if ow_presence != om_presence:
+            return (
+                "Источники расходятся по осадкам: "
+                f"OpenWeather показывает {ow_precip.get('specific')}, Open-Meteo — {om_precip.get('specific')}."
+            )
+        if ow_type != om_type and ow_type != "unknown" and om_type != "unknown":
+            return (
+                "Источники расходятся по типу осадков: "
+                f"OpenWeather показывает {_precipitation_type_label(ow_type)}, "
+                f"Open-Meteo — {_precipitation_type_label(om_type)}."
+            )
+        return "По осадкам источники в целом сходятся."
+
+    return f"{_precip_sentence()} {temperature_sentence} {wind_sentence}"
 
 
-def format_source_compare_response(city_label: str, openweather_payload: dict, open_meteo_payload: dict) -> str:
-    """Formats deterministic tomorrow comparison between OpenWeather and Open-Meteo."""
+def _build_source_compare_current_summary(openweather_payload: dict, open_meteo_payload: dict) -> str:
+    def _temp_value(payload: dict) -> float | None:
+        value = payload.get("temperature")
+        if isinstance(value, (int, float)):
+            return float(value)
+        value = payload.get("min_temp")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    temp_ow = _temp_value(openweather_payload)
+    temp_om = _temp_value(open_meteo_payload)
+    if isinstance(temp_ow, float) and isinstance(temp_om, float):
+        temp_delta = abs(temp_ow - temp_om)
+        if temp_delta <= 2:
+            temperature_sentence = "Источники в целом сходятся по температуре."
+        elif temp_delta <= 4:
+            temperature_sentence = (
+                f"По температуре есть умеренное расхождение: OpenWeather даёт {temp_ow:.1f} °C, "
+                f"Open-Meteo — {temp_om:.1f} °C."
+            )
+        else:
+            temperature_sentence = (
+                f"По температуре есть заметное расхождение: OpenWeather даёт {temp_ow:.1f} °C, "
+                f"Open-Meteo — {temp_om:.1f} °C."
+            )
+    else:
+        temperature_sentence = "По температуре данных недостаточно для уверенного вывода."
+
+    full_summary = _build_source_compare_summary(openweather_payload, open_meteo_payload)
+    parts = [part.strip() for part in full_summary.split(". ") if part.strip()]
+    precipitation_sentence = next((part for part in parts if "осадк" in part), "По осадкам данных недостаточно.")
+    wind_sentence = next((part for part in parts if "ветру" in part), "По ветру данных недостаточно.")
+    if not precipitation_sentence.endswith("."):
+        precipitation_sentence += "."
+    if not wind_sentence.endswith("."):
+        wind_sentence += "."
+    return f"{temperature_sentence} {wind_sentence} {precipitation_sentence}"
+
+
+def format_source_compare_response(
+    city_label: str,
+    openweather_payload: dict,
+    open_meteo_payload: dict,
+    *,
+    title: str = "🔎 Сравнение прогнозов на завтра",
+) -> str:
+    """Formats deterministic forecast comparison between OpenWeather and Open-Meteo."""
     lines = [
-        "🔎 Сравнение прогнозов на завтра",
+        title,
         "",
         f"📍 {city_label}",
         "",
@@ -651,5 +865,21 @@ def format_source_compare_response(city_label: str, openweather_payload: dict, o
         *_format_source_compare_provider_block("Open-Meteo", open_meteo_payload),
         "",
         f"✨ {_build_source_compare_summary(openweather_payload, open_meteo_payload)}",
+    ]
+    return "\n".join(lines)
+
+
+def format_source_compare_current_response(city_label: str, openweather_payload: dict, open_meteo_payload: dict) -> str:
+    """Formats deterministic current-conditions comparison between OpenWeather and Open-Meteo."""
+    lines = [
+        "🔎 Сравнение погоды сейчас",
+        "",
+        f"📍 {city_label}",
+        "",
+        *_format_source_compare_current_provider_block("OpenWeather", openweather_payload),
+        "",
+        *_format_source_compare_current_provider_block("Open-Meteo", open_meteo_payload),
+        "",
+        f"✨ {_build_source_compare_current_summary(openweather_payload, open_meteo_payload)}",
     ]
     return "\n".join(lines)

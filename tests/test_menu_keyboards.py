@@ -112,3 +112,15 @@ def test_compare_mode_menu_uses_emoji_labels(monkeypatch):
         "📅 Сравнить на дату",
         "⬅️ Назад",
     ]
+
+
+def test_source_compare_mode_menu_groups_modes_cleanly(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    assert _button_rows(keyboards.source_compare_mode_menu()) == [
+        ["🌡 Сейчас", "☀️ Сегодня"],
+        ["🌤 Завтра", "📅 На дату"],
+        ["⬅️ Назад"],
+    ]
+    assert keyboards.source_compare_mode_menu().kwargs.get("one_time_keyboard") is False
+    assert keyboards.source_compare_mode_menu().kwargs.get("is_persistent") is True

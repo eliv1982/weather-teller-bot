@@ -525,11 +525,17 @@ class AiWeatherService:
         current: bool = False,
     ) -> str:
         desc = self._normalize_description(description)
+        if "небольшой дождь" in desc:
+            return "идёт небольшой дождь" if current else "ожидается небольшой дождь"
+        if "сильный дождь" in desc:
+            return "идёт сильный дождь" if current else "ожидается сильный дождь"
+        if "гроза" in desc:
+            return "идёт гроза" if current else "возможна гроза"
         has_snow = "снег" in desc
-        has_rain = any(marker in desc for marker in ("дожд", "лив", "гроза"))
+        has_rain = any(marker in desc for marker in ("дожд", "лив", "морось"))
         likely = isinstance(probability, (int, float)) and float(probability) >= 0.2
         if has_snow:
-            return "возможен снег"
+            return "идёт снег" if current else "возможен снег"
         if has_rain:
             return "идёт дождь" if current else "возможен дождь"
         if likely:
@@ -542,10 +548,14 @@ class AiWeatherService:
 
     def _current_precipitation_summary(self, description: object) -> str:
         desc = self._normalize_description(description)
+        if "небольшой дождь" in desc:
+            return "идёт небольшой дождь"
         if "снег" in desc:
             return "идёт снег"
-        if any(marker in desc for marker in ("дожд", "лив", "гроза")):
-            return "идут осадки"
+        if "гроза" in desc:
+            return "идёт гроза"
+        if any(marker in desc for marker in ("дожд", "лив", "морось")):
+            return "идёт дождь"
         return "осадков по текущим данным нет"
 
     def _compare_location_label(self, city_label: str) -> str:
@@ -560,10 +570,14 @@ class AiWeatherService:
         if not clean_description or clean_description == "н/д":
             return f"{label}: {temperature_note}"
         desc_lower = clean_description.lower()
+        if "небольшой дождь" in desc_lower:
+            return f"{label}: {temperature_note}, идёт небольшой дождь"
         if "снег" in desc_lower:
             return f"{label}: {temperature_note}, идёт снег"
-        if any(marker in desc_lower for marker in ("дожд", "лив", "гроза")):
-            return f"{label}: {temperature_note}, идут осадки"
+        if "гроза" in desc_lower:
+            return f"{label}: {temperature_note}, идёт гроза"
+        if any(marker in desc_lower for marker in ("дожд", "лив", "морось")):
+            return f"{label}: {temperature_note}, идёт дождь"
         return f"{label}: {temperature_note} и {desc_lower}"
 
     def _temperature_weather_adjective(self, temperature_note: str) -> str:
@@ -598,11 +612,13 @@ class AiWeatherService:
 
     def _forecast_short_precipitation_summary(self, description: object, probability: object) -> str:
         desc = self._normalize_description(description)
+        if "гроза" in desc:
+            return "возможна гроза"
         if "снег" in desc:
             return "ожидается снег"
-        if any(marker in desc for marker in ("дожд", "лив", "гроза")):
+        if any(marker in desc for marker in ("дожд", "лив", "морось")):
             likely = isinstance(probability, (int, float)) and float(probability) >= 0.45
-            return f"ожидается {desc}" if likely else "возможны осадки"
+            return f"ожидается {desc}" if likely else "возможен дождь"
         if isinstance(probability, (int, float)) and float(probability) >= 0.2:
             return "возможны осадки"
         return "без осадков"

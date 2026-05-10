@@ -157,6 +157,8 @@ def test_today_forecast_prompt_for_remaining_day_avoids_leftover_day_phrase():
     assert "Поясни прогноз на сегодня" in prompt
     assert "на оставшуюся часть дня" not in prompt
     assert "оставшейся части дня" not in prompt
+    assert "Осадки упоминай один раз." in prompt
+    assert "осадки идут" in prompt
 
 
 def test_today_forecast_fallback_for_remaining_day_avoids_leftover_day_phrase():
@@ -182,6 +184,30 @@ def test_today_forecast_fallback_with_data_starts_with_today_not_leftover_day_ph
     assert text.startswith("Сегодня в локации Тольятти")
     assert "На оставшуюся часть дня" not in text
     assert "В оставшуюся часть дня" not in text
+
+
+def test_tomorrow_forecast_fallback_uses_specific_precipitation_once():
+    text = fallbacks.fallback_tomorrow_forecast(
+        "Москва",
+        [
+            {
+                "dt_txt": "2026-05-03 09:00:00",
+                "main": {"temp": 10, "feels_like": 8, "pressure": 1009},
+                "wind": {"speed": 4},
+                "weather": [{"description": "небольшой дождь"}],
+            },
+            {
+                "dt_txt": "2026-05-03 12:00:00",
+                "main": {"temp": 12, "feels_like": 10, "pressure": 1012},
+                "wind": {"speed": 4},
+                "weather": [{"description": "небольшой дождь"}],
+            },
+        ],
+    )
+
+    assert "Ожидается небольшой дождь." in text
+    assert "Возможны осадки." not in text
+    assert "Зонт не нужен" not in text
 
 
 def test_tomorrow_forecast_fallback_does_not_relabel_raw_pressure_as_mmhg():
@@ -231,7 +257,7 @@ def test_tomorrow_forecast_fallback_uses_clear_wind_and_soft_low_pressure():
         ],
     )
 
-    assert "Возможны осадки." in text
+    assert "Ожидается небольшой дождь." in text
     assert "Ветер заметный, но не сильный." in text
     assert "Давление: 743-746 мм рт. ст., ниже обычного." in text
     assert "слабый до заметного" not in text

@@ -21,6 +21,8 @@ def test_build_current_prompt_normalizes_description_without_mutating_input():
     assert RAW_DESCRIPTION not in prompt
     assert "нужен ли зонт" not in prompt
     assert "есть ли сейчас осадки" in prompt
+    assert "Осадки упоминай один раз." in prompt
+    assert "идут осадки" in prompt
     assert weather_data == original
 
 
