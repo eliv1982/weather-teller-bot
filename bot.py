@@ -300,6 +300,7 @@ MENU_BUTTONS = [
     "☀️ Прогноз на сегодня",
     "🌤 Прогноз на завтра",
     "🧭 Расширенные данные",
+    "🔎 Сравнить источники",
     "🔎 Сверить источники",
     "⚖️ Сравнить локации",
     "🌤 Текущая погода",
@@ -435,7 +436,7 @@ def handle_menu_buttons(message: types.Message) -> None:
     if section_name in {"📅 Прогноз на 5 дней", "Прогноз на 5 дней"}:
         start_forecast_flow(message)
         return
-    if section_name in {"🔎 Сверить источники", "Сверить источники"}:
+    if section_name in {"🔎 Сравнить источники", "Сравнить источники", "🔎 Сверить источники", "Сверить источники"}:
         start_source_compare_flow(message)
         return
 

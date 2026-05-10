@@ -61,7 +61,7 @@ def test_send_source_compare_by_coordinates_renders_result(monkeypatch):
 
     assert result is True
     assert [message["text"] for message in bot.messages] == [
-        "Сверка прогноза готова.",
+        "Сравнение прогнозов готово.",
         "compare Москва ясно облачно",
     ]
     assert 7 not in session_store.user_states

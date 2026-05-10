@@ -45,7 +45,7 @@ def _assert_no_advisory_or_comparative_phrases(text: str):
 
 
 def _short_comments(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("Кратко:")]
+    return [line for line in text.splitlines() if line.startswith("✨ ")]
 
 
 def _current_payload(city_label: str, *, temp: float, feels_like: float, humidity: int, wind: float, description: str):
@@ -109,7 +109,8 @@ def test_compare_current_outputs_factual_blocks(monkeypatch):
     assert text.count("📍") == 2
     for label in ("🌡 Температура", "🤔 Ощущается как", "☁️ Описание", "💧 Влажность", "🌬 Ветер"):
         assert label in text
-    assert text.count("Кратко:") == 2
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
     assert "воздух сухой" in text
     assert "влажность умеренная" in text
     assert "ветер умеренный" in text
@@ -137,7 +138,8 @@ def test_compare_current_rain_uses_absolute_precipitation(monkeypatch):
     assert "возможен снег" in text.lower()
     assert "ветер заметный" in text
     assert "ветер сильный" in text
-    assert text.count("Кратко:") == 2
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
     for comment in _short_comments(text):
         assert "Екатеринбург" not in comment
         assert "Москва" not in comment
@@ -186,7 +188,8 @@ def test_compare_forecast_outputs_factual_blocks(monkeypatch):
         assert label in text
     assert "возможен дождь" in text
     assert "без осадков" in text
-    assert text.count("Кратко:") == 2
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
     for comment in _short_comments(text):
         assert "Тольятти" not in comment
         assert "Санкт-Петербург" not in comment
@@ -214,5 +217,6 @@ def test_compare_forecast_legacy_renderers_are_factual(monkeypatch):
     for text in outputs:
         assert "Екатеринбург" in text
         assert "Москва" in text
-        assert text.count("Кратко:") == 2
+        assert text.count("✨ ") == 2
+        assert "Кратко:" not in text
         _assert_no_advisory_or_comparative_phrases(text)

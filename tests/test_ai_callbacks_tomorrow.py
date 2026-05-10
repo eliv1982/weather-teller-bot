@@ -66,7 +66,8 @@ def test_tomorrow_ai_callback_uses_explanation_label_not_recommendation():
 
     handle_ai_callback(_call("ai_tomorrow_forecast_day:03.05"), ctx=_ctx(bot), session_store=_session_store())
 
-    assert bot.messages[-1]["text"] == "✨ Пояснение:\ntomorrow explanation for Москва: 1"
+    assert bot.messages[-1]["text"] == "✨ tomorrow explanation for Москва: 1"
+    assert "Пояснение:" not in bot.messages[-1]["text"]
     assert "Рекомендация на день" not in bot.messages[-1]["text"]
 
 
@@ -83,4 +84,5 @@ def test_today_ai_callback_uses_today_explanation_flow():
 
     handle_ai_callback(_call("ai_today_forecast_day:03.05"), ctx=_ctx(bot), session_store=_session_store())
 
-    assert bot.messages[-1]["text"] == "✨ Пояснение:\nremaining explanation for Москва: 1"
+    assert bot.messages[-1]["text"] == "✨ remaining explanation for Москва: 1"
+    assert "Пояснение:" not in bot.messages[-1]["text"]

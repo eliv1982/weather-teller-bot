@@ -29,7 +29,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
 
         text = ctx.ai_weather_service.explain_current_weather(city_label, weather)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, f"✨ Объяснение:\n{text}", reply_markup=ctx.main_menu())
+        ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
     if data == "ai_details_explain":
@@ -57,7 +57,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
             air_components = None
         text = ctx.ai_weather_service.explain_weather_details(city_label, weather, air_components)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, f"💡 Пояснение:\n{text}", reply_markup=ctx.main_menu())
+        ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
     if data.startswith("ai_forecast_day:"):
@@ -93,7 +93,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
         city_label = cache.get("city") or "выбранная локация"
         text = ctx.ai_weather_service.explain_tomorrow_forecast(city_label, day_items)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, f"✨ Пояснение:\n{text}", reply_markup=ctx.main_menu())
+        ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
     if data.startswith("ai_today_forecast_day:"):
@@ -115,7 +115,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
             is_remaining_day=is_remaining_day_forecast(day_items),
         )
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, f"✨ Пояснение:\n{text}", reply_markup=ctx.main_menu())
+        ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
     ctx.bot.answer_callback_query(call.id)

@@ -17,10 +17,11 @@ def test_formatter_sources_agree_on_precipitation_and_temperature_close():
         _payload(10, 22, "переменная облачность", "без существенных осадков", "умеренный"),
         _payload(9, 21, "переменная облачность", "без существенных осадков", "умеренный"),
     )
-    assert "🔎 Сверка прогноза на завтра" in text
+    assert "🔎 Сравнение прогнозов на завтра" in text
     assert "• осадки: не ожидаются" in text
-    assert "Источники в целом сходятся" in text
+    assert "✨ Источники в целом сходятся" in text
     assert "температура близкая" in text
+    assert "Кратко:" not in text
 
 
 def test_formatter_sources_differ_on_precipitation():

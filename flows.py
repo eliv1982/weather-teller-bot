@@ -549,7 +549,7 @@ def send_source_compare_by_coordinates(
         result["openweather"],
         result["open_meteo"],
     )
-    ctx.bot.send_message(message.chat.id, "Сверка прогноза готова.", reply_markup=types.ReplyKeyboardRemove())
+    ctx.bot.send_message(message.chat.id, "Сравнение прогнозов готово.", reply_markup=types.ReplyKeyboardRemove())
     ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.main_menu())
     return True
 

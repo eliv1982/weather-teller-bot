@@ -457,7 +457,7 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
 def format_source_compare_response(city_label: str, openweather_payload: dict, open_meteo_payload: dict) -> str:
     """Formats deterministic tomorrow comparison between OpenWeather and Open-Meteo."""
     lines = [
-        "🔎 Сверка прогноза на завтра",
+        "🔎 Сравнение прогнозов на завтра",
         "",
         f"📍 {city_label}",
         "",
@@ -473,7 +473,6 @@ def format_source_compare_response(city_label: str, openweather_payload: dict, o
         f"• осадки: {_source_compare_precip_line(str(open_meteo_payload.get('precipitation_text') or ''))}",
         f"• ветер: {open_meteo_payload.get('wind_text') or 'н/д'}",
         "",
-        "Кратко:",
-        _build_source_compare_summary(openweather_payload, open_meteo_payload),
+        f"✨ {_build_source_compare_summary(openweather_payload, open_meteo_payload)}",
     ]
     return "\n".join(lines)

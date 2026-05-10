@@ -17,7 +17,7 @@ def weather_menu() -> types.ReplyKeyboardMarkup:
     keyboard.row(types.KeyboardButton("🌡 Погода сейчас"), types.KeyboardButton("☀️ Прогноз на сегодня"))
     keyboard.row(types.KeyboardButton("🌤 Прогноз на завтра"))
     keyboard.row(types.KeyboardButton("📅 Прогноз на 5 дней"), types.KeyboardButton("🧭 Расширенные данные"))
-    keyboard.row(types.KeyboardButton("🔎 Сверить источники"))
+    keyboard.row(types.KeyboardButton("🔎 Сравнить источники"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 

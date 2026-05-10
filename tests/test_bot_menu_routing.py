@@ -48,11 +48,11 @@ def test_weather_menu_button_routes_to_source_compare(monkeypatch):
 
     calls = []
     monkeypatch.setattr(bot, "start_source_compare_flow", lambda message: calls.append(message.text))
-    message = types.SimpleNamespace(text="🔎 Сверить источники", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
+    message = types.SimpleNamespace(text="🔎 Сравнить источники", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
 
     bot.handle_menu_buttons(message)
 
-    assert calls == ["🔎 Сверить источники"]
+    assert calls == ["🔎 Сравнить источники"]
 
 
 def test_weather_menu_button_routes_current_weather_via_new_visible_label(monkeypatch):

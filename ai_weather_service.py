@@ -543,7 +543,7 @@ class AiWeatherService:
         description = self._clean_compare_description(payload.get("description"))
         precipitation_note = self._precipitation_absolute_note(description, current=True)
         short = (
-            f"Кратко: {self._temperature_absolute_note(feels_like if isinstance(feels_like, (int, float)) else temperature)}, "
+            f"✨ {self._temperature_absolute_note(feels_like if isinstance(feels_like, (int, float)) else temperature)}, "
             f"{self._humidity_absolute_note(humidity)}, {self._wind_absolute_note(wind_speed)}. "
             f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
         )
@@ -578,7 +578,7 @@ class AiWeatherService:
     ) -> str:
         """Совместимый factual-render для старого интерфейса ветки current."""
         _ = (winner_idx, name_1, name_2, warmer, calmer, drier, no_rain)
-        return "\n\n".join([f"📍 {city_1_label}", "Кратко: факты по локации не переданы.", f"📍 {city_2_label}", "Кратко: факты по локации не переданы."])
+        return "\n\n".join([f"📍 {city_1_label}", "✨ Факты по локации не переданы.", f"📍 {city_2_label}", "✨ Факты по локации не переданы."])
 
     def _render_compare_current_near_identical(
         self,
@@ -589,7 +589,7 @@ class AiWeatherService:
     ) -> str:
         """Совместимый factual-render для старого интерфейса ветки current."""
         _ = (d_wind, d_hum)
-        return "\n\n".join([f"📍 {name_1}", "Кратко: факты по локации не переданы.", f"📍 {name_2}", "Кратко: факты по локации не переданы."])
+        return "\n\n".join([f"📍 {name_1}", "✨ Факты по локации не переданы.", f"📍 {name_2}", "✨ Факты по локации не переданы."])
 
     def _render_compare_current_mixed(
         self,
@@ -604,7 +604,7 @@ class AiWeatherService:
     ) -> str:
         """Совместимый factual-render для старого интерфейса ветки current."""
         _ = (name_1, name_2, warmer, calmer, drier, no_rain)
-        return "\n\n".join([f"📍 {city_1_label}", "Кратко: факты по локации не переданы.", f"📍 {city_2_label}", "Кратко: факты по локации не переданы."])
+        return "\n\n".join([f"📍 {city_1_label}", "✨ Факты по локации не переданы.", f"📍 {city_2_label}", "✨ Факты по локации не переданы."])
 
     def _fallback_weather_alert(self, location_label: str, alert_payload: dict) -> str:
         """Детерминированный fallback для погодного уведомления (1-2 коротких предложения)."""
@@ -1037,7 +1037,7 @@ class AiWeatherService:
         max_wind = wind_signal.get("max_speed") if isinstance(wind_signal, dict) else None
         precipitation_note = self._forecast_precipitation_note(payload)
         short = (
-            f"Кратко: {self._temperature_absolute_note(avg_temp)}, "
+            f"✨ {self._temperature_absolute_note(avg_temp)}, "
             f"{self._wind_absolute_note(avg_wind)}. "
             f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
         )
