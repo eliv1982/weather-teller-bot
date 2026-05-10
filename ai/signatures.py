@@ -135,6 +135,21 @@ def tomorrow_forecast_signature(city_label: str, day_forecast_data: list[dict]) 
     return {**signature, "mode": "tomorrow_forecast", "format_version": "tomorrow_ai_v2", "tomorrow_slots": slots}
 
 
+def today_forecast_signature(
+    city_label: str,
+    day_forecast_data: list[dict],
+    *,
+    is_remaining_day: bool = False,
+) -> dict:
+    signature = tomorrow_forecast_signature(city_label, day_forecast_data)
+    return {
+        **signature,
+        "mode": "today_forecast",
+        "format_version": "today_ai_v1",
+        "is_remaining_day": bool(is_remaining_day),
+    }
+
+
 def details_signature(city_label: str, weather_data: dict, air_quality_data: dict | None) -> dict:
     main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}

@@ -52,11 +52,12 @@ from formatters import (
     format_details_response,
     format_saved_locations,
     format_source_compare_response,
+    format_today_forecast_response,
     format_tomorrow_forecast_response,
     format_weather_response,
     help_text,
 )
-from forecast_service import get_tomorrow_forecast_day, group_forecast_by_day, format_forecast_day
+from forecast_service import get_today_forecast_day, get_tomorrow_forecast_day, group_forecast_by_day, format_forecast_day
 from alerts_subscription_service import AlertsSubscriptionService
 from alerts_service import (
     ensure_notifications_defaults,
@@ -141,6 +142,8 @@ from handlers.states import (
     WAITING_SOURCE_COMPARE_GEO,
     WAITING_SOURCE_COMPARE_PICK,
     WAITING_SOURCE_COMPARE_SAVED_PICK,
+    WAITING_TODAY_FORECAST_CITY,
+    WAITING_TODAY_FORECAST_GEO,
     WAITING_TOMORROW_FORECAST_CITY,
     WAITING_TOMORROW_FORECAST_GEO,
     WAITING_LOCATION_TITLE,
@@ -166,6 +169,7 @@ from flows import (
     send_details_by_coordinates as flow_send_details_by_coordinates,
     send_forecast_by_coordinates as flow_send_forecast_by_coordinates,
     send_source_compare_by_coordinates as flow_send_source_compare_by_coordinates,
+    send_today_forecast_by_coordinates as flow_send_today_forecast_by_coordinates,
     send_tomorrow_forecast_by_coordinates as flow_send_tomorrow_forecast_by_coordinates,
     start_alerts_flow as flow_start_alerts_flow,
     start_compare_flow as flow_start_compare_flow,
@@ -175,6 +179,7 @@ from flows import (
     start_geo_weather_flow as flow_start_geo_weather_flow,
     start_locations_flow as flow_start_locations_flow,
     start_source_compare_flow as flow_start_source_compare_flow,
+    start_today_forecast_flow as flow_start_today_forecast_flow,
     start_tomorrow_forecast_flow as flow_start_tomorrow_forecast_flow,
 )
 
@@ -241,6 +246,7 @@ ctx = AppContext(
     format_details_response=format_details_response,
     format_saved_locations=format_saved_locations,
     format_source_compare_response=format_source_compare_response,
+    format_today_forecast_response=format_today_forecast_response,
     format_tomorrow_forecast_response=format_tomorrow_forecast_response,
     format_weather_response=format_weather_response,
     help_text=help_text,
@@ -255,6 +261,7 @@ ctx = AppContext(
     complete_current_weather_from_location=complete_current_weather_from_location,
     complete_alerts_location_from_item=complete_alerts_location_from_item,
     group_forecast_by_day=group_forecast_by_day,
+    get_today_forecast_day=get_today_forecast_day,
     get_tomorrow_forecast_day=get_tomorrow_forecast_day,
     format_forecast_day=format_forecast_day,
     build_geocode_item_with_disambiguated_label=build_geocode_item_with_disambiguated_label,
@@ -275,10 +282,12 @@ start_details_flow = partial(flow_start_details_flow, ctx=ctx, session_store=ses
 start_compare_flow = partial(flow_start_compare_flow, ctx=ctx, session_store=session_store)
 start_forecast_flow = partial(flow_start_forecast_flow, ctx=ctx, session_store=session_store)
 start_source_compare_flow = partial(flow_start_source_compare_flow, ctx=ctx, session_store=session_store)
+start_today_forecast_flow = partial(flow_start_today_forecast_flow, ctx=ctx, session_store=session_store)
 start_tomorrow_forecast_flow = partial(flow_start_tomorrow_forecast_flow, ctx=ctx, session_store=session_store)
 send_details_by_coordinates = partial(flow_send_details_by_coordinates, ctx=ctx, session_store=session_store)
 send_forecast_by_coordinates = partial(flow_send_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 send_source_compare_by_coordinates = partial(flow_send_source_compare_by_coordinates, ctx=ctx, session_store=session_store)
+send_today_forecast_by_coordinates = partial(flow_send_today_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 send_tomorrow_forecast_by_coordinates = partial(flow_send_tomorrow_forecast_by_coordinates, ctx=ctx, session_store=session_store)
 complete_compare_two_locations = partial(flow_complete_compare_two_locations, ctx=ctx, session_store=session_store)
 alerts_worker = partial(flow_alerts_worker, ctx=ctx)
@@ -287,6 +296,7 @@ MENU_BUTTONS = [
     "🌦 Прогноз погоды",
     "📍 Локации",
     "ℹ️ Помощь",
+    "🌡 Погода сейчас",
     "☀️ Прогноз на сегодня",
     "🌤 Прогноз на завтра",
     "🧭 Расширенные данные",
@@ -413,8 +423,11 @@ def handle_menu_buttons(message: types.Message) -> None:
     if section_name in {"🌦 Прогноз погоды", "Прогноз погоды"}:
         bot.send_message(message.chat.id, "Выбери погодный раздел.", reply_markup=weather_menu())
         return
-    if section_name in {"☀️ Прогноз на сегодня", "🌤 Текущая погода", "Текущая погода"}:
+    if section_name in {"🌡 Погода сейчас", "🌤 Текущая погода", "Текущая погода"}:
         start_current_weather_flow(message)
+        return
+    if section_name in {"☀️ Прогноз на сегодня", "Прогноз на сегодня"}:
+        start_today_forecast_flow(message)
         return
     if section_name in {"🌤 Прогноз на завтра", "Прогноз на завтра"}:
         start_tomorrow_forecast_flow(message)
@@ -531,7 +544,14 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
-    if state in {WAITING_FORECAST_CITY, WAITING_FORECAST_GEO, WAITING_TOMORROW_FORECAST_CITY, WAITING_TOMORROW_FORECAST_GEO}:
+    if state in {
+        WAITING_FORECAST_CITY,
+        WAITING_FORECAST_GEO,
+        WAITING_TODAY_FORECAST_CITY,
+        WAITING_TODAY_FORECAST_GEO,
+        WAITING_TOMORROW_FORECAST_CITY,
+        WAITING_TOMORROW_FORECAST_GEO,
+    }:
         session_store.forecast_location_choices.pop(user_id, None)
         location_data = message.location
         lat = location_data.latitude
@@ -541,6 +561,8 @@ def handle_location_message(message: types.Message) -> None:
         send_forecast = (
             send_tomorrow_forecast_by_coordinates
             if state in {WAITING_TOMORROW_FORECAST_CITY, WAITING_TOMORROW_FORECAST_GEO}
+            else send_today_forecast_by_coordinates
+            if state in {WAITING_TODAY_FORECAST_CITY, WAITING_TODAY_FORECAST_GEO}
             else send_forecast_by_coordinates
         )
         send_forecast(
@@ -879,6 +901,7 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
         session_store=session_store,
         _message_stub_for_chat=_message_stub_for_chat,
         send_forecast_by_coordinates=send_forecast_by_coordinates,
+        send_today_forecast_by_coordinates=send_today_forecast_by_coordinates,
         send_tomorrow_forecast_by_coordinates=send_tomorrow_forecast_by_coordinates,
     )
 
@@ -975,6 +998,7 @@ def handle_unknown_text(message: types.Message) -> None:
         ctx=ctx,
         session_store=session_store,
         send_forecast_by_coordinates=send_forecast_by_coordinates,
+        send_today_forecast_by_coordinates=send_today_forecast_by_coordinates,
         send_tomorrow_forecast_by_coordinates=send_tomorrow_forecast_by_coordinates,
     ):
         return

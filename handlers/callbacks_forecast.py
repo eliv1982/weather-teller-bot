@@ -1,4 +1,9 @@
-from .states import WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK
+from .states import (
+    WAITING_TODAY_FORECAST_PICK,
+    WAITING_TODAY_FORECAST_SAVED_PICK,
+    WAITING_TOMORROW_FORECAST_PICK,
+    WAITING_TOMORROW_FORECAST_SAVED_PICK,
+)
 from .callbacks_common import mark_location_choice_selected
 
 
@@ -9,17 +14,19 @@ def handle_forecast_callback(
     session_store,
     _message_stub_for_chat,
     send_forecast_by_coordinates,
+    send_today_forecast_by_coordinates,
     send_tomorrow_forecast_by_coordinates,
 ) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     state = session_store.get_state(user_id)
-    send_selected_forecast = (
-        send_tomorrow_forecast_by_coordinates
-        if state in {WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}
-        else send_forecast_by_coordinates
-    )
+    if state in {WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
+        send_selected_forecast = send_tomorrow_forecast_by_coordinates
+    elif state in {WAITING_TODAY_FORECAST_PICK, WAITING_TODAY_FORECAST_SAVED_PICK}:
+        send_selected_forecast = send_today_forecast_by_coordinates
+    else:
+        send_selected_forecast = send_forecast_by_coordinates
 
     if call.data == "forecast_cancel":
         session_store.forecast_location_choices.pop(user_id, None)

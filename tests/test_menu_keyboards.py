@@ -69,6 +69,7 @@ def test_weather_menu_contains_expected_submenu_buttons(monkeypatch):
     keyboards = _load_keyboards(monkeypatch)
 
     assert _button_texts(keyboards.weather_menu()) == [
+        "🌡 Погода сейчас",
         "☀️ Прогноз на сегодня",
         "🌤 Прогноз на завтра",
         "📅 Прогноз на 5 дней",

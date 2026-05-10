@@ -157,8 +157,8 @@ def _forecast_main_description(day_items: list[dict]) -> str:
     return max(descriptions, key=descriptions.get)
 
 
-def format_tomorrow_forecast_response(city_label: str, day: str, day_items: list[dict]) -> str:
-    """Собирает отдельный экран прогноза на завтра из 3-часовых слотов."""
+def _format_direct_day_forecast_response(title: str, city_label: str, day: str, day_items: list[dict]) -> str:
+    """Собирает отдельный экран прогноза дня из 3-часовых слотов."""
     if not isinstance(day_items, list):
         day_items = []
 
@@ -179,7 +179,7 @@ def format_tomorrow_forecast_response(city_label: str, day: str, day_items: list
     wind_deg = next((wind.get("deg") for wind in wind_blocks if isinstance(wind.get("deg"), (int, float))), None)
 
     lines = [
-        "🌤 Прогноз на завтра",
+        title,
         f"📍 Населённый пункт: {city_label}",
         f"📅 Дата: {day}",
         f"🌡 Температура: {_format_temp_range(temps)}",
@@ -190,6 +190,23 @@ def format_tomorrow_forecast_response(city_label: str, day: str, day_items: list
         f"🌬 Ветер: {_wind_text_from_values(max_wind_speed, wind_deg)}",
     ]
     return "\n".join(lines)
+
+
+def format_tomorrow_forecast_response(city_label: str, day: str, day_items: list[dict]) -> str:
+    """Собирает отдельный экран прогноза на завтра из 3-часовых слотов."""
+    return _format_direct_day_forecast_response("🌤 Прогноз на завтра", city_label, day, day_items)
+
+
+def format_today_forecast_response(
+    city_label: str,
+    day: str,
+    day_items: list[dict],
+    *,
+    is_remaining_day: bool = False,
+) -> str:
+    """Собирает отдельный экран прогноза на сегодня или на оставшуюся часть дня."""
+    title = "☀️ Прогноз на оставшуюся часть дня" if is_remaining_day else "☀️ Прогноз на сегодня"
+    return _format_direct_day_forecast_response(title, city_label, day, day_items)
 
 
 def format_weather_response(city_label: str, weather: dict) -> str:

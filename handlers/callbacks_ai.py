@@ -1,3 +1,6 @@
+from forecast_service import is_remaining_day_forecast
+
+
 def handle_ai_callback(call, *, ctx, session_store) -> None:
     """Обрабатывает AI callback-действия для погодных сценариев."""
     user_id = call.from_user.id
@@ -89,6 +92,28 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
 
         city_label = cache.get("city") or "выбранная локация"
         text = ctx.ai_weather_service.explain_tomorrow_forecast(city_label, day_items)
+        ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(chat_id, f"✨ Пояснение:\n{text}", reply_markup=ctx.main_menu())
+        return
+
+    if data.startswith("ai_today_forecast_day:"):
+        day = data.split(":", 1)[1]
+        cache = session_store.forecast_cache.get(user_id)
+        if not cache:
+            ctx.bot.answer_callback_query(call.id, "✨ Прогноз устарел. Открой его заново.")
+            return
+
+        day_items = cache.get("grouped", {}).get(day)
+        if not day_items:
+            ctx.bot.answer_callback_query(call.id, "Данные дня не найдены.")
+            return
+
+        city_label = cache.get("city") or "выбранная локация"
+        text = ctx.ai_weather_service.explain_today_forecast(
+            city_label,
+            day_items,
+            is_remaining_day=is_remaining_day_forecast(day_items),
+        )
         ctx.bot.answer_callback_query(call.id)
         ctx.bot.send_message(chat_id, f"✨ Пояснение:\n{text}", reply_markup=ctx.main_menu())
         return

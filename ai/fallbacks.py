@@ -214,6 +214,46 @@ def fallback_tomorrow_forecast(city_label: str, day_items: list[dict]) -> str:
     )
 
 
+def fallback_today_forecast(city_label: str, day_items: list[dict], *, is_remaining_day: bool = False) -> str:
+    if not isinstance(day_items, list) or not day_items:
+        suffix = "на оставшуюся часть дня" if is_remaining_day else "на сегодня"
+        return f"По {city_label} пока недостаточно данных, чтобы пояснить прогноз {suffix}."
+    temps: list[float] = []
+    feels_like_values: list[float] = []
+    pressure_values: list[float] = []
+    wind_speeds: list[float] = []
+    precip_slots = 0
+    for item in day_items:
+        main_data = item.get("main", {}) if isinstance(item, dict) else {}
+        wind_data = item.get("wind", {}) if isinstance(item, dict) else {}
+        weather_list = item.get("weather") if isinstance(item, dict) else None
+        weather_item = weather_list[0] if isinstance(weather_list, list) and weather_list and isinstance(weather_list[0], dict) else {}
+        weather_desc = str(weather_item.get("description") or "").lower()
+        if any(x in weather_desc for x in ("дожд", "лив", "гроза", "снег")):
+            precip_slots += 1
+        temp = main_data.get("temp")
+        feels_like = main_data.get("feels_like")
+        pressure = main_data.get("pressure")
+        wind_speed = wind_data.get("speed")
+        if isinstance(temp, (int, float)):
+            temps.append(float(temp))
+        if isinstance(feels_like, (int, float)):
+            feels_like_values.append(float(feels_like))
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
+        if isinstance(wind_speed, (int, float)):
+            wind_speeds.append(float(wind_speed))
+
+    prefix = "В оставшуюся часть дня" if is_remaining_day else "Сегодня"
+    precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
+    return (
+        f"{prefix} в {city_label} ожидается {_dominant_description(day_items)}. "
+        f"Температура будет примерно {_range_text(temps, '°C')}, "
+        f"по ощущениям {_range_text(feels_like_values, '°C')}. "
+        f"{precip_note} {_tomorrow_wind_note(wind_speeds)} {_tomorrow_pressure_note(pressure_values)}"
+    )
+
+
 def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict | None) -> str:
     main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
