@@ -98,6 +98,26 @@ def test_current_fallback_uses_precipitation_wording_without_umbrella_advice():
     assert "По текущим данным, осадков сейчас нет." in text
 
 
+def test_alert_and_details_fallbacks_do_not_use_awkward_route_or_drier_time_advice():
+    alert_text = fallbacks.fallback_weather_alert(
+        "Москва",
+        {
+            "slot_local": "12:00",
+            "description": "дождь",
+            "event_type": "precipitation",
+            "precip_probability": 0.8,
+            "wind_speed": 4,
+        },
+    )
+    details_text = fallbacks.fallback_details("Москва", _weather_with_pressure(1013), {"pm2_5": 12})
+
+    for text in (alert_text, details_text):
+        assert "менее открытые" not in text
+        assert "посуше" not in text
+        assert "по суше" not in text
+        assert "маршрут" not in text.lower()
+
+
 def test_details_fallback_adds_pressure_note_only_for_clear_pressure():
     high_text = fallbacks.fallback_details("Москва", _weather_with_pressure(1025), {"pm2_5": 12})
     normal_text = fallbacks.fallback_details("Москва", _weather_with_pressure(1013), {"pm2_5": 12})

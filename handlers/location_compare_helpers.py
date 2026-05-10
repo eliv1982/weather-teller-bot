@@ -4,6 +4,37 @@ from math import asin, cos, radians, sin, sqrt
 from weather.descriptions import normalize_weather_description
 
 
+def _wind_direction_ru(deg: float) -> str:
+    directions = [
+        "северный",
+        "северо-восточный",
+        "восточный",
+        "юго-восточный",
+        "южный",
+        "юго-западный",
+        "западный",
+        "северо-западный",
+    ]
+    index = round(deg / 45) % 8
+    return directions[index]
+
+
+def _summarize_wind_direction(degrees: list[float]) -> str | None:
+    if not degrees:
+        return None
+    labels = [_wind_direction_ru(value) for value in degrees]
+    counts: dict[str, int] = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    dominant_label = max(counts, key=counts.get)
+    if len(counts) == 1:
+        return dominant_label
+    dominant_count = counts[dominant_label]
+    if dominant_count >= max(2, len(labels) // 2 + 1):
+        return dominant_label
+    return "направление переменное"
+
+
 def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta: dict | None = None) -> dict:
     """Собирает payload текущей погоды для AI-сравнения."""
     main_data = weather.get("main", {}) if isinstance(weather, dict) else {}
@@ -21,6 +52,8 @@ def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta
         "description": normalize_weather_description(weather_item.get("description")),
         "humidity": main_data.get("humidity"),
         "wind_speed": wind_data.get("speed"),
+        "wind_deg": wind_data.get("deg"),
+        "wind_direction_text": _wind_direction_ru(float(wind_data.get("deg"))) if isinstance(wind_data.get("deg"), (int, float)) else None,
     }
 
 
@@ -48,6 +81,7 @@ def _ai_compare_day_payload(
     intervals: list[str] = []
     max_pop = 0.0
     wind_speeds: list[float] = []
+    wind_degrees: list[float] = []
     precipitation_amounts: list[float] = []
 
     for item in day_items:
@@ -82,6 +116,9 @@ def _ai_compare_day_payload(
         wind_speed = wind_data.get("speed")
         if isinstance(wind_speed, (int, float)):
             wind_speeds.append(float(wind_speed))
+        wind_deg = wind_data.get("deg")
+        if isinstance(wind_deg, (int, float)):
+            wind_degrees.append(float(wind_deg))
 
         rain_data = item.get("rain")
         if isinstance(rain_data, dict):
@@ -130,6 +167,7 @@ def _ai_compare_day_payload(
             "avg_speed": (sum(wind_speeds) / len(wind_speeds)) if wind_speeds else None,
             "max_speed": max(wind_speeds) if wind_speeds else None,
         },
+        "wind_direction_text": _summarize_wind_direction(wind_degrees),
         "key_day_intervals": intervals[:6],
     }
 

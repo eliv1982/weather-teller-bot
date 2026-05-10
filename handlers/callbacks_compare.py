@@ -1,4 +1,5 @@
-from .callbacks_common import mark_location_choice_selected
+from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
+from .states import WAITING_COMPARE_CITY_1
 
 
 def handle_compare_location_callback(
@@ -14,11 +15,19 @@ def handle_compare_location_callback(
     chat_id = call.message.chat.id
 
     if call.data == "compare_cancel":
+        meta = session_store.compare_location_choices.get(user_id)
+        target_state = WAITING_COMPARE_CITY_1
+        if isinstance(meta, dict) and meta.get("step") == 2:
+            target_state = WAITING_COMPARE_CITY_2
         session_store.compare_location_choices.pop(user_id, None)
-        session_store.compare_drafts.pop(user_id, None)
-        session_store.user_states.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, "Выбор отменён.", reply_markup=ctx.main_menu())
+        return_to_location_input_context(
+            chat_id,
+            user_id,
+            ctx=ctx,
+            session_store=session_store,
+            target_state=target_state,
+        )
         return
 
     parts = call.data.split(":")

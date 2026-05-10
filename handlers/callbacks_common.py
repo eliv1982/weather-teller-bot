@@ -1,5 +1,16 @@
 import logging
 
+from .states import (
+    WAITING_COMPARE_CITY_1,
+    WAITING_COMPARE_CITY_2,
+    WAITING_CURRENT_WEATHER_CITY,
+    WAITING_DETAILS_CITY,
+    WAITING_FORECAST_CITY,
+    WAITING_SOURCE_COMPARE_CITY,
+    WAITING_TODAY_FORECAST_CITY,
+    WAITING_TOMORROW_FORECAST_CITY,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -80,3 +91,45 @@ def mark_location_choice_selected(call, ctx, city_label: str) -> None:
             type(exc).__name__,
             exc,
         )
+
+
+def return_to_location_input_context(
+    chat_id: int,
+    user_id: int,
+    *,
+    ctx,
+    session_store,
+    target_state: str | None,
+) -> None:
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+
+    location_input_states = {
+        WAITING_CURRENT_WEATHER_CITY,
+        WAITING_TODAY_FORECAST_CITY,
+        WAITING_TOMORROW_FORECAST_CITY,
+        WAITING_FORECAST_CITY,
+        WAITING_DETAILS_CITY,
+        WAITING_SOURCE_COMPARE_CITY,
+    }
+
+    if target_state in location_input_states:
+        text = "Введи название населённого пункта или выбери другой способ ниже:"
+        reply_markup = ctx.location_input_menu(has_saved_locations=has_saved)
+        session_store.user_states[user_id] = target_state
+        ctx.bot.send_message(chat_id, text, reply_markup=reply_markup)
+        return
+
+    prompt_map = {
+        WAITING_COMPARE_CITY_1: ("Введи название первой локации.", None),
+        WAITING_COMPARE_CITY_2: ("Введи название второй локации.", None),
+    }
+
+    if target_state in prompt_map:
+        text, reply_markup = prompt_map[target_state]
+        session_store.user_states[user_id] = target_state
+        ctx.bot.send_message(chat_id, text, reply_markup=reply_markup)
+        return
+
+    session_store.user_states.pop(user_id, None)
+    ctx.bot.send_message(chat_id, "Выбор отменён.", reply_markup=ctx.main_menu())

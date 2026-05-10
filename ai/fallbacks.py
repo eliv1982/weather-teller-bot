@@ -60,7 +60,7 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
             ):
                 wind_note = " Ветер заметный: при осадках или прохладе может быть менее комфортно."
             else:
-                wind_note = " Ветер заметный, на открытых участках может ощущаться сильнее."
+                wind_note = " Ветер заметный и может ощущаться сильнее обычного."
         else:
             meaningful_wind = True
             wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
@@ -301,7 +301,7 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
             ):
                 wind_note = "Ветер заметный: при осадках или прохладе может быть менее комфортно."
             else:
-                wind_note = "Ветер заметный, на открытых участках ощущается сильнее."
+                wind_note = "Ветер заметный и ощущается сильнее обычного."
         else:
             wind_note = "Ветер сильный и заметно влияет на комфорт."
     else:
@@ -320,7 +320,7 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
     return (
         f"По {city_label}: {humidity_note} {wind_note} {visibility_note} {air_note} "
         f"{pressure_note + ' ' if pressure_note else ''}"
-        "Если планируешь долгую прогулку, ориентируйся в первую очередь на эти факторы."
+        "Сейчас больше всего влияют влажность, ветер, видимость и качество воздуха."
     )
 
 
@@ -405,17 +405,16 @@ def fallback_weather_alert(location_label: str, alert_payload: dict) -> str:
             else:
                 wind_tail = " Ветер сильный."
         return (
-            f"{when}ожидаются осадки, лучше взять зонт и непромокаемую верхнюю одежду."
-            " Если планируешь прогулку, лучше выбрать короткий маршрут или перенести её на более сухое время."
+            f"{when}ожидаются осадки, пригодятся зонт или непромокаемая верхняя одежда."
             f"{tail}{wind_tail}"
         ).strip()
     if event_type == "wind" or (isinstance(wind_speed, (int, float)) and float(wind_speed) >= 8):
         speed_hint = f" до {round(float(wind_speed), 1)} м/с" if isinstance(wind_speed, (int, float)) else ""
         return (
-            f"К {slot_local} ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
+            f"К {slot_local} ветер усилится{speed_hint}."
             if slot_local
-            else f"Ветер усилится{speed_hint}, на открытых участках будет менее комфортно."
-        ) + " Для прогулки лучше идти там, где меньше открытых участков."
+            else f"Ветер усилится{speed_hint}."
+        ) + " На улице может ощущаться прохладнее из-за ветра."
     if event_type == "temperature_drop":
         feels_note = f" По ощущениям около {round(float(feels_like), 1)}°C." if isinstance(feels_like, (int, float)) else ""
         return ("Температура снизится, лучше взять дополнительный верхний слой одежды." f"{feels_note}").strip()
@@ -427,9 +426,9 @@ def fallback_weather_alert(location_label: str, alert_payload: dict) -> str:
                 else "Может ощущаться прохладнее фактической температуры, лучше одеться теплее."
             )
     if slot_local and description:
-        return f"К {slot_local} ожидается {description}, лучше скорректировать маршрут и одежду под условия."
+        return f"К {slot_local} ожидается {description}, стоит учесть это при выходе."
     if description:
-        return f"Ожидается {description}, лучше заранее учесть это в планах на выход."
+        return f"Ожидается {description}, стоит заранее учесть это при выходе."
     return ""
 
 
@@ -438,10 +437,10 @@ def postprocess_weather_alert_text(text: str) -> str:
     if not normalized:
         return ""
     replacements = {
-        "короткий маршрут под крышей": "короткий маршрут",
-        "маршрут под крышей": "короткий маршрут",
-        "маршрут под укрытием": "маршрут, где меньше открытых участков",
-        "идти под крышей": "идти там, где меньше открытых участков",
+        "короткий маршрут под крышей": "короткий выход",
+        "маршрут под крышей": "короткий выход",
+        "маршрут под укрытием": "выход с учётом погоды",
+        "идти под крышей": "сократить время на улице",
         "ветер усиливает холод": "ветер делает воздух прохладнее",
         "ветер усиливает сырость": "при осадках на улице может быть менее комфортно",
         "сильно влияет на комфорт": "заметно влияет на комфорт",

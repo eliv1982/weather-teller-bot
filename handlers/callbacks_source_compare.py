@@ -1,5 +1,5 @@
-from .callbacks_common import mark_location_choice_selected
-from .states import WAITING_SOURCE_COMPARE_DATE_PICK
+from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
+from .states import WAITING_SOURCE_COMPARE_CITY, WAITING_SOURCE_COMPARE_DATE_PICK
 
 
 def handle_source_compare_callback(
@@ -17,9 +17,14 @@ def handle_source_compare_callback(
 
     if call.data == "source_compare_cancel":
         session_store.source_compare_location_choices.pop(user_id, None)
-        session_store.user_states.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, "Выбор отменён.", reply_markup=ctx.main_menu())
+        return_to_location_input_context(
+            chat_id,
+            user_id,
+            ctx=ctx,
+            session_store=session_store,
+            target_state=WAITING_SOURCE_COMPARE_CITY,
+        )
         return
 
     if call.data.startswith("source_compare_pick:"):

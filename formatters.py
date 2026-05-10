@@ -570,9 +570,11 @@ def _format_wind_numeric_band(payload: dict) -> str | None:
             numeric = f"{min_s:.1f}-{max_s:.1f} м/с"
     elif isinstance(avg_speed, (int, float)):
         numeric = f"{float(avg_speed):.1f} м/с"
-    if numeric and wind_text:
-        return f"{numeric}, {wind_text}"
-    return numeric or (wind_text if wind_text else None)
+    direction_text = str(payload.get("wind_direction_text") or "").strip()
+    parts = [part for part in (numeric, wind_text, direction_text) if part]
+    if not parts:
+        return None
+    return ", ".join(parts)
 
 
 def _format_source_compare_temp_sentence(payload: dict) -> str | None:
@@ -727,12 +729,6 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
         if nearby_category and (overlap or close_numeric) and ow_wind and om_wind:
             return f"По ветру есть небольшое расхождение: OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}."
         if ow_wind and om_wind and ow_wind != om_wind:
-            if ow_text and om_text and ow_text != om_text:
-                return (
-                    "По ветру прогнозы различаются: "
-                    f"OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}. "
-                    f"У Open-Meteo ветер {om_text}, у OpenWeather — {ow_text}."
-                )
             return f"По ветру прогнозы различаются: OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}."
         if ow_wind or om_wind:
             return "По ветру различия небольшие."
@@ -757,6 +753,19 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
         return mapping.get(confidence, fallback)
 
     def _precip_sentence() -> str:
+        def _presence_phrase(profile: dict[str, object]) -> str:
+            presence = str(profile.get("presence") or "")
+            precip_type = str(profile.get("type") or "")
+            if presence != "risk":
+                return "без существенных осадков"
+            risk_names = {
+                "rain": "риск дождя",
+                "snow": "риск снега",
+                "thunderstorm": "риск грозы",
+                "sleet": "риск мокрого снега",
+            }
+            return risk_names.get(precip_type, "риск осадков")
+
         ow_presence = str(ow_precip.get("presence") or "")
         om_presence = str(om_precip.get("presence") or "")
         ow_type = str(ow_precip.get("type") or "")
@@ -777,16 +786,22 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
                     om_prob = _prob_text(om_precip, "умеренную")
                     if ow_prob != om_prob:
                         return (
-                            f"Оба источника допускают {shared_type}, но OpenWeather оценивает вероятность выше: "
-                            f"{ow_prob} против {om_prob}."
+                            f"По осадкам источники в целом сходятся: оба допускают {shared_type}, "
+                            f"но OpenWeather оценивает вероятность выше — {ow_prob} против {om_prob}."
                         )
                 if str(ow_precip.get("confidence")) != str(om_precip.get("confidence")):
                     return (
-                        f"Оба источника допускают {shared_type}, но по-разному оценивают вероятность: "
+                        f"По осадкам источники в целом сходятся: оба допускают {shared_type}, "
+                        f"но по-разному оценивают вероятность: "
                         f"OpenWeather показывает {_prob_text(ow_precip, 'высокий шанс')}, "
                         f"Open-Meteo — {_prob_text(om_precip, 'умеренную вероятность')}."
                     )
-                return f"По осадкам источники сходятся: оба прогноза допускают {shared_type}."
+                return f"По осадкам источники в целом сходятся: оба допускают {shared_type}."
+            if ow_type == om_type == "unknown":
+                return (
+                    "По осадкам источники в целом сходятся: оба показывают риск осадков, "
+                    "но тип осадков в данных не уточнён."
+                )
             if ow_type != om_type and ow_type != "unknown" and om_type != "unknown":
                 return (
                     "Источники расходятся по типу осадков: "
@@ -796,7 +811,8 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
         if ow_presence != om_presence:
             return (
                 "Источники расходятся по осадкам: "
-                f"OpenWeather показывает {ow_precip.get('specific')}, Open-Meteo — {om_precip.get('specific')}."
+                f"OpenWeather показывает {_presence_phrase(ow_precip)}, "
+                f"Open-Meteo — {_presence_phrase(om_precip)}."
             )
         if ow_type != om_type and ow_type != "unknown" and om_type != "unknown":
             return (
@@ -804,7 +820,12 @@ def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload:
                 f"OpenWeather показывает {_precipitation_type_label(ow_type)}, "
                 f"Open-Meteo — {_precipitation_type_label(om_type)}."
             )
-        return "По осадкам источники в целом сходятся."
+        if ow_presence == "risk" and om_presence == "risk":
+            return (
+                "По осадкам источники в целом сходятся: оба показывают риск осадков, "
+                "но тип осадков в данных не уточнён."
+            )
+        return "По осадкам данных недостаточно для уверенного вывода."
 
     return f"{_precip_sentence()} {temperature_sentence} {wind_sentence}"
 

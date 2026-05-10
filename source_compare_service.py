@@ -12,6 +12,23 @@ from weather.api import (
 )
 
 
+def _summarize_current_wind_direction(wind_deg: object) -> str | None:
+    if not isinstance(wind_deg, (int, float)):
+        return None
+    directions = [
+        "северный",
+        "северо-восточный",
+        "восточный",
+        "юго-восточный",
+        "южный",
+        "юго-западный",
+        "западный",
+        "северо-западный",
+    ]
+    index = round(float(wind_deg) / 45) % 8
+    return directions[index]
+
+
 def _wind_label(payload: dict[str, Any]) -> str:
     signal = payload.get("wind_signal") if isinstance(payload, dict) else {}
     max_speed = signal.get("max_speed") if isinstance(signal, dict) else None
@@ -47,6 +64,7 @@ def build_provider_current_summary(city_label: str, provider_name: str, weather:
     humidity = main.get("humidity") if isinstance(main, dict) else None
     pressure = main.get("pressure") if isinstance(main, dict) else None
     wind_speed = wind.get("speed") if isinstance(wind, dict) else None
+    wind_deg = wind.get("deg") if isinstance(wind, dict) else None
     description = str(weather_item.get("description") or "без описания")
     desc_lower = description.lower()
     if any(marker in desc_lower for marker in ("дожд", "лив", "гроза", "снег")):
@@ -69,6 +87,7 @@ def build_provider_current_summary(city_label: str, provider_name: str, weather:
             "avg_speed": wind_speed,
             "max_speed": wind_speed,
         },
+        "wind_direction_text": _summarize_current_wind_direction(wind_deg),
         "min_temp": temp,
         "max_temp": temp,
     }

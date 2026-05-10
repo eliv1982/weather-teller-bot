@@ -86,3 +86,6 @@ def test_weather_alert_prompt_does_not_encourage_time_based_generic_advice():
 
     assert "выйти чуть раньше" not in prompt
     assert "время выхода" not in prompt
+    assert "менее открытые места" not in prompt
+    assert "время посуше" not in prompt
+    assert "время по суше" not in prompt

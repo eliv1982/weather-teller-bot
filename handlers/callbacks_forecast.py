@@ -1,10 +1,13 @@
 from .states import (
+    WAITING_FORECAST_CITY,
     WAITING_TODAY_FORECAST_PICK,
+    WAITING_TODAY_FORECAST_CITY,
     WAITING_TODAY_FORECAST_SAVED_PICK,
+    WAITING_TOMORROW_FORECAST_CITY,
     WAITING_TOMORROW_FORECAST_PICK,
     WAITING_TOMORROW_FORECAST_SAVED_PICK,
 )
-from .callbacks_common import mark_location_choice_selected
+from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
 
 
 def handle_forecast_callback(
@@ -23,16 +26,24 @@ def handle_forecast_callback(
     state = session_store.get_state(user_id)
     if state in {WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
         send_selected_forecast = send_tomorrow_forecast_by_coordinates
+        cancel_state = WAITING_TOMORROW_FORECAST_CITY
     elif state in {WAITING_TODAY_FORECAST_PICK, WAITING_TODAY_FORECAST_SAVED_PICK}:
         send_selected_forecast = send_today_forecast_by_coordinates
+        cancel_state = WAITING_TODAY_FORECAST_CITY
     else:
         send_selected_forecast = send_forecast_by_coordinates
+        cancel_state = WAITING_FORECAST_CITY
 
     if call.data == "forecast_cancel":
         session_store.forecast_location_choices.pop(user_id, None)
-        session_store.user_states.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
-        ctx.bot.send_message(chat_id, "Выбор отменён.", reply_markup=ctx.main_menu())
+        return_to_location_input_context(
+            chat_id,
+            user_id,
+            ctx=ctx,
+            session_store=session_store,
+            target_state=cancel_state,
+        )
         return
 
     if call.data.startswith("forecast_pick:"):
