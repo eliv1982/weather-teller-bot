@@ -204,7 +204,7 @@ def format_today_forecast_response(
     *,
     is_remaining_day: bool = False,
 ) -> str:
-    """Собирает отдельный экран прогноза на сегодня или на оставшуюся часть дня."""
+    """Собирает отдельный экран прогноза на сегодня по доступным слотам."""
     title = "☀️ Прогноз на оставшуюся часть дня" if is_remaining_day else "☀️ Прогноз на сегодня"
     return _format_direct_day_forecast_response(title, city_label, day, day_items)
 
@@ -413,6 +413,104 @@ def _source_compare_precip_line(text: str) -> str:
     return normalized
 
 
+def _format_percent(value: object) -> str | None:
+    if isinstance(value, (int, float)):
+        return f"до {round(float(value) * 100):.0f}%"
+    return None
+
+
+def _format_mm(value: object) -> str | None:
+    if isinstance(value, (int, float)):
+        return f"до {float(value):.1f} мм"
+    return None
+
+
+def _format_humidity_band(min_value: object, max_value: object) -> str | None:
+    if not isinstance(min_value, (int, float)) and not isinstance(max_value, (int, float)):
+        return None
+    if not isinstance(min_value, (int, float)):
+        return f"{round(float(max_value))}%"
+    if not isinstance(max_value, (int, float)):
+        return f"{round(float(min_value))}%"
+    min_h = round(float(min_value))
+    max_h = round(float(max_value))
+    if min_h == max_h:
+        return f"{min_h}%"
+    return f"{min_h}-{max_h}%"
+
+
+def _format_pressure_band_mmhg(min_value: object, max_value: object) -> str | None:
+    if not isinstance(min_value, (int, float)) and not isinstance(max_value, (int, float)):
+        return None
+    if not isinstance(min_value, (int, float)):
+        mmhg = round(float(max_value) * 0.75006)
+        return f"{mmhg} мм рт. ст."
+    if not isinstance(max_value, (int, float)):
+        mmhg = round(float(min_value) * 0.75006)
+        return f"{mmhg} мм рт. ст."
+    min_mmhg = round(float(min_value) * 0.75006)
+    max_mmhg = round(float(max_value) * 0.75006)
+    if min_mmhg == max_mmhg:
+        return f"{min_mmhg} мм рт. ст."
+    return f"{min_mmhg}-{max_mmhg} мм рт. ст."
+
+
+def _format_wind_numeric_band(payload: dict) -> str | None:
+    signal = payload.get("wind_signal") if isinstance(payload, dict) else {}
+    if not isinstance(signal, dict):
+        return None
+    min_speed = signal.get("min_speed")
+    max_speed = signal.get("max_speed")
+    avg_speed = signal.get("avg_speed")
+    wind_text = str(payload.get("wind_text") or "").strip()
+    numeric = None
+    if isinstance(min_speed, (int, float)) and isinstance(max_speed, (int, float)):
+        min_s = float(min_speed)
+        max_s = float(max_speed)
+        if round(min_s, 1) == round(max_s, 1):
+            numeric = f"{min_s:.1f} м/с"
+        else:
+            numeric = f"{min_s:.1f}-{max_s:.1f} м/с"
+    elif isinstance(avg_speed, (int, float)):
+        numeric = f"{float(avg_speed):.1f} м/с"
+    if numeric and wind_text:
+        return f"{numeric}, {wind_text}"
+    return numeric or (wind_text if wind_text else None)
+
+
+def _format_source_compare_temp_sentence(payload: dict) -> str | None:
+    band = _format_temp_band(payload.get("min_temp"), payload.get("max_temp"))
+    if band == "н/д":
+        return None
+    return band
+
+
+def _format_source_compare_provider_block(provider_name: str, payload: dict) -> list[str]:
+    lines = [f"{provider_name}:"]
+    lines.append(f"• температура: {_format_temp_band(payload.get('min_temp'), payload.get('max_temp'))}")
+    feels_like_band = _format_temp_band(payload.get("min_feels_like"), payload.get("max_feels_like"))
+    if feels_like_band != "н/д":
+        lines.append(f"• ощущается как: {feels_like_band}")
+    lines.append(f"• условия: {payload.get('dominant_description') or 'н/д'}")
+    lines.append(f"• осадки: {_source_compare_precip_line(str(payload.get('precipitation_text') or ''))}")
+    probability_text = _format_percent((payload.get("precipitation_signal") or {}).get("max_pop") if isinstance(payload.get("precipitation_signal"), dict) else None)
+    if probability_text:
+        lines.append(f"• вероятность осадков: {probability_text}")
+    precipitation_amount_text = _format_mm((payload.get("precipitation_signal") or {}).get("max_amount") if isinstance(payload.get("precipitation_signal"), dict) else None)
+    if precipitation_amount_text:
+        lines.append(f"• количество осадков: {precipitation_amount_text}")
+    wind_line = _format_wind_numeric_band(payload)
+    if wind_line:
+        lines.append(f"• ветер: {wind_line}")
+    humidity_line = _format_humidity_band(payload.get("min_humidity"), payload.get("max_humidity"))
+    if humidity_line:
+        lines.append(f"• влажность: {humidity_line}")
+    pressure_line = _format_pressure_band_mmhg(payload.get("min_pressure"), payload.get("max_pressure"))
+    if pressure_line:
+        lines.append(f"• давление: {pressure_line}")
+    return lines
+
+
 def _temperature_gap_label(openweather_payload: dict, open_meteo_payload: dict) -> str:
     ow_values = [
         value
@@ -438,20 +536,107 @@ def _temperature_gap_label(openweather_payload: dict, open_meteo_payload: dict) 
 
 
 def _build_source_compare_summary(openweather_payload: dict, open_meteo_payload: dict) -> str:
+    def _wind_rank(text: str) -> int | None:
+        mapping = {"слабый": 0, "умеренный": 1, "сильный": 2, "очень сильный": 3}
+        return mapping.get(text.strip().lower())
+
+    def _wind_bounds(payload: dict) -> tuple[float | None, float | None]:
+        signal = payload.get("wind_signal") if isinstance(payload, dict) else {}
+        if not isinstance(signal, dict):
+            return None, None
+        min_speed = signal.get("min_speed")
+        max_speed = signal.get("max_speed")
+        avg_speed = signal.get("avg_speed")
+        if isinstance(min_speed, (int, float)) and isinstance(max_speed, (int, float)):
+            return float(min_speed), float(max_speed)
+        if isinstance(avg_speed, (int, float)):
+            speed = float(avg_speed)
+            return speed, speed
+        return None, None
+
+    def _temperature_sentence() -> str:
+        temp_label = _temperature_gap_label(openweather_payload, open_meteo_payload)
+        ow_band = _format_source_compare_temp_sentence(openweather_payload)
+        om_band = _format_source_compare_temp_sentence(open_meteo_payload)
+        if temp_label == "температура близкая":
+            return "По температуре прогнозы близки."
+        if temp_label == "температура отличается умеренно":
+            if ow_band and om_band:
+                return f"По температуре есть умеренное расхождение: OpenWeather даёт {ow_band}, Open-Meteo — {om_band}."
+            return "По температуре есть умеренное расхождение."
+        if temp_label == "температура заметно отличается":
+            if ow_band and om_band:
+                return f"По температуре есть заметное расхождение: OpenWeather даёт {ow_band}, Open-Meteo — {om_band}."
+            return "По температуре есть заметное расхождение."
+        return "По температуре данных недостаточно для уверенного вывода."
+
+    def _wind_sentence() -> str:
+        ow_wind = _format_wind_numeric_band(openweather_payload)
+        om_wind = _format_wind_numeric_band(open_meteo_payload)
+        ow_text = str(openweather_payload.get("wind_text") or "").strip()
+        om_text = str(open_meteo_payload.get("wind_text") or "").strip()
+        ow_rank = _wind_rank(ow_text)
+        om_rank = _wind_rank(om_text)
+        ow_min, ow_max = _wind_bounds(openweather_payload)
+        om_min, om_max = _wind_bounds(open_meteo_payload)
+        overlap = (
+            isinstance(ow_min, float)
+            and isinstance(ow_max, float)
+            and isinstance(om_min, float)
+            and isinstance(om_max, float)
+            and max(ow_min, om_min) <= min(ow_max, om_max)
+        )
+        close_numeric = (
+            isinstance(ow_min, float)
+            and isinstance(ow_max, float)
+            and isinstance(om_min, float)
+            and isinstance(om_max, float)
+            and abs(ow_min - om_min) <= 1.2
+            and abs(ow_max - om_max) <= 1.2
+        )
+        same_category = ow_text and om_text and ow_text == om_text
+        nearby_category = (
+            ow_rank is not None
+            and om_rank is not None
+            and abs(ow_rank - om_rank) == 1
+        )
+
+        if same_category and (overlap or close_numeric):
+            if ow_wind and om_wind and ow_wind != om_wind:
+                return f"По ветру различия небольшие: OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}."
+            return f"По ветру прогнозы близки: оба источника показывают {ow_text} ветер."
+        if nearby_category and (overlap or close_numeric) and ow_wind and om_wind:
+            return f"По ветру есть небольшое расхождение: OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}."
+        if ow_wind and om_wind and ow_wind != om_wind:
+            if ow_text and om_text and ow_text != om_text:
+                return (
+                    "По ветру прогнозы различаются: "
+                    f"OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}. "
+                    f"У Open-Meteo ветер {om_text}, у OpenWeather — {ow_text}."
+                )
+            return f"По ветру прогнозы различаются: OpenWeather даёт {ow_wind}, Open-Meteo — {om_wind}."
+        if ow_wind or om_wind:
+            return "По ветру различия небольшие."
+        return "По ветру данных недостаточно."
+
     ow_precip = str(openweather_payload.get("precipitation_text") or "").strip()
     om_precip = str(open_meteo_payload.get("precipitation_text") or "").strip()
+    temperature_sentence = _temperature_sentence()
+    wind_sentence = _wind_sentence()
     if ow_precip and om_precip and ow_precip != om_precip:
         return (
             "Источники расходятся по осадкам: "
-            f"OpenWeather показывает {ow_precip}, Open-Meteo - {om_precip}."
+            f"OpenWeather показывает {ow_precip}, Open-Meteo — {om_precip}. "
+            f"{temperature_sentence} {wind_sentence}"
         )
 
-    temp_label = _temperature_gap_label(openweather_payload, open_meteo_payload)
     if ow_precip == "без существенных осадков":
-        return f"Источники в целом сходятся: существенных осадков не ожидается, {temp_label}."
+        if temperature_sentence == "По температуре прогнозы близки.":
+            return f"Источники в целом сходятся: температура близкая, существенных осадков не ожидается. {wind_sentence}"
+        return f"Источники в целом сходятся: существенных осадков не ожидается. {temperature_sentence} {wind_sentence}"
     if ow_precip:
-        return f"Источники в целом сходятся: оба прогноза показывают {ow_precip}, {temp_label}."
-    return f"Источники в целом сходятся, {temp_label}."
+        return f"Источники в целом сходятся: оба прогноза показывают {ow_precip}. {temperature_sentence} {wind_sentence}"
+    return f"Источники в целом сходятся. {temperature_sentence} {wind_sentence}"
 
 
 def format_source_compare_response(city_label: str, openweather_payload: dict, open_meteo_payload: dict) -> str:
@@ -461,17 +646,9 @@ def format_source_compare_response(city_label: str, openweather_payload: dict, o
         "",
         f"📍 {city_label}",
         "",
-        "OpenWeather:",
-        f"• температура: {_format_temp_band(openweather_payload.get('min_temp'), openweather_payload.get('max_temp'))}",
-        f"• условия: {openweather_payload.get('dominant_description') or 'н/д'}",
-        f"• осадки: {_source_compare_precip_line(str(openweather_payload.get('precipitation_text') or ''))}",
-        f"• ветер: {openweather_payload.get('wind_text') or 'н/д'}",
+        *_format_source_compare_provider_block("OpenWeather", openweather_payload),
         "",
-        "Open-Meteo:",
-        f"• температура: {_format_temp_band(open_meteo_payload.get('min_temp'), open_meteo_payload.get('max_temp'))}",
-        f"• условия: {open_meteo_payload.get('dominant_description') or 'н/д'}",
-        f"• осадки: {_source_compare_precip_line(str(open_meteo_payload.get('precipitation_text') or ''))}",
-        f"• ветер: {open_meteo_payload.get('wind_text') or 'н/д'}",
+        *_format_source_compare_provider_block("Open-Meteo", open_meteo_payload),
         "",
         f"✨ {_build_source_compare_summary(openweather_payload, open_meteo_payload)}",
     ]

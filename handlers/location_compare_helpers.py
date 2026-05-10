@@ -40,19 +40,32 @@ def _ai_compare_day_payload(
 ) -> dict:
     """Собирает payload выбранного дня прогноза для AI-сравнения."""
     temps: list[float] = []
+    feels_like_values: list[float] = []
+    humidity_values: list[float] = []
+    pressure_values: list[float] = []
     desc_counter: dict[str, int] = {}
     rain_slots = 0
     intervals: list[str] = []
     max_pop = 0.0
     wind_speeds: list[float] = []
+    precipitation_amounts: list[float] = []
 
     for item in day_items:
         if not isinstance(item, dict):
             continue
         main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
         temp = main_data.get("temp")
+        feels_like = main_data.get("feels_like")
+        humidity = main_data.get("humidity")
+        pressure = main_data.get("pressure")
         if isinstance(temp, (int, float)):
             temps.append(float(temp))
+        if isinstance(feels_like, (int, float)):
+            feels_like_values.append(float(feels_like))
+        if isinstance(humidity, (int, float)):
+            humidity_values.append(float(humidity))
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
 
         weather_item = item.get("weather", [{}])[0] if isinstance(item.get("weather"), list) else {}
         description = normalize_weather_description(weather_item.get("description") or "без описания")
@@ -70,6 +83,20 @@ def _ai_compare_day_payload(
         if isinstance(wind_speed, (int, float)):
             wind_speeds.append(float(wind_speed))
 
+        rain_data = item.get("rain")
+        if isinstance(rain_data, dict):
+            rain_3h = rain_data.get("3h")
+            if isinstance(rain_3h, (int, float)):
+                precipitation_amounts.append(float(rain_3h))
+        snow_data = item.get("snow")
+        if isinstance(snow_data, dict):
+            snow_3h = snow_data.get("3h")
+            if isinstance(snow_3h, (int, float)):
+                precipitation_amounts.append(float(snow_3h))
+        precipitation_amount = item.get("precipitation")
+        if isinstance(precipitation_amount, (int, float)):
+            precipitation_amounts.append(float(precipitation_amount))
+
         dt_txt = str(item.get("dt_txt") or "")
         if " " in dt_txt:
             time_part = dt_txt.split(" ")[1][:5]
@@ -86,12 +113,20 @@ def _ai_compare_day_payload(
         "selected_day": selected_day,
         "min_temp": min(temps) if temps else None,
         "max_temp": max(temps) if temps else None,
+        "min_feels_like": min(feels_like_values) if feels_like_values else None,
+        "max_feels_like": max(feels_like_values) if feels_like_values else None,
+        "min_humidity": min(humidity_values) if humidity_values else None,
+        "max_humidity": max(humidity_values) if humidity_values else None,
+        "min_pressure": min(pressure_values) if pressure_values else None,
+        "max_pressure": max(pressure_values) if pressure_values else None,
         "dominant_description": dominant_description,
         "precipitation_signal": {
             "rain_slots": rain_slots,
             "max_pop": max_pop,
+            "max_amount": max(precipitation_amounts) if precipitation_amounts else None,
         },
         "wind_signal": {
+            "min_speed": min(wind_speeds) if wind_speeds else None,
             "avg_speed": (sum(wind_speeds) / len(wind_speeds)) if wind_speeds else None,
             "max_speed": max(wind_speeds) if wind_speeds else None,
         },

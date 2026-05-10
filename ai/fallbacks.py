@@ -18,10 +18,10 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
     wind_speed = wind_data.get("speed")
     desc_lower = str(description).lower()
     has_precipitation = any(x in desc_lower for x in ("дожд", "лив", "гроза", "снег"))
-    umbrella = (
-        "Лучше взять зонт на всякий случай."
+    precipitation_note = (
+        "По текущим данным, осадки сейчас есть."
         if has_precipitation
-        else "Скорее всего, можно обойтись без зонта."
+        else "По текущим данным, осадков сейчас нет."
     )
     cold_advice = False
     if isinstance(feels_like, (int, float)):
@@ -56,13 +56,13 @@ def fallback_current(city_label: str, weather_data: dict) -> str:
             wind_note = " Ветер сильный и заметно влияет на комфорт на улице."
     has_caution = has_precipitation or cold_advice or meaningful_wind or bool(pressure_note)
     comfort = "" if has_caution else "По ощущениям погода без явного дискомфорта."
-    advice_parts = [umbrella, clothes]
+    advice_parts = [precipitation_note, clothes]
     if pressure_note:
         advice_parts.append(pressure_note)
     if comfort:
         advice_parts.append(comfort)
     return (
-        f"Сейчас в {city_label}: {description}, температура {temp if temp is not None else 'н/д'}°C, "
+        f"Сейчас в локации {city_label}: {description}, температура {temp if temp is not None else 'н/д'}°C, "
         f"ощущается как {feels_like if feels_like is not None else 'н/д'}°C.{wind_note} "
         f"{' '.join(advice_parts)}"
     )
@@ -207,7 +207,7 @@ def fallback_tomorrow_forecast(city_label: str, day_items: list[dict]) -> str:
 
     precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
     return (
-        f"Завтра в {city_label} ожидается {_dominant_description(day_items)}. "
+        f"Завтра в локации {city_label} ожидается {_dominant_description(day_items)}. "
         f"Температура будет примерно {_range_text(temps, '°C')}, "
         f"по ощущениям {_range_text(feels_like_values, '°C')}. "
         f"{precip_note} {_tomorrow_wind_note(wind_speeds)} {_tomorrow_pressure_note(pressure_values)}"
@@ -216,8 +216,8 @@ def fallback_tomorrow_forecast(city_label: str, day_items: list[dict]) -> str:
 
 def fallback_today_forecast(city_label: str, day_items: list[dict], *, is_remaining_day: bool = False) -> str:
     if not isinstance(day_items, list) or not day_items:
-        suffix = "на оставшуюся часть дня" if is_remaining_day else "на сегодня"
-        return f"По {city_label} пока недостаточно данных, чтобы пояснить прогноз {suffix}."
+        period_hint = "сегодня" if is_remaining_day else "на сегодня"
+        return f"По {city_label} пока недостаточно данных, чтобы пояснить прогноз {period_hint}."
     temps: list[float] = []
     feels_like_values: list[float] = []
     pressure_values: list[float] = []
@@ -244,10 +244,10 @@ def fallback_today_forecast(city_label: str, day_items: list[dict], *, is_remain
         if isinstance(wind_speed, (int, float)):
             wind_speeds.append(float(wind_speed))
 
-    prefix = "В оставшуюся часть дня" if is_remaining_day else "Сегодня"
+    prefix = "Сегодня"
     precip_note = "Возможны осадки." if precip_slots else "Существенных осадков не ожидается."
     return (
-        f"{prefix} в {city_label} ожидается {_dominant_description(day_items)}. "
+        f"{prefix} в локации {city_label} ожидается {_dominant_description(day_items)}. "
         f"Температура будет примерно {_range_text(temps, '°C')}, "
         f"по ощущениям {_range_text(feels_like_values, '°C')}. "
         f"{precip_note} {_tomorrow_wind_note(wind_speeds)} {_tomorrow_pressure_note(pressure_values)}"

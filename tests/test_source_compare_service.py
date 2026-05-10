@@ -3,12 +3,12 @@ import source_compare_service as service
 
 def test_compare_tomorrow_sources_success(monkeypatch):
     ow_slots = [
-        {"dt_txt": "2026-05-04 12:00:00", "main": {"temp": 10}, "weather": [{"description": "ясно"}], "wind": {"speed": 3}, "pop": 0.1},
-        {"dt_txt": "2026-05-04 15:00:00", "main": {"temp": 18}, "weather": [{"description": "ясно"}], "wind": {"speed": 4}, "pop": 0.1},
+        {"dt_txt": "2026-05-04 12:00:00", "main": {"temp": 10, "feels_like": 8, "humidity": 60, "pressure": 1008}, "weather": [{"description": "ясно"}], "wind": {"speed": 3}, "pop": 0.1, "rain": {"3h": 0.4}},
+        {"dt_txt": "2026-05-04 15:00:00", "main": {"temp": 18, "feels_like": 16, "humidity": 78, "pressure": 1012}, "weather": [{"description": "ясно"}], "wind": {"speed": 4}, "pop": 0.3, "rain": {"3h": 1.2}},
     ]
     om_slots = [
-        {"dt_txt": "2026-05-04 12:00:00", "main": {"temp": 9}, "weather": [{"description": "ясно"}], "wind": {"speed": 3}, "pop": 0.1},
-        {"dt_txt": "2026-05-04 15:00:00", "main": {"temp": 17}, "weather": [{"description": "ясно"}], "wind": {"speed": 5}, "pop": 0.1},
+        {"dt_txt": "2026-05-04 12:00:00", "main": {"temp": 9, "humidity": 58, "pressure": 1009}, "weather": [{"description": "ясно"}], "wind": {"speed": 3}, "pop": 0.1},
+        {"dt_txt": "2026-05-04 15:00:00", "main": {"temp": 17, "humidity": 74, "pressure": 1011}, "weather": [{"description": "ясно"}], "wind": {"speed": 5}, "pop": 0.4},
     ]
     monkeypatch.setattr(service, "get_forecast_5d3h_openweather_only", lambda lat, lon: ow_slots)
     monkeypatch.setattr(service, "get_forecast_5d3h_open_meteo_direct", lambda lat, lon: om_slots)
@@ -20,6 +20,12 @@ def test_compare_tomorrow_sources_success(monkeypatch):
     assert result["city_label"] == "Москва"
     assert result["openweather"]["provider_name"] == "OpenWeather"
     assert result["open_meteo"]["provider_name"] == "Open-Meteo"
+    assert result["openweather"]["min_feels_like"] == 8
+    assert result["openweather"]["max_feels_like"] == 16
+    assert result["openweather"]["precipitation_signal"]["max_amount"] == 1.2
+    assert result["openweather"]["wind_signal"]["min_speed"] == 3
+    assert result["openweather"]["min_humidity"] == 60
+    assert result["openweather"]["max_pressure"] == 1012
 
 
 def test_compare_tomorrow_sources_uses_explicit_provider_helpers_and_local_grouping(monkeypatch):
@@ -63,7 +69,7 @@ def test_compare_tomorrow_sources_handles_openweather_missing(monkeypatch):
 
     assert result["ok"] is False
     assert result["error_code"] == "provider_unavailable"
-    assert "OpenWeather недоступен" in result["error_message"]
+    assert "OpenWeather сейчас не ответил" in result["error_message"]
 
 
 def test_compare_tomorrow_sources_handles_open_meteo_missing(monkeypatch):
@@ -74,7 +80,7 @@ def test_compare_tomorrow_sources_handles_open_meteo_missing(monkeypatch):
 
     assert result["ok"] is False
     assert result["error_code"] == "provider_unavailable"
-    assert "Open-Meteo недоступен" in result["error_message"]
+    assert "Open-Meteo сейчас не ответил" in result["error_message"]
 
 
 def test_compare_tomorrow_sources_handles_missing_tomorrow(monkeypatch):

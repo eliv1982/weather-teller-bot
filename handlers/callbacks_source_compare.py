@@ -56,7 +56,7 @@ def handle_source_compare_callback(
             ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Не удалось сверить источники: один из прогнозов сейчас недоступен.",
+                "Не удалось сравнить источники: один из прогнозов сейчас недоступен.",
                 reply_markup=ctx.main_menu(),
             )
             return

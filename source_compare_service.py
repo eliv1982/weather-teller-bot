@@ -27,6 +27,7 @@ def build_provider_day_summary(city_label: str, provider_name: str, day_key: str
     payload["provider_name"] = provider_name
     payload["precipitation_text"] = _format_precipitation_summary(payload)
     payload["wind_text"] = _wind_label(payload)
+    payload["source_slot_count"] = len(day_items)
     return payload
 
 
@@ -41,11 +42,11 @@ def compare_tomorrow_sources(lat: float, lon: float, city_label: str) -> dict[st
         if not om_slots:
             missing.append("Open-Meteo")
         if len(missing) == 2:
-            error_message = "Не удалось сверить источники: оба прогноза сейчас недоступны."
+            error_message = "Не удалось сравнить источники: оба прогноза сейчас недоступны."
         elif missing[0] == "OpenWeather":
-            error_message = "Не удалось сверить оба источника: OpenWeather недоступен, Open-Meteo ответил успешно."
+            error_message = "Не удалось сравнить оба источника: OpenWeather сейчас не ответил, Open-Meteo ответил успешно."
         else:
-            error_message = "Не удалось сверить оба источника: Open-Meteo недоступен, OpenWeather ответил успешно."
+            error_message = "Не удалось сравнить оба источника: Open-Meteo сейчас не ответил, OpenWeather ответил успешно."
         return {
             "ok": False,
             "error_code": "provider_unavailable",

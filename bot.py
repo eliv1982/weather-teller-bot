@@ -105,6 +105,7 @@ from handlers.states import (
     LOCATIONS_STATES,
     ALERTS_MENU,
     LOCATIONS_MENU,
+    WEATHER_MENU,
     WAITING_ALERTS_ADD_GEO,
     WAITING_ALERTS_ADD_MENU,
     WAITING_ALERTS_ADD_PICK,
@@ -179,6 +180,7 @@ from flows import (
     start_geo_weather_flow as flow_start_geo_weather_flow,
     start_locations_flow as flow_start_locations_flow,
     start_source_compare_flow as flow_start_source_compare_flow,
+    start_weather_menu_flow as flow_start_weather_menu_flow,
     start_today_forecast_flow as flow_start_today_forecast_flow,
     start_tomorrow_forecast_flow as flow_start_tomorrow_forecast_flow,
 )
@@ -282,6 +284,7 @@ start_details_flow = partial(flow_start_details_flow, ctx=ctx, session_store=ses
 start_compare_flow = partial(flow_start_compare_flow, ctx=ctx, session_store=session_store)
 start_forecast_flow = partial(flow_start_forecast_flow, ctx=ctx, session_store=session_store)
 start_source_compare_flow = partial(flow_start_source_compare_flow, ctx=ctx, session_store=session_store)
+start_weather_menu_flow = partial(flow_start_weather_menu_flow, ctx=ctx, session_store=session_store)
 start_today_forecast_flow = partial(flow_start_today_forecast_flow, ctx=ctx, session_store=session_store)
 start_tomorrow_forecast_flow = partial(flow_start_tomorrow_forecast_flow, ctx=ctx, session_store=session_store)
 send_details_by_coordinates = partial(flow_send_details_by_coordinates, ctx=ctx, session_store=session_store)
@@ -349,7 +352,7 @@ def handle_help(message: types.Message) -> None:
 def handle_weather(message: types.Message) -> None:
     """Открывает раздел прогноза погоды через slash-команду."""
     logger.info("Получена команда /weather от пользователя %s.", message.from_user.id)
-    bot.send_message(message.chat.id, "Выбери погодный раздел.", reply_markup=weather_menu())
+    start_weather_menu_flow(message)
 
 
 @bot.message_handler(commands=["current"])
@@ -389,7 +392,7 @@ def handle_details(message: types.Message) -> None:
 
 @bot.message_handler(commands=["compare"])
 def handle_compare(message: types.Message) -> None:
-    """Запускает основной сценарий «Сравнить локации» через slash-команду."""
+    """Запускает основной сценарий «Сравнение локаций» через slash-команду."""
     logger.info("Получена команда /compare от пользователя %s.", message.from_user.id)
     start_ai_compare_flow(message, message.from_user.id, ctx=ctx, session_store=session_store)
 
@@ -422,7 +425,7 @@ def handle_menu_buttons(message: types.Message) -> None:
     logger.info("Пользователь %s нажал кнопку меню: %s", message.from_user.id, section_name)
 
     if section_name in {"🌦 Прогноз погоды", "Прогноз погоды"}:
-        bot.send_message(message.chat.id, "Выбери погодный раздел.", reply_markup=weather_menu())
+        start_weather_menu_flow(message)
         return
     if section_name in {"🌡 Погода сейчас", "🌤 Текущая погода", "Текущая погода"}:
         start_current_weather_flow(message)
@@ -963,6 +966,17 @@ def handle_unknown_text(message: types.Message) -> None:
     """Маршрутизирует текст в сценарный обработчик по текущему состоянию."""
     user_id = message.from_user.id
     state = session_store.get_state(user_id)
+
+    if message.text in MENU_BUTTONS:
+        return
+
+    if state == WEATHER_MENU:
+        bot.send_message(
+            message.chat.id,
+            "Выбери раздел в меню ниже.",
+            reply_markup=weather_menu(),
+        )
+        return
 
     if state in LOCATIONS_STATES and handle_locations_text(
         message,

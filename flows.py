@@ -5,6 +5,7 @@ from forecast_service import is_remaining_day_forecast
 from handlers.states import (
     ALERTS_MENU,
     LOCATIONS_MENU,
+    WEATHER_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_COMPARE_CITY_1,
     WAITING_CURRENT_WEATHER_CITY,
@@ -186,6 +187,16 @@ def start_source_compare_flow(message: types.Message, *, ctx, session_store) -> 
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_weather_menu_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Открывает экран выбора погодного раздела и сохраняет menu-state."""
+    session_store.set_state(message.from_user.id, WEATHER_MENU)
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери раздел в меню ниже.",
+        reply_markup=ctx.weather_menu(),
     )
 
 
@@ -530,7 +541,7 @@ def send_source_compare_by_coordinates(
     ctx,
     session_store,
 ) -> bool:
-    """Сверяет прогноз на завтра из OpenWeather и Open-Meteo для одной локации."""
+    """Сравнивает прогноз на завтра из OpenWeather и Open-Meteo для одной локации."""
     city_label = preferred_city_label or city_fallback or "Выбранная локация"
     result = compare_tomorrow_sources(lat, lon, city_label)
     session_store.user_states.pop(user_id, None)
@@ -539,7 +550,7 @@ def send_source_compare_by_coordinates(
     if not result.get("ok"):
         ctx.bot.send_message(
             message.chat.id,
-            str(result.get("error_message") or "Не удалось сверить источники: один из прогнозов сейчас недоступен."),
+            str(result.get("error_message") or "Не удалось сравнить источники: один из прогнозов сейчас недоступен."),
             reply_markup=ctx.main_menu(),
         )
         return False

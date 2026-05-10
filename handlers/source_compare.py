@@ -101,7 +101,7 @@ def handle_source_compare_text(
             if lat is None or lon is None:
                 ctx.bot.send_message(
                     message.chat.id,
-                    "Не удалось сверить источники: один из прогнозов сейчас недоступен.",
+                    "Не удалось сравнить источники: один из прогнозов сейчас недоступен.",
                     reply_markup=ctx.main_menu(),
                 )
                 return True

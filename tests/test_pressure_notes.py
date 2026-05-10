@@ -88,6 +88,16 @@ def test_current_fallback_keeps_comfort_phrase_without_caution_factors():
     assert "По ощущениям погода без явного дискомфорта." in text
 
 
+def test_current_fallback_uses_precipitation_wording_without_umbrella_advice():
+    weather = _weather_with_pressure(1013)
+
+    text = fallbacks.fallback_current("Москва", weather)
+
+    assert "Зонт не нужен" not in text
+    assert "можно обойтись без зонта" not in text
+    assert "По текущим данным, осадков сейчас нет." in text
+
+
 def test_details_fallback_adds_pressure_note_only_for_clear_pressure():
     high_text = fallbacks.fallback_details("Москва", _weather_with_pressure(1025), {"pm2_5": 12})
     normal_text = fallbacks.fallback_details("Москва", _weather_with_pressure(1013), {"pm2_5": 12})

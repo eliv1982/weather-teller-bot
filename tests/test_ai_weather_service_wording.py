@@ -111,15 +111,21 @@ def test_compare_current_outputs_factual_blocks(monkeypatch):
         assert label in text
     assert text.count("✨ ") == 2
     assert "Кратко:" not in text
-    assert "воздух сухой" in text
-    assert "влажность умеренная" in text
-    assert "ветер умеренный" in text
-    assert "ветер слабый" in text
+    assert "Воздух сухой" in text
+    assert "Влажность умеренная" in text
+    assert "В локации Тольятти: прохладно и пасмурно, ощущается около 6 °C." in text
+    assert "В локации Санкт-Петербург: тепло и ясно, ощущается около 17 °C." in text
+    assert "В Тольятти" not in text
+    assert "\n✨ Москва:" not in text
+    assert "ветер умеренный, осадков по текущим данным нет." in text.lower()
+    assert "ветер слабый, осадков по текущим данным нет." in text.lower()
     for comment in _short_comments(text):
-        assert "Тольятти" not in comment
-        assert "Санкт-Петербург" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Москва" not in comment
         assert "в Санкт-Петербург" not in comment
+        assert "В локации " in comment
+        assert "Лучше" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
 
@@ -134,15 +140,17 @@ def test_compare_current_rain_uses_absolute_precipitation(monkeypatch):
 
     assert "Екатеринбург" in text
     assert "Москва" in text
-    assert "идёт дождь" in text.lower()
-    assert "возможен снег" in text.lower()
-    assert "ветер заметный" in text
-    assert "ветер сильный" in text
+    assert "идут осадки" in text.lower()
+    assert "идёт снег" in text.lower()
+    assert "В локации Екатеринбург: прохладно, идут осадки, ощущается около 2 °C." in text
+    assert "В локации Москва: холодно, идёт снег, ощущается около -5 °C." in text
+    assert "влажно, ветер заметный." in text.lower()
+    assert "влажность умеренная, ветер сильный." in text.lower()
     assert text.count("✨ ") == 2
     assert "Кратко:" not in text
     for comment in _short_comments(text):
-        assert "Екатеринбург" not in comment
-        assert "Москва" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Москва" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
@@ -190,10 +198,16 @@ def test_compare_forecast_outputs_factual_blocks(monkeypatch):
     assert "без осадков" in text
     assert text.count("✨ ") == 2
     assert "Кратко:" not in text
+    assert "В локации Тольятти: ожидается прохладная погода, температура около 5.0°C-12.0°C. Ожидается небольшой дождь, вероятность до 45%. Ветер умеренный." in text
+    assert "В локации Санкт-Петербург: ожидается тёплая облачная погода, температура около 14.0°C-21.0°C. Без осадков. Ветер слабый." in text
+    assert "В Тольятти" not in text
+    assert "\n✨ Тольятти:" not in text
     for comment in _short_comments(text):
-        assert "Тольятти" not in comment
-        assert "Санкт-Петербург" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Санкт-Петербург" not in comment
+        assert "В локации " in comment
+        assert "будет небольшой дождь" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
 

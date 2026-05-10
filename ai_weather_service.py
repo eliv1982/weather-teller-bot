@@ -133,7 +133,7 @@ class AiWeatherService:
         *,
         is_remaining_day: bool = False,
     ) -> str:
-        """Поясняет прогноз на сегодня или на оставшуюся часть дня."""
+        """Поясняет прогноз на сегодня по доступным слотам."""
         fallback = self._fallback_today_forecast(city_label, day_forecast_data, is_remaining_day=is_remaining_day)
         signature = self._today_forecast_signature(
             city_label,
@@ -511,6 +511,12 @@ class AiWeatherService:
             return "ветер заметный"
         return "ветер сильный"
 
+    def _capitalize_phrase(self, text: object) -> str:
+        phrase = str(text or "").strip()
+        if not phrase:
+            return ""
+        return phrase[:1].upper() + phrase[1:]
+
     def _precipitation_absolute_note(
         self,
         description: object,
@@ -534,6 +540,78 @@ class AiWeatherService:
         text = str(value or "").strip()
         return text if text else "н/д"
 
+    def _current_precipitation_summary(self, description: object) -> str:
+        desc = self._normalize_description(description)
+        if "снег" in desc:
+            return "идёт снег"
+        if any(marker in desc for marker in ("дожд", "лив", "гроза")):
+            return "идут осадки"
+        return "осадков по текущим данным нет"
+
+    def _compare_location_label(self, city_label: str) -> str:
+        return self._get_short_location_name(city_label)
+
+    def _location_prefix(self, city_label: str) -> str:
+        return f"В локации {self._compare_location_label(city_label)}"
+
+    def _compare_current_lead(self, city_label: str, temperature_note: str, description: str) -> str:
+        label = self._location_prefix(city_label)
+        clean_description = str(description or "").strip()
+        if not clean_description or clean_description == "н/д":
+            return f"{label}: {temperature_note}"
+        desc_lower = clean_description.lower()
+        if "снег" in desc_lower:
+            return f"{label}: {temperature_note}, идёт снег"
+        if any(marker in desc_lower for marker in ("дожд", "лив", "гроза")):
+            return f"{label}: {temperature_note}, идут осадки"
+        return f"{label}: {temperature_note} и {desc_lower}"
+
+    def _temperature_weather_adjective(self, temperature_note: str) -> str:
+        mapping = {
+            "холодно": "холодная",
+            "прохладно": "прохладная",
+            "свежо": "свежая",
+            "тепло": "тёплая",
+            "жарко": "жаркая",
+        }
+        return mapping.get(temperature_note, "спокойная")
+
+    def _forecast_description_adjective(self, description: str) -> str | None:
+        desc = str(description or "").strip().lower()
+        mapping = {
+            "ясно": "ясная",
+            "солнечно": "солнечная",
+            "облачно": "облачная",
+            "пасмурно": "пасмурная",
+            "переменная облачность": "облачная",
+        }
+        return mapping.get(desc)
+
+    def _compare_forecast_lead(self, city_label: str, temperature_note: str, description: str) -> str:
+        label = self._location_prefix(city_label)
+        clean_description = str(description or "").strip()
+        weather_note = self._temperature_weather_adjective(temperature_note)
+        description_adjective = self._forecast_description_adjective(clean_description)
+        if description_adjective:
+            return f"{label}: ожидается {weather_note} {description_adjective} погода"
+        return f"{label}: ожидается {weather_note} погода"
+
+    def _forecast_short_precipitation_summary(self, description: object, probability: object) -> str:
+        desc = self._normalize_description(description)
+        if "снег" in desc:
+            return "ожидается снег"
+        if any(marker in desc for marker in ("дожд", "лив", "гроза")):
+            likely = isinstance(probability, (int, float)) and float(probability) >= 0.45
+            return f"ожидается {desc}" if likely else "возможны осадки"
+        if isinstance(probability, (int, float)) and float(probability) >= 0.2:
+            return "возможны осадки"
+        return "без осадков"
+
+    def _forecast_probability_phrase(self, probability: object) -> str | None:
+        if isinstance(probability, (int, float)) and float(probability) >= 0.2:
+            return f"вероятность до {round(float(probability) * 100):.0f}%"
+        return None
+
     def _render_compare_current_block(self, payload: dict, fallback_name: str) -> str:
         city = str(payload.get("city_label") or fallback_name)
         temperature = payload.get("temperature")
@@ -541,11 +619,26 @@ class AiWeatherService:
         humidity = payload.get("humidity")
         wind_speed = payload.get("wind_speed")
         description = self._clean_compare_description(payload.get("description"))
-        precipitation_note = self._precipitation_absolute_note(description, current=True)
+        precipitation_note = self._current_precipitation_summary(description)
+        temperature_note = self._temperature_absolute_note(
+            feels_like if isinstance(feels_like, (int, float)) else temperature
+        )
+        humidity_note = self._humidity_absolute_note(humidity)
+        wind_note = self._wind_absolute_note(wind_speed)
+        feels_like_note = (
+            f", ощущается около {round(float(feels_like))} °C"
+            if isinstance(feels_like, (int, float))
+            else ""
+        )
+        has_precip_in_lead = precipitation_note != "осадков по текущим данным нет"
+        details_sentence = (
+            f"{self._capitalize_phrase(humidity_note)}, {wind_note}."
+            if has_precip_in_lead
+            else f"{self._capitalize_phrase(humidity_note)}, {wind_note}, {precipitation_note}."
+        )
         short = (
-            f"✨ {self._temperature_absolute_note(feels_like if isinstance(feels_like, (int, float)) else temperature)}, "
-            f"{self._humidity_absolute_note(humidity)}, {self._wind_absolute_note(wind_speed)}. "
-            f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
+            f"✨ {self._capitalize_phrase(self._compare_current_lead(city, temperature_note, description))}{feels_like_note}. "
+            f"{details_sentence}"
         )
         return "\n".join([
             f"📍 {city}",
@@ -893,12 +986,8 @@ class AiWeatherService:
         return mapping.get(key)
 
     def _speak_about(self, city_label: str, inner: str) -> str:
-        """Строит фразу "В <Prep> <inner>" при известной форме, иначе "<Имя>: <inner>"."""
-        prep = self._get_prepositional_location_name(city_label)
-        if prep:
-            return f"В {prep} {inner}"
-        name = self._get_short_location_name(city_label)
-        return f"{name}: {inner}"
+        """Строит безопасную фразу без склонения названия локации."""
+        return f"В локации {self._get_short_location_name(city_label)}: {inner}"
 
     def _join_enumeration(self, parts: list[str]) -> str:
         """Объединяет элементы через запятую и союз 'и' перед последним."""
@@ -1036,10 +1125,18 @@ class AiWeatherService:
         avg_wind = wind_signal.get("avg_speed") if isinstance(wind_signal, dict) else None
         max_wind = wind_signal.get("max_speed") if isinstance(wind_signal, dict) else None
         precipitation_note = self._forecast_precipitation_note(payload)
+        probability = payload.get("precipitation_signal", {}).get("max_pop") if isinstance(payload.get("precipitation_signal"), dict) else None
+        short_precipitation = self._forecast_short_precipitation_summary(description, probability)
+        precipitation_probability = self._forecast_probability_phrase(probability)
+        temp_band = f"{self._format_number(min_temp, '°C')}-{self._format_number(max_temp, '°C')}"
+        second_sentence = (
+            f"{self._capitalize_phrase(short_precipitation)}, {precipitation_probability}. {self._capitalize_phrase(self._wind_absolute_note(avg_wind))}."
+            if precipitation_probability
+            else f"{self._capitalize_phrase(short_precipitation)}. {self._capitalize_phrase(self._wind_absolute_note(avg_wind))}."
+        )
         short = (
-            f"✨ {self._temperature_absolute_note(avg_temp)}, "
-            f"{self._wind_absolute_note(avg_wind)}. "
-            f"{precipitation_note[:1].upper() + precipitation_note[1:]}."
+            f"✨ {self._capitalize_phrase(self._compare_forecast_lead(city, self._temperature_absolute_note(avg_temp), description))}, "
+            f"температура около {temp_band}. {second_sentence}"
         )
         lines = [
             f"📍 {city}",

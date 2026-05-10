@@ -125,6 +125,7 @@ def _ai_compare_set_location(
     city_label: str,
     lat: float,
     lon: float,
+    announce_selection: bool = True,
     ctx,
     session_store,
 ) -> bool:
@@ -144,11 +145,13 @@ def _ai_compare_set_location(
     }
 
     session_store.ai_compare_location_choices.pop(user_id, None)
+    if announce_selection:
+        ctx.bot.send_message(message.chat.id, f"✅ Выбрано: {city_label}")
     if step == 1:
         session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC2_METHOD
         ctx.bot.send_message(
             message.chat.id,
-            f"Первая локация: {city_label}. Теперь выбери вторую локацию.",
+            "Теперь выбери вторую локацию.",
             reply_markup=ctx.ai_compare_location_method_menu(),
         )
         return True
@@ -169,7 +172,7 @@ def _ai_compare_set_location(
             )
             return True
 
-    ctx.bot.send_message(message.chat.id, f"Вторая локация: {city_label}. Сравниваю погоду.")
+    ctx.bot.send_message(message.chat.id, "Сравниваю погоду.")
     return _ai_compare_after_two_locations(message, user_id, ctx=ctx, session_store=session_store)
 
 
@@ -351,7 +354,7 @@ def _ai_compare_after_two_locations(message: types.Message, user_id: int, *, ctx
         session_store.user_states.pop(user_id, None)
         ctx.bot.send_message(
             message.chat.id,
-            f"✨ Сравнить локации (сейчас)\n\n🪄 Вывод:\n{text}",
+            f"✨ Сравнение локаций (сейчас)\n\n{text}",
             reply_markup=ctx.main_menu(),
         )
         return True
@@ -904,7 +907,7 @@ def handle_locations_text(
             session_store.user_states[user_id] = LOCATIONS_MENU
             ctx.bot.send_message(message.chat.id, "Раздел локаций.", reply_markup=ctx.locations_menu())
             return True
-        if choice in {"Сравнить сейчас", "🌤 Сейчас", "Сейчас"}:
+        if choice in {"⚖️ Сравнить сейчас", "Сравнить сейчас", "🌤 Сейчас", "Сейчас"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}
@@ -917,7 +920,7 @@ def handle_locations_text(
                 reply_markup=ctx.ai_compare_location_method_menu(),
             )
             return True
-        if choice in {"Сравнить на дату", "📅 На дату", "На дату"}:
+        if choice in {"📅 Сравнить на дату", "Сравнить на дату", "📅 На дату", "На дату"}:
             draft = session_store.ai_compare_drafts.get(user_id)
             if not isinstance(draft, dict):
                 draft = {}

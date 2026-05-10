@@ -19,6 +19,7 @@ WAITING_DETAILS_USE_FAVORITE = "waiting_details_use_favorite"
 WAITING_DETAILS_USE_SAVED_LOCATION = "waiting_details_use_saved_location"
 
 # Состояния сценария прогноза
+WEATHER_MENU = "weather_menu"
 WAITING_FORECAST_CITY = "waiting_forecast_city"
 WAITING_FORECAST_PICK = "waiting_forecast_pick"
 WAITING_FORECAST_SAVED_PICK = "waiting_forecast_saved_pick"

@@ -81,7 +81,7 @@ def test_send_source_compare_by_coordinates_handles_error(monkeypatch):
         "flows.compare_tomorrow_sources",
         lambda lat, lon, city: {
             "ok": False,
-            "error_message": "Не удалось сверить источники: один из прогнозов сейчас недоступен.",
+            "error_message": "Не удалось сравнить оба источника: Open-Meteo сейчас не ответил, OpenWeather ответил успешно.",
         },
     )
 
@@ -97,4 +97,4 @@ def test_send_source_compare_by_coordinates_handles_error(monkeypatch):
     )
 
     assert result is False
-    assert bot.messages[-1]["text"] == "Не удалось сверить источники: один из прогнозов сейчас недоступен."
+    assert bot.messages[-1]["text"] == "Не удалось сравнить оба источника: Open-Meteo сейчас не ответил, OpenWeather ответил успешно."

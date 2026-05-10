@@ -54,6 +54,10 @@ def _button_texts(markup):
     return [button.text for row in markup.keyboard for button in row]
 
 
+def _button_rows(markup):
+    return [[button.text for button in row] for row in markup.keyboard]
+
+
 def test_main_menu_contains_grouped_top_level_sections(monkeypatch):
     keyboards = _load_keyboards(monkeypatch)
 
@@ -65,18 +69,17 @@ def test_main_menu_contains_grouped_top_level_sections(monkeypatch):
     ]
 
 
-def test_weather_menu_contains_expected_submenu_buttons(monkeypatch):
+def test_weather_menu_groups_actions_two_per_row(monkeypatch):
     keyboards = _load_keyboards(monkeypatch)
 
-    assert _button_texts(keyboards.weather_menu()) == [
-        "🌡 Погода сейчас",
-        "☀️ Прогноз на сегодня",
-        "🌤 Прогноз на завтра",
-        "📅 Прогноз на 5 дней",
-        "🧭 Расширенные данные",
-        "🔎 Сравнить источники",
-        "⬅️ В меню",
+    assert _button_rows(keyboards.weather_menu()) == [
+        ["🌡 Погода сейчас", "☀️ Прогноз на сегодня"],
+        ["🌤 Прогноз на завтра", "📅 Прогноз на 5 дней"],
+        ["🧭 Расширенные данные", "🔎 Сравнить источники"],
+        ["⬅️ В меню"],
     ]
+    assert keyboards.weather_menu().kwargs.get("one_time_keyboard") is False
+    assert keyboards.weather_menu().kwargs.get("is_persistent") is True
 
 
 def test_locations_menu_contains_expected_submenu_buttons(monkeypatch):
@@ -101,11 +104,11 @@ def test_saved_locations_management_menu_contains_expected_actions(monkeypatch):
     ]
 
 
-def test_compare_mode_menu_uses_neutral_labels(monkeypatch):
+def test_compare_mode_menu_uses_emoji_labels(monkeypatch):
     keyboards = _load_keyboards(monkeypatch)
 
     assert _button_texts(keyboards.ai_compare_mode_menu()) == [
-        "Сравнить сейчас",
-        "Сравнить на дату",
+        "⚖️ Сравнить сейчас",
+        "📅 Сравнить на дату",
         "⬅️ Назад",
     ]

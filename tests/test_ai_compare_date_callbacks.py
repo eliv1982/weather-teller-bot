@@ -135,7 +135,9 @@ def test_date_pick_result_message_has_post_result_inline_keyboard():
     assert len(send_calls) >= 2
     _name, args, kwargs = send_calls[-1]
     body = args[1] if len(args) > 1 else args[0]
-    assert "Сводка" in body
+    assert body == f"✨ Сравнение локаций на {day}\n\nout"
+    assert "Сравнить локации" not in body
+    assert "Вывод:" not in body
     markup = kwargs.get("reply_markup")
     assert isinstance(markup, types.InlineKeyboardMarkup)
     buttons = _flat_inline_buttons(markup)

@@ -98,6 +98,20 @@ def test_forecast_day_fallback_uses_mmhg_for_clear_pressure():
     assert "hPa" not in low_text
 
 
+def test_current_fallback_uses_safe_location_wording():
+    text = fallbacks.fallback_current(
+        "Москва",
+        {
+            "main": {"temp": 8, "feels_like": 6, "pressure": 1012},
+            "weather": [{"description": "пасмурно"}],
+            "wind": {"speed": 4},
+        },
+    )
+
+    assert text.startswith("Сейчас в локации Москва:")
+    assert "Сейчас в Москва" not in text
+
+
 def test_tomorrow_forecast_fallback_uses_explanation_style_and_pressure_mmhg():
     text = fallbacks.fallback_tomorrow_forecast(
         "Москва",
@@ -117,7 +131,7 @@ def test_tomorrow_forecast_fallback_uses_explanation_style_and_pressure_mmhg():
         ],
     )
 
-    assert text.startswith("Завтра в Москва")
+    assert text.startswith("Завтра в локации Москва")
     assert "Рекомендация на день" not in text
     assert "лучшее окно для прогулки" not in text
     assert "Дождя не видно" not in text
@@ -131,6 +145,43 @@ def test_tomorrow_forecast_fallback_uses_explanation_style_and_pressure_mmhg():
     assert "Ветер умеренный." in text
     assert "hPa" not in text
     assert "гПа" not in text
+
+
+def test_today_forecast_prompt_for_remaining_day_avoids_leftover_day_phrase():
+    prompt = prompts.build_today_forecast_prompt(
+        "Тольятти",
+        [{"main": {"pressure": 1012}, "weather": [{"description": "небольшой дождь"}]}],
+        is_remaining_day=True,
+    )
+
+    assert "Поясни прогноз на сегодня" in prompt
+    assert "на оставшуюся часть дня" not in prompt
+    assert "оставшейся части дня" not in prompt
+
+
+def test_today_forecast_fallback_for_remaining_day_avoids_leftover_day_phrase():
+    text = fallbacks.fallback_today_forecast("Тольятти", [], is_remaining_day=True)
+
+    assert "на оставшуюся часть дня" not in text
+    assert "По Тольятти пока недостаточно данных, чтобы пояснить прогноз сегодня." == text
+
+
+def test_today_forecast_fallback_with_data_starts_with_today_not_leftover_day_phrase():
+    text = fallbacks.fallback_today_forecast(
+        "Тольятти",
+        [
+            {
+                "main": {"temp": 10, "feels_like": 9, "pressure": 1012},
+                "wind": {"speed": 6},
+                "weather": [{"description": "небольшой дождь"}],
+            }
+        ],
+        is_remaining_day=True,
+    )
+
+    assert text.startswith("Сегодня в локации Тольятти")
+    assert "На оставшуюся часть дня" not in text
+    assert "В оставшуюся часть дня" not in text
 
 
 def test_tomorrow_forecast_fallback_does_not_relabel_raw_pressure_as_mmhg():
