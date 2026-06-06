@@ -2,7 +2,7 @@ from datetime import datetime
 
 from weather_app import analyze_air_pollution
 from weather.descriptions import normalize_weather_description
-from weather.pressure import get_pressure_note_hpa
+from weather.pressure import format_pressure_mmhg, get_pressure_note_hpa
 
 
 def wind_direction_ru(deg: float) -> str:
@@ -238,6 +238,188 @@ def format_weather_response(city_label: str, weather: dict) -> str:
     if pressure_note:
         lines.append(pressure_note)
     lines.append(f"🌬 Ветер: {wind_text}")
+    return "\n".join(lines)
+
+
+def _format_history_metric(value: object, *, digits: int = 1, suffix: str = "") -> str:
+    if not isinstance(value, (int, float)):
+        return "н/д"
+    rounded = round(float(value), digits)
+    if rounded == 0:
+        rounded = 0.0
+    formatted = f"{rounded:.{digits}f}"
+    return f"{formatted}{suffix}" if suffix else formatted
+
+
+def _format_history_humidity(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "н/д"
+    return f"{round(float(value))}%"
+
+
+def _format_history_pressure_mmhg(value: object) -> str:
+    return format_pressure_mmhg(value)
+
+
+def _history_precipitation_type(history: dict) -> str:
+    rain_sum = history.get("rain_sum")
+    snowfall_sum = history.get("snowfall_sum")
+    precipitation_sum = history.get("precipitation_sum")
+
+    has_rain = isinstance(rain_sum, (int, float)) and float(rain_sum) > 0
+    has_snow = isinstance(snowfall_sum, (int, float)) and float(snowfall_sum) > 0
+    has_precipitation = isinstance(precipitation_sum, (int, float)) and float(precipitation_sum) > 0
+
+    if has_rain and has_snow:
+        return "дождь и снег"
+    if has_snow:
+        return "снег"
+    if has_rain:
+        return "дождь"
+    if has_precipitation:
+        return "осадки"
+    return "без существенных осадков"
+
+
+def _history_temperature_tone(history: dict) -> str | None:
+    mean_temp = history.get("temperature_mean")
+    min_temp = history.get("temperature_min")
+    max_temp = history.get("temperature_max")
+
+    reference = None
+    if isinstance(mean_temp, (int, float)):
+        reference = float(mean_temp)
+    elif isinstance(min_temp, (int, float)) and isinstance(max_temp, (int, float)):
+        reference = (float(min_temp) + float(max_temp)) / 2
+    elif isinstance(max_temp, (int, float)):
+        reference = float(max_temp)
+    elif isinstance(min_temp, (int, float)):
+        reference = float(min_temp)
+
+    if reference is None:
+        return None
+    if reference <= 0:
+        return "холодно"
+    if reference < 10:
+        return "прохладно"
+    if reference < 22:
+        return "умеренно тепло"
+    return "тепло"
+
+
+def _history_temperature_phrase(temperature_tone: str | None) -> str | None:
+    mapping = {
+        "холодно": "холодным",
+        "прохладно": "прохладным",
+        "умеренно тепло": "умеренно теплым",
+        "тепло": "теплым",
+    }
+    return mapping.get(temperature_tone or "")
+
+
+def _history_wind_phrase(wind_speed: object) -> str | None:
+    if not isinstance(wind_speed, (int, float)):
+        return None
+    value = float(wind_speed)
+    if value < 3:
+        return "ветер был слабым"
+    if value <= 5:
+        return "ветер был умеренным"
+    if value < 8:
+        return f"ветер был заметным, до {value:.1f} м/с"
+    return f"ветер усиливался до {value:.1f} м/с"
+
+
+def build_history_brief_summary(history: dict) -> str:
+    weather_description = normalize_weather_description(history.get("weather_description") or "без описания")
+    precipitation_type = _history_precipitation_type(history)
+    wind_speed = history.get("wind_speed_max")
+    humidity = history.get("relative_humidity_mean")
+    pressure_text = _format_history_pressure_mmhg(history.get("pressure_mean"))
+    temperature_phrase = _history_temperature_phrase(_history_temperature_tone(history))
+
+    if temperature_phrase and weather_description != "без описания":
+        sentence_1 = (
+            f"По архивным данным день выглядел {temperature_phrase}, "
+            f"а основные условия были такими: {weather_description}."
+        )
+    elif temperature_phrase:
+        sentence_1 = f"По архивным данным день выглядел {temperature_phrase}."
+    elif weather_description != "без описания":
+        sentence_1 = f"По архивным данным основные условия в течение дня были такими: {weather_description}."
+    else:
+        sentence_1 = "По архивным данным это примерная картина дня."
+
+    if precipitation_type == "без существенных осадков":
+        sentence_2 = "Существенных осадков по архивным данным не видно"
+    elif precipitation_type == "дождь":
+        sentence_2 = "По архивным данным в течение дня отмечался дождь"
+    elif precipitation_type == "снег":
+        sentence_2 = "По архивным данным в течение дня отмечался снег"
+    else:
+        sentence_2 = f"По архивным данным в течение дня отмечались {precipitation_type}"
+
+    wind_phrase = _history_wind_phrase(wind_speed)
+    if wind_phrase:
+        sentence_2 = f"{sentence_2}, {wind_phrase}."
+    else:
+        sentence_2 = f"{sentence_2}."
+
+    extra_parts: list[str] = []
+    if isinstance(humidity, (int, float)):
+        humidity_value = round(float(humidity))
+        if humidity_value >= 85:
+            extra_parts.append(f"влажность была высокой: около {humidity_value}%")
+        else:
+            extra_parts.append(f"влажность держалась около {humidity_value}%")
+    if pressure_text != "н/д":
+        extra_parts.append(f"давление было около {pressure_text}")
+
+    sentence_3 = ""
+    if extra_parts:
+        sentence_3 = " и ".join(extra_parts)
+        sentence_3 = sentence_3[0].upper() + sentence_3[1:] + "."
+
+    return " ".join(part for part in (sentence_1, sentence_2, sentence_3) if part)
+
+
+def format_history_weather_response(city_label: str, history: dict, *, short_summary: str | None = None) -> str:
+    """Собирает человекочитаемую историческую справку по дневным архивным данным."""
+    date_label = str(history.get("date_label") or history.get("date") or "н/д")
+    weather_description = normalize_weather_description(history.get("weather_description") or "без описания")
+    precipitation_type = _history_precipitation_type(history)
+    wind_speed = history.get("wind_speed_max")
+    wind_direction = history.get("wind_direction_dominant")
+    wind_direction_text = wind_direction_ru(float(wind_direction)) if isinstance(wind_direction, (int, float)) else "н/д"
+    short_summary_text = str(short_summary or "").strip() or build_history_brief_summary(history)
+
+    lines = [
+        f"🕰 История погоды: {city_label}",
+        f"📅 {date_label}",
+        "",
+        "🌡 Температура",
+        f"• Максимум: {_format_history_metric(history.get('temperature_max'), suffix=' °C')}",
+        f"• Минимум: {_format_history_metric(history.get('temperature_min'), suffix=' °C')}",
+        f"• Средняя: {_format_history_metric(history.get('temperature_mean'), suffix=' °C')}",
+        "",
+        "🌧 Осадки",
+        f"• По архивным данным: {precipitation_type}",
+        f"• Сумма осадков: {_format_history_metric(history.get('precipitation_sum'), suffix=' мм')}",
+        f"• Дождь: {_format_history_metric(history.get('rain_sum'), suffix=' мм')}",
+        f"• Снег: {_format_history_metric(history.get('snowfall_sum'), suffix=' см')}",
+        "",
+        "💨 Ветер",
+        f"• Максимальная скорость: {_format_history_metric(wind_speed, suffix=' м/с')}",
+        f"• Преобладающее направление: {wind_direction_text}",
+        "",
+        "📊 Дополнительно",
+        f"• Влажность: {_format_history_humidity(history.get('relative_humidity_mean'))}",
+        f"• Давление: {_format_history_pressure_mmhg(history.get('pressure_mean'))}",
+        f"• Условия по архивным данным: {weather_description}",
+        "",
+        "🤖 Коротко",
+        short_summary_text,
+    ]
     return "\n".join(lines)
 
 

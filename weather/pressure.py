@@ -9,6 +9,12 @@ HIGH_PRESSURE_NOTE = (
 )
 
 
+def format_pressure_mmhg(pressure_hpa: object) -> str:
+    if not isinstance(pressure_hpa, (int, float)):
+        return "н/д"
+    return f"{round(float(pressure_hpa) * 0.75006)} мм рт. ст."
+
+
 def get_pressure_note_hpa(pressure_hpa: object) -> str | None:
     if not isinstance(pressure_hpa, (int, float)):
         return None

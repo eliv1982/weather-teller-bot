@@ -265,3 +265,33 @@ def test_forecast_summary_prefers_specific_precipitation_type_over_generic(monke
 
     assert "возможен дождь" in text
     assert "возможны осадки" not in text
+
+
+def test_history_fallback_stays_factual_and_has_no_yo(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="")
+
+    text = service.explain_history_weather(
+        "Тольятти",
+        {
+            "date": "2026-05-01",
+            "date_label": "01.05.2026",
+            "temperature_max": 2.0,
+            "temperature_min": -1.0,
+            "temperature_mean": 0.0,
+            "precipitation_sum": 0.0,
+            "rain_sum": 0.0,
+            "snowfall_sum": 0.0,
+            "wind_speed_max": 4.0,
+            "relative_humidity_mean": 93.0,
+            "pressure_mean": 1025.0,
+            "weather_description": "пасмурно",
+        },
+    )
+
+    lowered = text.lower()
+    assert "по архивным данным" in lowered
+    assert "лучше" not in lowered
+    assert "одеться" not in lowered
+    assert "совет" not in lowered
+    assert "\u0451" not in lowered

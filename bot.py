@@ -32,6 +32,7 @@ from keyboards import (
     build_favorite_pick_keyboard,
     build_forecast_day_keyboard,
     build_forecast_days_keyboard,
+    build_history_date_keyboard,
     build_location_pick_keyboard,
     build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard,
@@ -53,6 +54,7 @@ from formatters import (
     format_alert_subscriptions,
     format_compare_response,
     format_details_response,
+    format_history_weather_response,
     format_saved_locations,
     format_source_compare_current_response,
     format_source_compare_response,
@@ -76,6 +78,7 @@ from locations_service import (
 from handlers.current import handle_current_text
 from handlers.details import handle_details_text
 from handlers.forecast import handle_forecast_text
+from handlers.history import handle_history_text
 from handlers.compare import handle_compare_text
 from handlers.source_compare import handle_source_compare_text
 from handlers.alerts import handle_alerts_text
@@ -90,6 +93,7 @@ from handlers.callbacks_current import handle_current_weather_callback
 from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
 from handlers.callbacks_compare import handle_compare_location_callback as handle_compare_callback_logic
 from handlers.callbacks_details import handle_details_location_callback as handle_details_callback_logic
+from handlers.callbacks_history import handle_history_callback as handle_history_callback_logic
 from handlers.callbacks_source_compare import handle_source_compare_callback as handle_source_compare_callback_logic
 from handlers.callbacks_locations import (
     handle_ai_compare_callback as handle_ai_compare_callback_logic,
@@ -106,6 +110,7 @@ from handlers.states import (
     CURRENT_STATES,
     DETAILS_STATES,
     FORECAST_STATES,
+    HISTORY_STATES,
     LOCATIONS_STATES,
     ALERTS_MENU,
     LOCATIONS_MENU,
@@ -143,6 +148,13 @@ from handlers.states import (
     WAITING_FORECAST_PICK,
     WAITING_FORECAST_USE_SAVED_LOCATION,
     WAITING_GEO_LOCATION,
+    WAITING_HISTORY_CITY,
+    WAITING_HISTORY_COORDS,
+    WAITING_HISTORY_CUSTOM_DATE,
+    WAITING_HISTORY_DATE_PICK,
+    WAITING_HISTORY_GEO,
+    WAITING_HISTORY_PICK,
+    WAITING_HISTORY_SAVED_PICK,
     WAITING_SOURCE_COMPARE_CITY,
     WAITING_SOURCE_COMPARE_DATE_PICK,
     WAITING_SOURCE_COMPARE_COORDS,
@@ -175,6 +187,8 @@ from flows import (
     complete_compare_two_locations as flow_complete_compare_two_locations,
     send_details_by_coordinates as flow_send_details_by_coordinates,
     send_forecast_by_coordinates as flow_send_forecast_by_coordinates,
+    send_weather_history_by_date as flow_send_weather_history_by_date,
+    prepare_weather_history_by_coordinates as flow_prepare_weather_history_by_coordinates,
     send_source_compare_by_coordinates as flow_send_source_compare_by_coordinates,
     send_source_compare_by_selected_date as flow_send_source_compare_by_selected_date,
     send_today_forecast_by_coordinates as flow_send_today_forecast_by_coordinates,
@@ -188,6 +202,7 @@ from flows import (
     start_locations_flow as flow_start_locations_flow,
     start_source_compare_flow as flow_start_source_compare_flow,
     start_source_compare_mode_flow as flow_start_source_compare_mode_flow,
+    start_weather_history_flow as flow_start_weather_history_flow,
     start_weather_menu_flow as flow_start_weather_menu_flow,
     start_today_forecast_flow as flow_start_today_forecast_flow,
     start_tomorrow_forecast_flow as flow_start_tomorrow_forecast_flow,
@@ -246,6 +261,7 @@ ctx = AppContext(
     build_alert_subscriptions_keyboard=build_alert_subscriptions_keyboard,
     build_saved_locations_keyboard=build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
+    build_history_date_keyboard=build_history_date_keyboard,
     build_source_compare_days_keyboard=build_source_compare_days_keyboard,
     build_source_compare_date_post_result_keyboard=build_source_compare_date_post_result_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
@@ -257,6 +273,7 @@ ctx = AppContext(
     format_alert_subscriptions=format_alert_subscriptions,
     format_compare_response=format_compare_response,
     format_details_response=format_details_response,
+    format_history_weather_response=format_history_weather_response,
     format_saved_locations=format_saved_locations,
     format_source_compare_current_response=format_source_compare_current_response,
     format_source_compare_response=format_source_compare_response,
@@ -297,11 +314,18 @@ start_compare_flow = partial(flow_start_compare_flow, ctx=ctx, session_store=ses
 start_forecast_flow = partial(flow_start_forecast_flow, ctx=ctx, session_store=session_store)
 start_source_compare_flow = partial(flow_start_source_compare_flow, ctx=ctx, session_store=session_store)
 start_source_compare_mode_flow = partial(flow_start_source_compare_mode_flow, ctx=ctx, session_store=session_store)
+start_weather_history_flow = partial(flow_start_weather_history_flow, ctx=ctx, session_store=session_store)
 start_weather_menu_flow = partial(flow_start_weather_menu_flow, ctx=ctx, session_store=session_store)
 start_today_forecast_flow = partial(flow_start_today_forecast_flow, ctx=ctx, session_store=session_store)
 start_tomorrow_forecast_flow = partial(flow_start_tomorrow_forecast_flow, ctx=ctx, session_store=session_store)
 send_details_by_coordinates = partial(flow_send_details_by_coordinates, ctx=ctx, session_store=session_store)
 send_forecast_by_coordinates = partial(flow_send_forecast_by_coordinates, ctx=ctx, session_store=session_store)
+prepare_weather_history_by_coordinates = partial(
+    flow_prepare_weather_history_by_coordinates,
+    ctx=ctx,
+    session_store=session_store,
+)
+send_weather_history_by_date = partial(flow_send_weather_history_by_date, ctx=ctx, session_store=session_store)
 send_source_compare_by_coordinates = partial(flow_send_source_compare_by_coordinates, ctx=ctx, session_store=session_store)
 send_source_compare_by_selected_date = partial(flow_send_source_compare_by_selected_date, ctx=ctx, session_store=session_store)
 send_today_forecast_by_coordinates = partial(flow_send_today_forecast_by_coordinates, ctx=ctx, session_store=session_store)
@@ -317,6 +341,9 @@ MENU_BUTTONS = [
     "☀️ Прогноз на сегодня",
     "🌤 Прогноз на завтра",
     "🧭 Расширенные данные",
+    "📅 История погоды",
+    "🕰 История погоды",
+    "Архив погоды",
     "🔎 Сравнить источники",
     "🔎 Сверить источники",
     "🌡 Сейчас",
@@ -457,6 +484,9 @@ def handle_menu_buttons(message: types.Message) -> None:
         return
     if section_name in {"📅 Прогноз на 5 дней", "Прогноз на 5 дней"}:
         start_forecast_flow(message)
+        return
+    if section_name in {"📅 История погоды", "🕰 История погоды", "История погоды", "Архив погоды"}:
+        start_weather_history_flow(message)
         return
     if section_name in {"🔎 Сравнить источники", "Сравнить источники", "🔎 Сверить источники", "Сверить источники"}:
         start_source_compare_flow(message)
@@ -617,6 +647,24 @@ def handle_location_message(message: types.Message) -> None:
         city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
         bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
         send_source_compare_by_coordinates(
+            message,
+            user_id,
+            float(lat),
+            float(lon),
+            city,
+            preferred_city_label=city,
+        )
+        return
+
+    if state in {WAITING_HISTORY_CITY, WAITING_HISTORY_GEO}:
+        session_store.history_location_choices.pop(user_id, None)
+        location_data = message.location
+        lat = location_data.latitude
+        lon = location_data.longitude
+        location = get_location_by_coordinates(lat, lon)
+        city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
+        bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
+        prepare_weather_history_by_coordinates(
             message,
             user_id,
             float(lat),
@@ -939,6 +987,19 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
     )
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("history_"))
+def handle_history_callback(call: types.CallbackQuery) -> None:
+    """Обрабатывает inline-выбор локации и даты для архивной погоды."""
+    handle_history_callback_logic(
+        call,
+        ctx=ctx,
+        session_store=session_store,
+        prepare_weather_history_by_coordinates=prepare_weather_history_by_coordinates,
+        send_weather_history_by_date=send_weather_history_by_date,
+        _message_stub_for_chat=_message_stub_for_chat,
+    )
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("source_compare_"))
 def handle_source_compare_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-выбор локации для сверки источников."""
@@ -1056,6 +1117,17 @@ def handle_unknown_text(message: types.Message) -> None:
         send_forecast_by_coordinates=send_forecast_by_coordinates,
         send_today_forecast_by_coordinates=send_today_forecast_by_coordinates,
         send_tomorrow_forecast_by_coordinates=send_tomorrow_forecast_by_coordinates,
+    ):
+        return
+
+    if state in HISTORY_STATES and handle_history_text(
+        message,
+        user_id,
+        state,
+        ctx=ctx,
+        session_store=session_store,
+        prepare_weather_history_by_coordinates=prepare_weather_history_by_coordinates,
+        send_weather_history_by_date=send_weather_history_by_date,
     ):
         return
 

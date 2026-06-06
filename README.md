@@ -2,97 +2,129 @@
 
 ## English Summary
 
-Weather Teller is a deployed Telegram weather assistant built with Python, PostgreSQL, Docker Compose, OpenWeather API and OpenAI API.
-It provides current weather, tomorrow forecast, 5-day forecast, saved locations, location comparison, subscriptions and short AI explanations.
-The project is in active beta testing and is designed to run locally or as a Docker Compose deployment.
+Weather Teller is a Telegram bot for current weather, today and tomorrow forecasts, 5-day forecast, extended weather details, saved locations, location comparison, subscription updates, source comparison, historical weather reference, and short AI explanations. The project combines OpenWeather, Open-Meteo, Open-Meteo Historical Weather API, OpenAI, PostgreSQL, and Docker Compose. It can be run locally with Python for development or through Docker Compose for a closer-to-real deployment flow.
 
-## Описание
+## О проекте
 
-Weather Teller — Telegram-бот для погоды и погодных сценариев на каждый день. Он помогает быстро посмотреть прогноз, сохранить важные локации, сравнить погоду в двух местах и настроить подписки на погодные обновления.
+Weather Teller Telegram Bot помогает быстро посмотреть текущую погоду, прогнозы, сравнение локаций, сверку данных из разных погодных источников, архивную справку по погоде и подписки на обновления.
 
-Текущий статус: **v1.2 beta-ready / active beta testing**.
+Текущий статус: active beta testing.
+
+Бот ориентирован на понятные ответы в Telegram, аккуратные AI-пояснения и fallback-режимы, когда AI недоступен. Архивная погода показывается как справка по архивным данным, а не как гарантированное наблюдение конкретной метеостанции.
 
 ## Возможности
 
-### Меню
+### Главное меню
 
-Главное меню сгруппировано по разделам:
-
-- 🌦 Прогноз погоды
-- 📍 Локации
-- 🔔 Подписки
-- ℹ️ Помощь
+- `🌦 Прогноз погоды`
+- `📍 Локации`
+- `🔔 Подписки`
+- `ℹ️ Помощь`
 
 ### Прогноз погоды
 
-- текущая погода;
-- прогноз на завтра;
-- прогноз на 5 дней;
-- расширенные погодные данные;
-- AI-пояснение текущей погоды;
-- AI-пояснение прогноза на завтра;
-- AI-пояснение выбранного дня прогноза;
-- ввод локации текстом, координатами, геолокацией или через сохранённые локации.
+В погодном меню доступны:
+
+- `🌡 Погода сейчас`
+- `☀️ Прогноз на сегодня`
+- `🌤 Прогноз на завтра`
+- `📅 Прогноз на 5 дней`
+- `🧭 Расширенные данные`
+- `📅 История погоды`
+- `🔎 Сравнить источники`
+
+Для текущей погоды, прогнозов и расширенных данных бот умеет показывать короткие AI-пояснения и factual fallback-пояснения, если OpenAI не настроен или временно недоступен.
+
+### Архивная погода
+
+Архивная справка строится через Open-Meteo Historical Weather API.
+
+Поддерживается:
+
+- выбор локации текстом;
+- выбор через геолокацию;
+- выбор сохраненной локации;
+- ввод координат;
+- быстрые даты: `Вчера`, `7 дней назад`, `30 дней назад`;
+- ручной ввод даты в форматах `YYYY-MM-DD` и `DD.MM.YYYY`.
+
+Отчет включает:
+
+- температуру;
+- осадки;
+- ветер;
+- влажность;
+- давление;
+- погодные условия;
+- короткий блок `🤖 Коротко` с AI-расшифровкой или fallback-описанием.
+
+History flow в beta-версии уже приведен к общему UX проекта: после выбора локации или даты inline-меню убирается, в чате остается короткое подтверждение выбора, затем приходит результат.
+
+### Сверка источников
+
+Сценарий `🔎 Сравнить источники` показывает данные OpenWeather и Open-Meteo рядом, чтобы можно было посмотреть различия без выбора "лучшего" провайдера.
+
+В коде доступны режимы:
+
+- `🌡 Сейчас`
+- `☀️ Сегодня`
+- `🌤 Завтра`
+- `📅 На дату`
+
+Сверка источников оформляется нейтрально и не подменяет собой обычный прогноз.
 
 ### Локации
 
-- сохранение важных локаций;
-- добавление через город, координаты или геолокацию;
-- переименование и удаление;
-- защита от дублей;
-- использование сохранённых локаций в погоде, прогнозе, расширенных данных, подписках и сравнении.
+Раздел локаций поддерживает:
 
-### Сравнение
+- сохраненные локации;
+- добавление по названию города;
+- добавление по координатам;
+- добавление по геолокации;
+- переименование;
+- удаление;
+- защиту от дублей.
 
-- сравнение локаций сейчас;
-- сравнение прогноза по двум локациям на дату;
-- выбор каждой локации любым доступным способом;
-- фактический нейтральный вывод без навязчивых рекомендаций.
+### Сравнение локаций
+
+Бот умеет:
+
+- сравнивать текущую погоду в двух локациях;
+- сравнивать прогноз по двум локациям на дату;
+- формировать нейтральный вывод без "лучше" и "хуже".
 
 ### Подписки
 
-- подписки на погодные обновления по нескольким локациям;
-- настройка интервала;
-- включение и выключение подписки;
-- удаление подписки;
-- хранение подписок в PostgreSQL.
+Раздел подписок поддерживает:
 
-### AI и кэширование
-
-- OpenAI API для коротких погодных пояснений;
-- deterministic fallback, если OpenAI API недоступен;
-- OpenWeather API cache для погодных запросов;
-- PostgreSQL AI cache для AI-ответов.
+- погодные обновления по выбранным или сохраненным локациям;
+- интервалы обновлений;
+- включение;
+- выключение;
+- удаление подписок.
 
 ## Команды
 
-Видимые команды для BotFather:
+Фактически зарегистрированные команды:
 
-```text
-start - Главное меню
-weather - Прогноз погоды
-locations - Локации
-subscriptions - Подписки
-help - Помощь
-```
-
-Команды в боте:
-
-- `/start` — главное меню
-- `/weather` — прогноз погоды
-- `/locations` — локации
-- `/subscriptions` — подписки
-- `/help` — помощь
-
-Дополнительно могут работать старые быстрые команды:
-
+- `/start`
+- `/help`
+- `/weather`
 - `/current`
 - `/tomorrow`
 - `/forecast`
+- `/geo`
 - `/details`
 - `/compare`
 - `/alerts`
-- `/geo`
+- `/subscriptions`
+- `/locations`
+
+Важно:
+
+- отдельной команды `/history` в проекте нет;
+- архивная погода доступна через меню `🌦 Прогноз погоды` -> `📅 История погоды`;
+- сверка источников доступна через меню `🌦 Прогноз погоды` -> `🔎 Сравнить источники`.
 
 ## Стек
 
@@ -101,193 +133,194 @@ help - Помощь
 - Docker Compose
 - PostgreSQL
 - OpenWeather API
+- Open-Meteo API
+- Open-Meteo Historical Weather API
 - OpenAI API
 - pytest
 
 ## Структура проекта
 
+Ниже перечислены основные файлы и модули, которые отражают текущее состояние репозитория:
+
 ```text
-bot.py
-flows.py
-handlers/
-weather/
-ai/
-ai_weather_service.py
-postgres_storage.py
-alerts_subscription_service.py
-app_context.py
-session_store.py
-formatters.py
-keyboards.py
-Dockerfile
-docker-compose.yml
-docker-compose.postgres.yml
-tests/
+weather_telegram_bot/
+├── bot.py
+├── flows.py
+├── formatters.py
+├── keyboards.py
+├── app_context.py
+├── ai_weather_service.py
+├── forecast_service.py
+├── weather_history_service.py
+├── source_compare_service.py
+├── alerts_service.py
+├── alerts_subscription_service.py
+├── locations_service.py
+├── storage.py
+├── postgres_storage.py
+├── weather_app.py
+├── docker-compose.yml
+├── docker-compose.postgres.yml
+├── .env.example
+├── handlers/
+│   ├── history.py
+│   ├── callbacks_history.py
+│   ├── source_compare.py
+│   ├── callbacks_source_compare.py
+│   ├── locations.py
+│   ├── callbacks_locations.py
+│   ├── forecast.py
+│   ├── details.py
+│   └── ...
+├── weather/
+│   ├── api.py
+│   ├── open_meteo.py
+│   ├── air_quality.py
+│   ├── descriptions.py
+│   ├── locations.py
+│   └── pressure.py
+└── tests/
+    ├── test_weather_history_service.py
+    ├── test_weather_history_formatter.py
+    ├── test_weather_history_flow.py
+    ├── test_weather_history_handlers.py
+    ├── test_source_compare_service.py
+    ├── test_source_compare_formatter.py
+    ├── test_source_compare_flow.py
+    ├── test_menu_keyboards.py
+    ├── test_bot_menu_routing.py
+    └── ...
 ```
-
-Ключевые модули:
-
-- `bot.py` — точка входа, регистрация обработчиков, polling и фоновые процессы.
-- `flows.py` — сценарии погодных flow.
-- `handlers/` — текстовые и callback-обработчики.
-- `weather/` — OpenWeather API, геокодинг, air quality и погодные helpers.
-- `ai/` и `ai_weather_service.py` — prompt builders, fallback-логика, signatures и AI-интеграция.
-- `postgres_storage.py` — хранение данных в PostgreSQL.
-- `alerts_subscription_service.py` — логика подписок.
-- `formatters.py` — пользовательские тексты.
-- `keyboards.py` — reply и inline клавиатуры.
 
 ## Переменные окружения
 
-Пример `.env` без секретов:
+Актуальный набор переменных можно посмотреть в `.env.example`.
+
+Основные переменные:
 
 ```env
-BOT_TOKEN=your_telegram_bot_token
-OW_API_KEY=your_openweather_api_key
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=your_openai_model
-
+OW_API_KEY=
+BOT_TOKEN=
+OPEN_METEO_FALLBACK=1
 PGHOST=localhost
 PGPORT=5432
 PGDATABASE=weather_teller
-PGUSER=weather_user
-PGPASSWORD=change_me
+PGUSER=postgres
+PGPASSWORD=postgres
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
-Важно:
+Пояснения:
 
-- не коммить реальные токены, IP-адреса серверов и production credentials;
-- для локального запуска обычно используется `PGHOST=localhost`;
-- для Docker Compose внутри контейнерной сети обычно используется `PGHOST=postgres`;
-- `OPENAI_API_KEY` опционален: при его отсутствии погодные сценарии продолжают работать через fallback.
+- `OW_API_KEY` обязателен для сценариев OpenWeather.
+- `BOT_TOKEN` обязателен для запуска Telegram-бота.
+- `OPEN_METEO_FALLBACK=1` включает fallback на Open-Meteo для current weather, forecast и geocoding, когда это предусмотрено кодом.
+- Open-Meteo в этом проекте используется без отдельного API key.
+- `OPENAI_API_KEY` опционален. Если он не задан, бот продолжает работать через factual fallback-пояснения.
+- `OPENAI_MODEL` задает модель для коротких AI-пояснений.
 
 ## Локальный запуск
 
-1. Создать виртуальное окружение:
+### Рекомендуемый путь: Docker Compose
 
 ```bash
-python -m venv venv
+docker compose up -d --build
+docker compose ps
+docker compose logs -f weather_bot
+docker compose down
 ```
 
-2. Активировать окружение.
-
-Windows PowerShell:
-
-```powershell
-venv\Scripts\Activate.ps1
-```
-
-Windows CMD:
-
-```cmd
-venv\Scripts\activate.bat
-```
-
-3. Установить зависимости:
+### Запуск только бота после сборки
 
 ```bash
-pip install -r requirements.txt
+docker compose up -d --build weather_bot
+docker compose logs -f weather_bot
 ```
 
-4. Подготовить `.env`:
+### Запуск через Python для разработки
 
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-5. Заполнить `BOT_TOKEN`, `OW_API_KEY`, параметры PostgreSQL и при необходимости `OPENAI_API_KEY`.
-
-6. Запустить PostgreSQL локально или через Docker Compose.
-
-7. Запустить бота:
+Если нужен быстрый локальный цикл без контейнеров:
 
 ```bash
 python bot.py
 ```
 
+Перед запуском заполните `.env` на основе `.env.example`.
+
+Важно: если используется тот же `BOT_TOKEN`, нельзя одновременно держать production polling и локальный polling. Иначе Telegram может вернуть conflict между двумя процессами.
+
 ## Docker Compose
 
-Запуск PostgreSQL отдельно для локальной разработки:
+В проекте есть два compose-файла:
+
+- `docker-compose.yml` — основной локальный сценарий с сервисами `postgres` и `weather_bot`;
+- `docker-compose.postgres.yml` — отдельный сценарий только для PostgreSQL.
+
+Полезные команды:
 
 ```bash
-docker compose -f docker-compose.postgres.yml up -d
-```
-
-Остановка:
-
-```bash
-docker compose -f docker-compose.postgres.yml down
-```
-
-Запуск полного стека:
-
-```bash
+docker compose ps
+docker compose logs -f weather_bot
 docker compose up -d --build
-```
-
-Остановка полного стека:
-
-```bash
+docker compose up -d --build weather_bot
 docker compose down
 ```
 
-Для Docker Compose проверь, что в `.env` указан контейнерный хост PostgreSQL, например `PGHOST=postgres`.
-
 ## PostgreSQL
 
-В базе хранятся:
+PostgreSQL используется для хранения пользовательских данных и AI cache.
 
-- `users` — пользовательские настройки и последняя рабочая локация;
-- `saved_locations` — сохранённые локации;
-- `alert_subscriptions` — подписки на погодные обновления;
-- `ai_response_cache` — кэш AI-ответов.
+Актуальные таблицы:
 
-Пример входа в `psql` внутри контейнера:
+- `users`
+- `saved_locations`
+- `alert_subscriptions`
+- `ai_response_cache`
 
-```bash
-docker exec -it weather_postgres psql -U weather_user -d weather_teller -P pager=off
-```
+На текущем этапе для history flow и source compare не добавлялись отдельные таблицы. Архивная погода и сверка источников работают через сервисы и существующую инфраструктуру приложения.
 
-## Тесты
+## Тесты и проверки
 
-Запуск тестов:
+Основные команды проверки:
 
 ```bash
-pytest
-```
-
-Проверка компиляции Python-файлов:
-
-```bash
+python -m pytest
 python -m compileall .
+rg "ё|Ё"
 ```
+
+Что уже покрыто тестами:
+
+- меню и routing;
+- weather history service;
+- weather history formatter;
+- weather history flow;
+- weather history handlers;
+- source compare service;
+- source compare formatter;
+- source compare flow;
+- date parsing;
+- error paths для history и fallback-сценариев Open-Meteo.
 
 ## Roadmap
 
 ### Near-term
 
-- location-not-found copy polish;
-- more beta wording fixes.
-
-### Experimental, not merged yet
-
-- Open-Meteo fallback if OpenWeather fails;
-- compare forecast across two sources.
+- beta wording polish и cleanup пользовательских текстов;
+- дополнительная полировка history UX там, где это нужно после smoke-test;
+- сценарий "выбрать другую дату" для той же history-локации без повторного ввода;
+- voice input как отдельный следующий этап, без смешивания с текущими weather flows.
 
 ### Later
 
-- voice input;
-- TTS for AI explanations;
-- climate/historical context;
-- separate air quality module.
+- TTS и голосовой вывод;
+- более широкий климатический контекст там, где это действительно полезно;
+- дополнительные погодные провайдеры;
+- наблюдаемость, логи и monitoring для beta-эксплуатации.
 
-## Автор
+## Примечания
 
-Автор: Елена Шленскова
-Telegram: @elena_shlenskova
+- OpenWeather и Open-Meteo могут отличаться по расчетным моделям и таймзонам, поэтому сверка источников показывает данные рядом, а не пытается выбрать "правильный" ответ.
+- Архивная погода описывает примерную картину дня по архивным данным Open-Meteo.
+- AI-пояснения короткие и необязательные: при недоступности OpenAI бот должен оставаться полезным и без них.

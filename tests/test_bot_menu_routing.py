@@ -56,6 +56,36 @@ def test_weather_menu_button_routes_to_source_compare(monkeypatch):
     assert calls == ["🔎 Сравнить источники"]
 
 
+def test_weather_menu_button_routes_to_history(monkeypatch):
+    telebot_module = types.ModuleType("telebot")
+    telebot_module.TeleBot = _FakeTeleBot
+    telebot_module.types = types.SimpleNamespace(
+        Message=object,
+        CallbackQuery=object,
+        ReplyKeyboardMarkup=object,
+        KeyboardButton=object,
+        InlineKeyboardMarkup=object,
+        InlineKeyboardButton=object,
+        ReplyKeyboardRemove=lambda: "reply-keyboard-remove",
+    )
+    dotenv_module = types.ModuleType("dotenv")
+    dotenv_module.load_dotenv = lambda: None
+
+    monkeypatch.setenv("BOT_TOKEN", "test-bot-token")
+    monkeypatch.setitem(sys.modules, "telebot", telebot_module)
+    monkeypatch.setitem(sys.modules, "dotenv", dotenv_module)
+    sys.modules.pop("bot", None)
+    bot = importlib.import_module("bot")
+
+    calls = []
+    monkeypatch.setattr(bot, "start_weather_history_flow", lambda message: calls.append(message.text))
+    message = types.SimpleNamespace(text="📅 История погоды", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
+
+    bot.handle_menu_buttons(message)
+
+    assert calls == ["📅 История погоды"]
+
+
 def test_source_compare_menu_mode_button_sets_current_mode_and_asks_for_location(monkeypatch):
     telebot_module = types.ModuleType("telebot")
     telebot_module.TeleBot = _FakeTeleBot

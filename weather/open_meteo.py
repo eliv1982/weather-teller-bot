@@ -13,7 +13,7 @@ Open-Meteo forecast/current/geocode fallbacks behind env flags in ``weather.api`
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 import requests
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 _CURRENT_VARS = (
     "temperature_2m,apparent_temperature,relative_humidity_2m,"
@@ -31,6 +32,12 @@ _HOURLY_VARS = (
     "temperature_2m,apparent_temperature,relative_humidity_2m,"
     "pressure_msl,weather_code,wind_speed_10m,wind_direction_10m,"
     "precipitation_probability,precipitation"
+)
+_HISTORY_DAILY_VARS = (
+    "temperature_2m_max,temperature_2m_min,temperature_2m_mean,"
+    "precipitation_sum,rain_sum,snowfall_sum,"
+    "wind_speed_10m_max,wind_direction_10m_dominant,"
+    "relative_humidity_2m_mean,pressure_msl_mean,surface_pressure_mean,weather_code"
 )
 
 
@@ -176,6 +183,54 @@ def fetch_open_meteo_geocode(
         data = response.json()
     except ValueError:
         logger.warning("Open-Meteo geocode invalid JSON for name=%r", query)
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def fetch_open_meteo_history_daily(
+    lat: float,
+    lon: float,
+    *,
+    target_date: date,
+    timezone: str = "auto",
+    timeout: int = 10,
+) -> dict[str, Any] | None:
+    """
+    Fetch Open-Meteo historical daily data for one calendar day.
+
+    The Historical Weather API uses the dedicated archive endpoint and requires
+    ``timezone`` when requesting ``daily`` aggregations.
+    """
+    day_iso = target_date.isoformat()
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": day_iso,
+        "end_date": day_iso,
+        "daily": _HISTORY_DAILY_VARS,
+        "timezone": timezone,
+        "wind_speed_unit": "ms",
+    }
+    try:
+        response = requests.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=timeout)
+    except requests.RequestException:
+        logger.warning("Open-Meteo archive request failed for lat=%s lon=%s date=%s", lat, lon, day_iso, exc_info=True)
+        return None
+    if response.status_code != 200:
+        logger.warning(
+            "Open-Meteo archive HTTP %s for lat=%s lon=%s date=%s",
+            response.status_code,
+            lat,
+            lon,
+            day_iso,
+        )
+        return None
+    try:
+        data = response.json()
+    except ValueError:
+        logger.warning("Open-Meteo archive invalid JSON for lat=%s lon=%s date=%s", lat, lon, day_iso)
         return None
     if not isinstance(data, dict):
         return None

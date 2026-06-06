@@ -1,6 +1,7 @@
 """Prompt templates/builders extracted from AiWeatherService."""
 
 from weather.descriptions import normalize_weather_description
+from weather.pressure import format_pressure_mmhg
 
 
 def _normalize_ai_weather_payload(value: object) -> object:
@@ -12,7 +13,7 @@ def _normalize_ai_weather_payload(value: object) -> object:
 
     normalized: dict = {}
     for key, item in value.items():
-        if key == "description":
+        if key in {"description", "weather_description"}:
             normalized[key] = normalize_weather_description(item) if isinstance(item, str) else item
         elif key == "weather" and isinstance(item, list):
             normalized[key] = [
@@ -26,6 +27,16 @@ def _normalize_ai_weather_payload(value: object) -> object:
         else:
             normalized[key] = item
     return normalized
+
+
+def _prepare_history_prompt_payload(history_data: dict) -> tuple[dict, str]:
+    payload = _normalize_ai_weather_payload(history_data)
+    if not isinstance(payload, dict):
+        return {}, "н/д"
+
+    prompt_payload = dict(payload)
+    pressure_text = format_pressure_mmhg(prompt_payload.pop("pressure_mean", None))
+    return prompt_payload, pressure_text
 
 
 def _format_tomorrow_pressure_note(day_forecast_data: list[dict]) -> str:
@@ -184,6 +195,30 @@ def build_current_prompt(city_label: str, weather_data: dict) -> str:
         "Пиши как полезный совет живого помощника, без сухих шаблонов.\n\n"
         f"Локация: {city_label}\n"
         f"Данные: {ai_weather_data}"
+    )
+
+
+def build_history_prompt(city_label: str, history_data: dict) -> str:
+    ai_history_data, pressure_text = _prepare_history_prompt_payload(history_data)
+    pressure_line = f"Давление: {pressure_text}\n" if pressure_text != "н/д" else ""
+    return (
+        "Коротко поясни архивную погоду за прошедший день простым русским языком.\n"
+        "Требования: 2-3 коротких предложения, спокойно и по делу, без канцелярита, "
+        "без драматизации, без дисклеймеров и без воды.\n"
+        "Используй только переданные данные, ничего не выдумывай.\n"
+        "Это архивная справка: опирайся на формулировки вроде «по архивным данным» "
+        "или «примерная картина дня».\n"
+        "Не давай рекомендаций. Не сравнивай с другими днями. Не используй букву с двумя точками. "
+        "Пиши через обычную е.\n"
+        "Не давай медицинских рекомендаций и не советуй, как одеваться.\n"
+        "Коротко опиши температуру, осадки, ветер и при уместности добавь один спокойный штрих "
+        "про влажность, давление или общие условия дня.\n\n"
+        "Если упоминаешь давление, используй только строку давления в мм рт. ст. "
+        "Не пиши hPa, гПа и не выводи сырые числа без единицы. "
+        "Если давления нет в данных, не упоминай его.\n\n"
+        f"Локация: {city_label}\n"
+        f"{pressure_line}"
+        f"Архивные данные за день: {ai_history_data}"
     )
 
 

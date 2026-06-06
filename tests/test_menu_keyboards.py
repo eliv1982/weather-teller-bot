@@ -75,7 +75,8 @@ def test_weather_menu_groups_actions_two_per_row(monkeypatch):
     assert _button_rows(keyboards.weather_menu()) == [
         ["🌡 Погода сейчас", "☀️ Прогноз на сегодня"],
         ["🌤 Прогноз на завтра", "📅 Прогноз на 5 дней"],
-        ["🧭 Расширенные данные", "🔎 Сравнить источники"],
+        ["🧭 Расширенные данные", "📅 История погоды"],
+        ["🔎 Сравнить источники"],
         ["⬅️ В меню"],
     ]
     assert keyboards.weather_menu().kwargs.get("one_time_keyboard") is False
@@ -124,3 +125,21 @@ def test_source_compare_mode_menu_groups_modes_cleanly(monkeypatch):
     ]
     assert keyboards.source_compare_mode_menu().kwargs.get("one_time_keyboard") is False
     assert keyboards.source_compare_mode_menu().kwargs.get("is_persistent") is True
+
+
+def test_history_date_keyboard_contains_presets_and_menu(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    buttons = [
+        (button.text, button.callback_data)
+        for row in keyboards.build_history_date_keyboard().keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("Вчера", "history_date_preset:yesterday"),
+        ("7 дней назад", "history_date_preset:7d"),
+        ("30 дней назад", "history_date_preset:30d"),
+        ("Выбрать дату", "history_date_custom"),
+        ("⬅️ В меню", "history_menu"),
+    ]

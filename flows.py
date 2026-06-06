@@ -1,4 +1,5 @@
 import time
+from datetime import date
 from telebot import types
 from forecast_service import is_remaining_day_forecast
 
@@ -13,6 +14,8 @@ from handlers.states import (
     WAITING_DETAILS_CITY,
     WAITING_FORECAST_CITY,
     WAITING_GEO_LOCATION,
+    WAITING_HISTORY_CITY,
+    WAITING_HISTORY_DATE_PICK,
     WAITING_SOURCE_COMPARE_CITY,
     WAITING_SOURCE_COMPARE_DATE_PICK,
     WAITING_TODAY_FORECAST_CITY,
@@ -25,6 +28,7 @@ from source_compare_service import (
     compare_tomorrow_sources,
     get_source_compare_available_dates,
 )
+from weather_history_service import format_history_date_label, get_weather_history_by_date
 
 
 def _get_favorite_location(user_data: dict) -> dict | None:
@@ -143,7 +147,7 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
-        "Введи название населённого пункта или выбери другой способ ниже:",
+        "Введи название населенного пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
@@ -160,7 +164,7 @@ def start_tomorrow_forecast_flow(message: types.Message, *, ctx, session_store) 
     session_store.user_states[user_id] = WAITING_TOMORROW_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
-        "Введи название населённого пункта или выбери другой способ ниже:",
+        "Введи название населенного пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
@@ -207,6 +211,22 @@ def start_source_compare_mode_flow(message: types.Message, mode: str, *, ctx, se
     ctx.bot.send_message(
         message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_weather_history_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Запускает сценарий архивной погоды и переводит пользователя к выбору локации."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий архивной погоды для пользователя %s.", user_id)
+    session_store.history_location_choices.pop(user_id, None)
+    session_store.history_drafts.pop(user_id, None)
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+    session_store.user_states[user_id] = WAITING_HISTORY_CITY
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название населенного пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
@@ -700,6 +720,114 @@ def send_source_compare_by_selected_date(
     draft["selected_day"] = selected_day
     session_store.source_compare_drafts[user_id] = draft
     ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.build_source_compare_date_post_result_keyboard())
+    return True
+
+
+def prepare_weather_history_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Сохраняет выбранную локацию и переводит пользователя к выбору исторической даты."""
+    city_label = preferred_city_label or city_fallback or "Выбранная локация"
+    session_store.history_location_choices.pop(user_id, None)
+    session_store.history_drafts[user_id] = {
+        "city_label": city_label,
+        "lat": float(lat),
+        "lon": float(lon),
+    }
+    session_store.user_states[user_id] = WAITING_HISTORY_DATE_PICK
+    ctx.bot.send_message(
+        message.chat.id,
+        f"✅ Локация выбрана: {city_label}",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
+    ctx.bot.send_message(
+        message.chat.id,
+        f"Выбери дату для архивной справки по {city_label}:",
+        reply_markup=ctx.build_history_date_keyboard(),
+    )
+    return True
+
+
+def send_weather_history_by_date(
+    message: types.Message,
+    user_id: int,
+    target_date: date,
+    *,
+    send_confirmation: bool = True,
+    ctx,
+    session_store,
+) -> bool:
+    """Получает архивную погоду за выбранную дату и отправляет итоговую сводку."""
+    draft = session_store.history_drafts.get(user_id)
+    if not isinstance(draft, dict):
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные устарели. Начни историю погоды заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    city_label = str(draft.get("city_label") or "Выбранная локация")
+    lat = draft.get("lat")
+    lon = draft.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        session_store.history_drafts.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные локации устарели. Начни историю погоды заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    result = get_weather_history_by_date(float(lat), float(lon), city_label, target_date)
+    session_store.history_drafts.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
+
+    if not result.get("ok"):
+        ctx.bot.send_message(
+            message.chat.id,
+            str(result.get("error_message") or "Не удалось получить архивную погоду за эту дату."),
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    short_summary = None
+    ai_service = getattr(ctx, "ai_weather_service", None)
+    if ai_service is not None and hasattr(ai_service, "explain_history_weather"):
+        try:
+            short_summary = str(ai_service.explain_history_weather(city_label, result["history"]) or "").strip() or None
+        except Exception as exc:
+            logger = getattr(ctx, "logger", None)
+            if logger is not None:
+                logger.warning(
+                    "Не удалось получить AI-пояснение архивной погоды для пользователя %s: %s",
+                    user_id,
+                    exc,
+                )
+
+    if send_confirmation:
+        ctx.bot.send_message(
+            message.chat.id,
+            f"✅ Выбрано: {format_history_date_label(target_date)}",
+        )
+    ctx.bot.send_message(
+        message.chat.id,
+        ctx.format_history_weather_response(
+            city_label,
+            result["history"],
+            short_summary=short_summary,
+        ),
+        reply_markup=ctx.main_menu(),
+    )
     return True
 
 

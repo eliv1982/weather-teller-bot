@@ -168,6 +168,27 @@ def details_signature(city_label: str, weather_data: dict, air_quality_data: dic
     }
 
 
+def history_signature(city_label: str, history_data: dict) -> dict:
+    payload = history_data if isinstance(history_data, dict) else {}
+    return {
+        "mode": "history",
+        "format_version": "history_ai_v2",
+        "location": normalize_location(city_label),
+        "date": normalize_location(payload.get("date") or payload.get("date_label")),
+        "temp_max": round_step(payload.get("temperature_max"), step=0.5),
+        "temp_min": round_step(payload.get("temperature_min"), step=0.5),
+        "temp_mean": round_step(payload.get("temperature_mean"), step=0.5),
+        "precipitation_sum": round_1(payload.get("precipitation_sum")),
+        "rain_sum": round_1(payload.get("rain_sum")),
+        "snowfall_sum": round_1(payload.get("snowfall_sum")),
+        "wind_speed_max": round_step(payload.get("wind_speed_max"), step=1.0),
+        "wind_direction": as_int(payload.get("wind_direction_dominant")),
+        "humidity": as_int(payload.get("relative_humidity_mean")),
+        "pressure": as_int(payload.get("pressure_mean")),
+        "description": normalize_description(payload.get("weather_description")),
+    }
+
+
 def weather_alert_signature(location_label: str, alert_payload: dict) -> dict:
     payload = alert_payload if isinstance(alert_payload, dict) else {}
     return {

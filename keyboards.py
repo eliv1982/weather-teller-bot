@@ -25,7 +25,8 @@ def weather_menu() -> types.ReplyKeyboardMarkup:
     keyboard = _persistent_reply_keyboard()
     keyboard.row(types.KeyboardButton("🌡 Погода сейчас"), types.KeyboardButton("☀️ Прогноз на сегодня"))
     keyboard.row(types.KeyboardButton("🌤 Прогноз на завтра"), types.KeyboardButton("📅 Прогноз на 5 дней"))
-    keyboard.row(types.KeyboardButton("🧭 Расширенные данные"), types.KeyboardButton("🔎 Сравнить источники"))
+    keyboard.row(types.KeyboardButton("🧭 Расширенные данные"), types.KeyboardButton("📅 История погоды"))
+    keyboard.row(types.KeyboardButton("🔎 Сравнить источники"))
     keyboard.row(types.KeyboardButton("⬅️ В меню"))
     return keyboard
 
@@ -277,6 +278,17 @@ def build_source_compare_date_post_result_keyboard() -> types.InlineKeyboardMark
     return keyboard
 
 
+def build_history_date_keyboard() -> types.InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру выбора даты для архивной погоды."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text="Вчера", callback_data="history_date_preset:yesterday"))
+    keyboard.add(types.InlineKeyboardButton(text="7 дней назад", callback_data="history_date_preset:7d"))
+    keyboard.add(types.InlineKeyboardButton(text="30 дней назад", callback_data="history_date_preset:30d"))
+    keyboard.add(types.InlineKeyboardButton(text="Выбрать дату", callback_data="history_date_custom"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    return keyboard
+
+
 def build_location_pick_keyboard(
     locations: list[dict],
     pick_callback_prefix: str,
@@ -321,9 +333,9 @@ def build_scenario_location_choice_keyboard(
     compare_step: int | None = None,
 ) -> types.InlineKeyboardMarkup:
     """
-    Inline-клавиатура выбора локации для сценария details / forecast / compare.
+    Inline-клавиатура выбора локации для сценария details / forecast / history / compare.
 
-    scenario: «details», «forecast» или «compare»; для compare обязательно передай compare_step (1 или 2).
+    scenario: «details», «forecast», «history» или «compare»; для compare обязательно передай compare_step (1 или 2).
     """
     if scenario == "details":
         return build_location_pick_keyboard(locations, "details_pick", "details_cancel")
@@ -331,6 +343,8 @@ def build_scenario_location_choice_keyboard(
         return build_location_pick_keyboard(locations, "forecast_pick", "forecast_cancel")
     if scenario == "source_compare":
         return build_location_pick_keyboard(locations, "source_compare_pick", "source_compare_cancel")
+    if scenario == "history":
+        return build_location_pick_keyboard(locations, "history_pick", "history_cancel")
     if scenario == "compare":
         if compare_step not in (1, 2):
             raise ValueError("Для сценария compare нужен compare_step равный 1 или 2.")

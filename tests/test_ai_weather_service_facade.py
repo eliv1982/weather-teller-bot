@@ -21,6 +21,7 @@ def test_ai_weather_service_public_facade_and_fallback_paths(monkeypatch):
         "apply_location_alias",
         "assist_location_query",
         "explain_current_weather",
+        "explain_history_weather",
         "summarize_day_forecast",
         "explain_tomorrow_forecast",
         "explain_weather_details",
@@ -40,6 +41,24 @@ def test_ai_weather_service_public_facade_and_fallback_paths(monkeypatch):
         {"main": {"temp": 7, "feels_like": 5}, "wind": {"speed": 2}, "weather": [{"description": "облачно"}]},
     )
     assert isinstance(current, str) and current.strip()
+
+    history = service.explain_history_weather(
+        "Москва",
+        {
+            "date": "2026-05-01",
+            "temperature_max": 8,
+            "temperature_min": 2,
+            "temperature_mean": 5,
+            "precipitation_sum": 0.0,
+            "rain_sum": 0.0,
+            "snowfall_sum": 0.0,
+            "wind_speed_max": 4,
+            "relative_humidity_mean": 78,
+            "pressure_mean": 1015,
+            "weather_description": "пасмурно",
+        },
+    )
+    assert isinstance(history, str) and history.strip()
 
     forecast = service.summarize_day_forecast(
         "Москва",
@@ -101,4 +120,41 @@ def test_ai_weather_service_public_facade_and_fallback_paths(monkeypatch):
         "2026-01-01",
     )
     assert isinstance(compare_day, str) and compare_day.strip()
+
+
+def test_history_ai_postprocess_rewrites_raw_pressure_to_mmhg(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="test")
+
+    monkeypatch.setattr(service, "_get_cached", lambda cache_key: None)
+    monkeypatch.setattr(service, "_save_cached", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        service,
+        "_call_model",
+        lambda prompt, max_output_tokens=None: (
+            "По архивным данным день был пасмурным. Давление было около 1020.2. "
+            "Ветер оставался слабым."
+        ),
+    )
+
+    text = service.explain_history_weather(
+        "Москва",
+        {
+            "date": "2026-05-01",
+            "temperature_max": 8,
+            "temperature_min": 2,
+            "temperature_mean": 5,
+            "precipitation_sum": 0.0,
+            "rain_sum": 0.0,
+            "snowfall_sum": 0.0,
+            "wind_speed_max": 4,
+            "relative_humidity_mean": 78,
+            "pressure_mean": 1020.2,
+            "weather_description": "пасмурно",
+        },
+    )
+
+    assert "1020.2" not in text
+    assert "765 мм рт. ст." in text
+    assert "гПа" not in text
 

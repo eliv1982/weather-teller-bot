@@ -3,8 +3,10 @@ import os
 import json
 import re
 
+from formatters import build_history_brief_summary
 from postgres_storage import get_ai_cached_response, save_ai_cached_response
 from ai import fallbacks, location_assist, prompts, signatures
+from weather.pressure import format_pressure_mmhg
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class AiWeatherService:
         self.ttl_current_seconds = 20 * 60
         self.ttl_details_seconds = 20 * 60
         self.ttl_forecast_seconds = 6 * 60 * 60
+        self.ttl_history_seconds = 24 * 60 * 60
         self.ttl_location_assist_seconds = 24 * 60 * 60
         self.location_alias_map = {
             "питер": "Санкт-Петербург",
@@ -88,6 +91,25 @@ class AiWeatherService:
             self._save_cached(cache_key, "current", model_answer, ttl_seconds=self.ttl_current_seconds)
             return model_answer
         logger.info("AI fallback used: scenario=current")
+        return fallback
+
+    def explain_history_weather(self, city_label: str, history_data: dict) -> str:
+        """Коротко поясняет архивную погоду за выбранный день."""
+        fallback = self._fallback_history(city_label, history_data)
+        signature = self._history_signature(city_label, history_data)
+        cache_key = self._build_cache_key("history", signature)
+        cached = self._get_cached(cache_key)
+        if cached:
+            logger.info("AI cache hit: scenario=history")
+            return self._postprocess_history_text(cached, history_data)
+        logger.info("AI cache miss: scenario=history")
+        prompt = prompts.build_history_prompt(city_label, history_data)
+        model_answer = self._call_model(prompt, max_output_tokens=200)
+        if model_answer:
+            final_text = self._postprocess_history_text(model_answer, history_data)
+            self._save_cached(cache_key, "history", final_text, ttl_seconds=self.ttl_history_seconds)
+            return final_text
+        logger.info("AI fallback used: scenario=history")
         return fallback
 
     def summarize_day_forecast(self, city_label: str, day_forecast_data: list[dict]) -> str:
@@ -302,6 +324,10 @@ class AiWeatherService:
         """Возвращает сигнатуру расширенных данных погоды и воздуха."""
         return signatures.details_signature(city_label, weather_data, air_quality_data)
 
+    def _history_signature(self, city_label: str, history_data: dict) -> dict:
+        """Возвращает сигнатуру архивной погоды за день."""
+        return signatures.history_signature(city_label, history_data)
+
     def _weather_alert_signature(self, location_label: str, alert_payload: dict) -> dict:
         """Сигнатура кэша для AI-объяснения погодного уведомления."""
         return signatures.weather_alert_signature(location_label, alert_payload)
@@ -417,6 +443,11 @@ class AiWeatherService:
         """Детерминированный fallback для текущей погоды без OpenAI."""
         return fallbacks.fallback_current(city_label, weather_data)
 
+    def _fallback_history(self, city_label: str, history_data: dict) -> str:
+        """Детерминированный fallback для архивной погоды без OpenAI."""
+        _ = city_label
+        return build_history_brief_summary(history_data)
+
     def _fallback_day_forecast(self, city_label: str, day_items: list[dict]) -> str:
         """Детерминированный fallback для дневного прогноза без OpenAI."""
         return fallbacks.fallback_day_forecast(city_label, day_items)
@@ -447,6 +478,19 @@ class AiWeatherService:
         if isinstance(value, (int, float)):
             return f"{float(value):.1f}{suffix}"
         return "н/д"
+
+    def _postprocess_history_text(self, text: str, history_data: dict | None = None) -> str:
+        """Слегка чистит AI-текст для архивной справки."""
+        clean = re.sub(r"\s+", " ", str(text or "").strip())
+        clean = clean.translate({1105: 1077, 1025: 1045})
+        pressure_text = format_pressure_mmhg((history_data or {}).get("pressure_mean"))
+        pressure_pattern = r"(?i)(?:^|(?<=[.!?]))\s*[^.!?]*(?:давлен|hpa|гпа)[^.!?]*[.!?]?"
+        if pressure_text == "н/д":
+            clean = re.sub(pressure_pattern, " ", clean, count=1)
+        elif re.search(pressure_pattern, clean) and "мм рт. ст." not in clean.lower():
+            clean = re.sub(pressure_pattern, f" Давление было около {pressure_text}.", clean, count=1)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
 
     def _is_compare_text_factual(self, text: str) -> bool:
         lowered = str(text or "").lower()

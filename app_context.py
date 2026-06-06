@@ -32,6 +32,7 @@ class AppContext:
     build_alert_subscriptions_keyboard: Any
     build_saved_locations_keyboard: Any
     build_scenario_location_choice_keyboard: Any
+    build_history_date_keyboard: Any
     build_source_compare_days_keyboard: Any
     build_source_compare_date_post_result_keyboard: Any
     build_favorite_pick_keyboard: Any
@@ -44,6 +45,7 @@ class AppContext:
     format_compare_response: Any
     format_details_response: Any
     format_saved_locations: Any
+    format_history_weather_response: Any
     format_source_compare_current_response: Any
     format_source_compare_response: Any
     format_today_forecast_response: Any
