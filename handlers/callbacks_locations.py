@@ -386,6 +386,7 @@ def handle_ai_compare_callback(
             city_label=str(city_label),
             lat=float(lat),
             lon=float(lon),
+            announce_selection=False,
             ctx=ctx,
             session_store=session_store,
         )
@@ -428,6 +429,7 @@ def handle_ai_compare_callback(
             return
         city_label = str(target.get("label") or target.get("title") or "Локация")
         ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, city_label)
         stub = type("MsgStub", (), {"chat": type("ChatStub", (), {"id": chat_id})()})()
         _ai_compare_set_location(
             stub,
@@ -436,6 +438,7 @@ def handle_ai_compare_callback(
             city_label=city_label,
             lat=float(lat),
             lon=float(lon),
+            announce_selection=False,
             ctx=ctx,
             session_store=session_store,
         )
@@ -503,7 +506,7 @@ def handle_ai_compare_callback(
         )
         ctx.bot.send_message(
             chat_id,
-            f"✨ Сравнить локации ({selected_day})\n\n✨ Сводка:\n{text}",
+            f"✨ Сравнение локаций на {selected_day}\n\n{text}",
             reply_markup=ctx.build_ai_compare_date_post_result_keyboard(),
         )
         return

@@ -1,17 +1,34 @@
 import time
+from datetime import date
 from telebot import types
+from forecast_service import is_remaining_day_forecast
 
 from handlers.states import (
     ALERTS_MENU,
     LOCATIONS_MENU,
+    SOURCE_COMPARE_MENU,
+    WEATHER_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_COMPARE_CITY_1,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_DETAILS_CITY,
     WAITING_FORECAST_CITY,
     WAITING_GEO_LOCATION,
+    WAITING_HISTORY_CITY,
+    WAITING_HISTORY_DATE_PICK,
+    WAITING_SOURCE_COMPARE_CITY,
+    WAITING_SOURCE_COMPARE_DATE_PICK,
+    WAITING_TODAY_FORECAST_CITY,
     WAITING_TOMORROW_FORECAST_CITY,
 )
+from source_compare_service import (
+    compare_current_sources,
+    compare_sources_by_date,
+    compare_today_sources,
+    compare_tomorrow_sources,
+    get_source_compare_available_dates,
+)
+from weather_history_service import format_history_date_label, get_weather_history_by_date
 
 
 def _get_favorite_location(user_data: dict) -> dict | None:
@@ -130,7 +147,7 @@ def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
     session_store.user_states[user_id] = WAITING_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
-        "Введи название населённого пункта или выбери другой способ ниже:",
+        "Введи название населенного пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
     )
 
@@ -147,8 +164,80 @@ def start_tomorrow_forecast_flow(message: types.Message, *, ctx, session_store) 
     session_store.user_states[user_id] = WAITING_TOMORROW_FORECAST_CITY
     ctx.bot.send_message(
         message.chat.id,
+        "Введи название населенного пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_today_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Запускает сценарий прогноза на сегодня."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий прогноза на сегодня для пользователя %s.", user_id)
+    session_store.forecast_location_choices.pop(user_id, None)
+    session_store.forecast_favorite_drafts.pop(user_id, None)
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+
+    session_store.user_states[user_id] = WAITING_TODAY_FORECAST_CITY
+    ctx.bot.send_message(
+        message.chat.id,
         "Введи название населённого пункта или выбери другой способ ниже:",
         reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_source_compare_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Открывает подменю выбора режима сравнения источников."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий сверки источников для пользователя %s.", user_id)
+    session_store.source_compare_location_choices.pop(user_id, None)
+    session_store.source_compare_drafts.pop(user_id, None)
+    session_store.user_states[user_id] = SOURCE_COMPARE_MENU
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери режим сравнения источников.",
+        reply_markup=ctx.source_compare_mode_menu(),
+    )
+
+
+def start_source_compare_mode_flow(message: types.Message, mode: str, *, ctx, session_store) -> None:
+    """Запускает конкретный режим source compare и переводит к выбору локации."""
+    user_id = message.from_user.id
+    session_store.source_compare_location_choices.pop(user_id, None)
+    session_store.source_compare_drafts[user_id] = {"mode": mode}
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+    session_store.user_states[user_id] = WAITING_SOURCE_COMPARE_CITY
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название населённого пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_weather_history_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Запускает сценарий архивной погоды и переводит пользователя к выбору локации."""
+    user_id = message.from_user.id
+    ctx.logger.info("Запущен сценарий архивной погоды для пользователя %s.", user_id)
+    session_store.history_location_choices.pop(user_id, None)
+    session_store.history_drafts.pop(user_id, None)
+    user_data = ctx.load_user(user_id)
+    has_saved = isinstance(user_data.get("saved_locations"), list) and bool(user_data.get("saved_locations"))
+    session_store.user_states[user_id] = WAITING_HISTORY_CITY
+    ctx.bot.send_message(
+        message.chat.id,
+        "Введи название населенного пункта или выбери другой способ ниже:",
+        reply_markup=ctx.location_input_menu(has_saved_locations=has_saved),
+    )
+
+
+def start_weather_menu_flow(message: types.Message, *, ctx, session_store) -> None:
+    """Открывает экран выбора погодного раздела и сохраняет menu-state."""
+    session_store.set_state(message.from_user.id, WEATHER_MENU)
+    ctx.bot.send_message(
+        message.chat.id,
+        "Выбери раздел в меню ниже.",
+        reply_markup=ctx.weather_menu(),
     )
 
 
@@ -321,7 +410,7 @@ def send_forecast_by_coordinates(
     return True
 
 
-def send_tomorrow_forecast_by_coordinates(
+def _send_direct_day_forecast_by_coordinates(
     message: types.Message,
     user_id: int,
     lat: float,
@@ -329,15 +418,21 @@ def send_tomorrow_forecast_by_coordinates(
     city_fallback: str,
     *,
     save_location: bool,
-    preferred_city_label: str | None = None,
+    preferred_city_label: str | None,
+    day_getter,
+    formatter,
+    ready_message: str,
+    missing_message: str,
+    ai_callback_prefix: str,
+    ai_prompt_message: str,
     ctx,
     session_store,
 ) -> bool:
-    """Получает 5-дневный прогноз и сразу показывает день завтрашнего прогноза."""
+    """Получает 5-дневный прогноз и сразу показывает выбранный локальный день."""
     forecast_items = ctx.get_forecast_5d3h(lat, lon)
     if not forecast_items:
         ctx.logger.warning(
-            "Не удалось получить прогноз на завтра для пользователя %s (населённый пункт: %s, lat: %s, lon: %s).",
+            "Не удалось получить прямой дневной прогноз для пользователя %s (населённый пункт: %s, lat: %s, lon: %s).",
             user_id,
             city_fallback,
             lat,
@@ -363,16 +458,16 @@ def send_tomorrow_forecast_by_coordinates(
         city_label = ctx.build_location_label(location, show_coords=False) if location else "Выбранная локация"
 
     grouped = ctx.group_forecast_by_day(forecast_items)
-    tomorrow = ctx.get_tomorrow_forecast_day(grouped)
-    if tomorrow is None:
-        ctx.logger.warning("Прогноз на завтра не найден в ответе сервиса для пользователя %s.", user_id)
+    day_pair = day_getter(grouped)
+    if day_pair is None:
+        ctx.logger.warning("Нужный день прогноза не найден в ответе сервиса для пользователя %s.", user_id)
         session_store.user_states.pop(user_id, None)
         session_store.forecast_saved_drafts.pop(user_id, None)
         session_store.forecast_cache.pop(user_id, None)
         session_store.forecast_location_choices.pop(user_id, None)
         ctx.bot.send_message(
             message.chat.id,
-            "Не нашла прогноз на завтра в ответе погодного сервиса. Попробуй открыть прогноз на 5 дней.",
+            missing_message,
             reply_markup=ctx.main_menu(),
         )
         return False
@@ -384,22 +479,354 @@ def send_tomorrow_forecast_by_coordinates(
         user_data["lon"] = lon
         ctx.save_user(user_id, user_data)
 
-    tomorrow_day, tomorrow_items = tomorrow
+    day_key, day_items = day_pair
     session_store.forecast_cache[user_id] = {"city": city_label, "grouped": grouped}
     session_store.user_states.pop(user_id, None)
     session_store.forecast_saved_drafts.pop(user_id, None)
     session_store.forecast_location_choices.pop(user_id, None)
 
-    text = ctx.format_tomorrow_forecast_response(city_label, tomorrow_day, tomorrow_items)
-    ctx.bot.send_message(message.chat.id, "Прогноз на завтра готов.", reply_markup=types.ReplyKeyboardRemove())
+    text = formatter(city_label, day_key, day_items)
+    ctx.bot.send_message(message.chat.id, ready_message, reply_markup=types.ReplyKeyboardRemove())
     ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.main_menu())
     ctx.bot.send_message(
         message.chat.id,
-        "✨ Хочешь короткое пояснение прогноза?",
+        ai_prompt_message,
         reply_markup=ctx.build_ai_action_keyboard(
             "✨ Короткое пояснение прогноза",
-            f"ai_tomorrow_forecast_day:{tomorrow_day}",
+            f"{ai_callback_prefix}:{day_key}",
         ),
+    )
+    return True
+
+
+def send_tomorrow_forecast_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    save_location: bool,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Получает 5-дневный прогноз и сразу показывает день завтрашнего прогноза."""
+    return _send_direct_day_forecast_by_coordinates(
+        message,
+        user_id,
+        lat,
+        lon,
+        city_fallback,
+        save_location=save_location,
+        preferred_city_label=preferred_city_label,
+        day_getter=ctx.get_tomorrow_forecast_day,
+        formatter=ctx.format_tomorrow_forecast_response,
+        ready_message="Прогноз на завтра готов.",
+        missing_message="Не нашла прогноз на завтра в ответе погодного сервиса. Попробуй открыть прогноз на 5 дней.",
+        ai_callback_prefix="ai_tomorrow_forecast_day",
+        ai_prompt_message="✨ Хочешь короткое пояснение прогноза?",
+        ctx=ctx,
+        session_store=session_store,
+    )
+
+
+def send_today_forecast_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    save_location: bool,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Получает 5-дневный прогноз и сразу показывает сегодняшний локальный день."""
+    def _formatter(city_label: str, day_key: str, day_items: list[dict]) -> str:
+        return ctx.format_today_forecast_response(
+            city_label,
+            day_key,
+            day_items,
+            is_remaining_day=is_remaining_day_forecast(day_items),
+        )
+
+    return _send_direct_day_forecast_by_coordinates(
+        message,
+        user_id,
+        lat,
+        lon,
+        city_fallback,
+        save_location=save_location,
+        preferred_city_label=preferred_city_label,
+        day_getter=ctx.get_today_forecast_day,
+        formatter=_formatter,
+        ready_message="Прогноз на сегодня готов.",
+        missing_message="Не нашла прогноз на сегодня в ответе погодного сервиса. Попробуй открыть прогноз на 5 дней.",
+        ai_callback_prefix="ai_today_forecast_day",
+        ai_prompt_message="✨ Хочешь короткое пояснение прогноза?",
+        ctx=ctx,
+        session_store=session_store,
+    )
+
+
+def send_source_compare_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Сравнивает OpenWeather и Open-Meteo для выбранного режима source compare."""
+    city_label = preferred_city_label or city_fallback or "Выбранная локация"
+    draft = session_store.source_compare_drafts.get(user_id)
+    mode = str(draft.get("mode") or "tomorrow") if isinstance(draft, dict) else "tomorrow"
+    if mode == "current":
+        result = compare_current_sources(lat, lon, city_label)
+    elif mode == "today":
+        result = compare_today_sources(lat, lon, city_label)
+    elif mode == "date":
+        result = get_source_compare_available_dates(lat, lon, city_label)
+    else:
+        result = compare_tomorrow_sources(lat, lon, city_label)
+
+    if not result.get("ok"):
+        session_store.user_states.pop(user_id, None)
+        session_store.source_compare_location_choices.pop(user_id, None)
+        session_store.source_compare_drafts.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            str(result.get("error_message") or "Не удалось сравнить источники: один из прогнозов сейчас недоступен."),
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    session_store.source_compare_location_choices.pop(user_id, None)
+
+    if mode == "date":
+        available_days = result.get("available_days") or []
+        if not available_days:
+            session_store.user_states.pop(user_id, None)
+            session_store.source_compare_drafts.pop(user_id, None)
+            ctx.bot.send_message(
+                message.chat.id,
+                "Не удалось найти общие даты прогноза по двум источникам.",
+                reply_markup=ctx.main_menu(),
+            )
+            return False
+        session_store.source_compare_drafts[user_id] = {
+            "mode": mode,
+            "city_label": city_label,
+            "lat": float(lat),
+            "lon": float(lon),
+            "available_days": available_days,
+            "openweather_grouped": result["openweather_grouped"],
+            "open_meteo_grouped": result["open_meteo_grouped"],
+        }
+        session_store.user_states[user_id] = WAITING_SOURCE_COMPARE_DATE_PICK
+        ctx.bot.send_message(message.chat.id, "Сравнение по локации подготовлено.", reply_markup=types.ReplyKeyboardRemove())
+        ctx.bot.send_message(
+            message.chat.id,
+            f"Выбери дату прогноза для {city_label}:",
+            reply_markup=ctx.build_source_compare_days_keyboard(available_days),
+        )
+        return True
+
+    session_store.user_states.pop(user_id, None)
+    session_store.source_compare_drafts.pop(user_id, None)
+    if mode == "current":
+        text = ctx.format_source_compare_current_response(
+            city_label,
+            result["openweather"],
+            result["open_meteo"],
+        )
+        ready_message = "Сравнение текущей погоды готово."
+    else:
+        formatter = ctx.format_source_compare_response
+        title = str(result.get("title") or "🔎 Сравнение прогнозов")
+        try:
+            text = formatter(
+                city_label,
+                result["openweather"],
+                result["open_meteo"],
+                title=title,
+            )
+        except TypeError:
+            text = formatter(
+                city_label,
+                result["openweather"],
+                result["open_meteo"],
+            )
+        ready_message = "Сравнение прогнозов готово."
+    ctx.bot.send_message(message.chat.id, ready_message, reply_markup=types.ReplyKeyboardRemove())
+    ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.main_menu())
+    return True
+
+
+def send_source_compare_by_selected_date(
+    message: types.Message,
+    user_id: int,
+    selected_day: str,
+    *,
+    ctx,
+    session_store,
+) -> bool:
+    """Сравнивает источники на выбранную дату после шага выбора даты."""
+    draft = session_store.source_compare_drafts.get(user_id)
+    if not isinstance(draft, dict):
+        ctx.bot.send_message(message.chat.id, "Данные устарели. Начни сравнение источников заново.", reply_markup=ctx.main_menu())
+        return False
+    city_label = str(draft.get("city_label") or "Выбранная локация")
+    lat = draft.get("lat")
+    lon = draft.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        ctx.bot.send_message(message.chat.id, "Данные локации устарели. Начни сравнение источников заново.", reply_markup=ctx.main_menu())
+        session_store.source_compare_drafts.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
+        return False
+
+    result = compare_sources_by_date(float(lat), float(lon), city_label, selected_day)
+    session_store.user_states.pop(user_id, None)
+
+    if not result.get("ok"):
+        session_store.source_compare_drafts.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            str(result.get("error_message") or "Не удалось сравнить источники на выбранную дату."),
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    formatter = ctx.format_source_compare_response
+    title = str(result.get("title") or f"🔎 Сравнение прогнозов на {selected_day}")
+    try:
+        text = formatter(
+            city_label,
+            result["openweather"],
+            result["open_meteo"],
+            title=title,
+        )
+    except TypeError:
+        text = formatter(
+            city_label,
+            result["openweather"],
+            result["open_meteo"],
+        )
+    draft["selected_day"] = selected_day
+    session_store.source_compare_drafts[user_id] = draft
+    ctx.bot.send_message(message.chat.id, text, reply_markup=ctx.build_source_compare_date_post_result_keyboard())
+    return True
+
+
+def prepare_weather_history_by_coordinates(
+    message: types.Message,
+    user_id: int,
+    lat: float,
+    lon: float,
+    city_fallback: str,
+    *,
+    preferred_city_label: str | None = None,
+    ctx,
+    session_store,
+) -> bool:
+    """Сохраняет выбранную локацию и переводит пользователя к выбору исторической даты."""
+    city_label = preferred_city_label or city_fallback or "Выбранная локация"
+    session_store.history_location_choices.pop(user_id, None)
+    session_store.history_drafts[user_id] = {
+        "city_label": city_label,
+        "lat": float(lat),
+        "lon": float(lon),
+    }
+    session_store.user_states[user_id] = WAITING_HISTORY_DATE_PICK
+    ctx.bot.send_message(
+        message.chat.id,
+        f"✅ Локация выбрана: {city_label}",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
+    ctx.bot.send_message(
+        message.chat.id,
+        f"Выбери дату для архивной справки по {city_label}:",
+        reply_markup=ctx.build_history_date_keyboard(),
+    )
+    return True
+
+
+def send_weather_history_by_date(
+    message: types.Message,
+    user_id: int,
+    target_date: date,
+    *,
+    send_confirmation: bool = True,
+    ctx,
+    session_store,
+) -> bool:
+    """Получает архивную погоду за выбранную дату и отправляет итоговую сводку."""
+    draft = session_store.history_drafts.get(user_id)
+    if not isinstance(draft, dict):
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные устарели. Начни историю погоды заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    city_label = str(draft.get("city_label") or "Выбранная локация")
+    lat = draft.get("lat")
+    lon = draft.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        session_store.history_drafts.pop(user_id, None)
+        session_store.user_states.pop(user_id, None)
+        ctx.bot.send_message(
+            message.chat.id,
+            "Данные локации устарели. Начни историю погоды заново.",
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    result = get_weather_history_by_date(float(lat), float(lon), city_label, target_date)
+    session_store.history_drafts.pop(user_id, None)
+    session_store.user_states.pop(user_id, None)
+
+    if not result.get("ok"):
+        ctx.bot.send_message(
+            message.chat.id,
+            str(result.get("error_message") or "Не удалось получить архивную погоду за эту дату."),
+            reply_markup=ctx.main_menu(),
+        )
+        return False
+
+    short_summary = None
+    ai_service = getattr(ctx, "ai_weather_service", None)
+    if ai_service is not None and hasattr(ai_service, "explain_history_weather"):
+        try:
+            short_summary = str(ai_service.explain_history_weather(city_label, result["history"]) or "").strip() or None
+        except Exception as exc:
+            logger = getattr(ctx, "logger", None)
+            if logger is not None:
+                logger.warning(
+                    "Не удалось получить AI-пояснение архивной погоды для пользователя %s: %s",
+                    user_id,
+                    exc,
+                )
+
+    if send_confirmation:
+        ctx.bot.send_message(
+            message.chat.id,
+            f"✅ Выбрано: {format_history_date_label(target_date)}",
+        )
+    ctx.bot.send_message(
+        message.chat.id,
+        ctx.format_history_weather_response(
+            city_label,
+            result["history"],
+            short_summary=short_summary,
+        ),
+        reply_markup=ctx.main_menu(),
     )
     return True
 

@@ -45,7 +45,7 @@ def _assert_no_advisory_or_comparative_phrases(text: str):
 
 
 def _short_comments(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("Кратко:")]
+    return [line for line in text.splitlines() if line.startswith("✨ ")]
 
 
 def _current_payload(city_label: str, *, temp: float, feels_like: float, humidity: int, wind: float, description: str):
@@ -109,16 +109,23 @@ def test_compare_current_outputs_factual_blocks(monkeypatch):
     assert text.count("📍") == 2
     for label in ("🌡 Температура", "🤔 Ощущается как", "☁️ Описание", "💧 Влажность", "🌬 Ветер"):
         assert label in text
-    assert text.count("Кратко:") == 2
-    assert "воздух сухой" in text
-    assert "влажность умеренная" in text
-    assert "ветер умеренный" in text
-    assert "ветер слабый" in text
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
+    assert "Воздух сухой" in text
+    assert "Влажность умеренная" in text
+    assert "В локации Тольятти: прохладно и пасмурно, ощущается около 6 °C." in text
+    assert "В локации Санкт-Петербург: тепло и ясно, ощущается около 17 °C." in text
+    assert "В Тольятти" not in text
+    assert "\n✨ Москва:" not in text
+    assert "ветер умеренный, осадков по текущим данным нет." in text.lower()
+    assert "ветер слабый, осадков по текущим данным нет." in text.lower()
     for comment in _short_comments(text):
-        assert "Тольятти" not in comment
-        assert "Санкт-Петербург" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Москва" not in comment
         assert "в Санкт-Петербург" not in comment
+        assert "В локации " in comment
+        assert "Лучше" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
 
@@ -133,14 +140,17 @@ def test_compare_current_rain_uses_absolute_precipitation(monkeypatch):
 
     assert "Екатеринбург" in text
     assert "Москва" in text
-    assert "идёт дождь" in text.lower()
-    assert "возможен снег" in text.lower()
-    assert "ветер заметный" in text
-    assert "ветер сильный" in text
-    assert text.count("Кратко:") == 2
+    assert "идут осадки" not in text.lower()
+    assert "идёт снег" in text.lower()
+    assert "В локации Екатеринбург: прохладно, идёт дождь, ощущается около 2 °C." in text
+    assert "В локации Москва: холодно, идёт снег, ощущается около -5 °C." in text
+    assert "влажно, ветер заметный." in text.lower()
+    assert "влажность умеренная, ветер сильный." in text.lower()
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
     for comment in _short_comments(text):
-        assert "Екатеринбург" not in comment
-        assert "Москва" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Москва" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
@@ -184,13 +194,21 @@ def test_compare_forecast_outputs_factual_blocks(monkeypatch):
         "🌬 Ветер",
     ):
         assert label in text
-    assert "возможен дождь" in text
+    assert "ожидается небольшой дождь" in text
     assert "без осадков" in text
-    assert text.count("Кратко:") == 2
+    assert text.count("✨ ") == 2
+    assert "Кратко:" not in text
+    assert "В локации Тольятти: ожидается прохладная погода, температура около 5.0°C-12.0°C. Ожидается небольшой дождь, вероятность до 45%. Ветер умеренный." in text
+    assert "В локации Санкт-Петербург: ожидается тёплая облачная погода, температура около 14.0°C-21.0°C. Без осадков. Ветер слабый." in text
+    assert "В Тольятти" not in text
+    assert "\n✨ Тольятти:" not in text
+    assert "идут осадки" not in text
     for comment in _short_comments(text):
-        assert "Тольятти" not in comment
-        assert "Санкт-Петербург" not in comment
+        assert comment[2:3].isupper()
+        assert ". " in comment
         assert "в Санкт-Петербург" not in comment
+        assert "В локации " in comment
+        assert "будет небольшой дождь" not in comment
     _assert_no_advisory_or_comparative_phrases(text)
 
 
@@ -214,5 +232,66 @@ def test_compare_forecast_legacy_renderers_are_factual(monkeypatch):
     for text in outputs:
         assert "Екатеринбург" in text
         assert "Москва" in text
-        assert text.count("Кратко:") == 2
+        assert text.count("✨ ") == 2
+        assert "Кратко:" not in text
         _assert_no_advisory_or_comparative_phrases(text)
+
+
+def test_forecast_summary_prefers_specific_precipitation_type_over_generic(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="")
+
+    text = service.compare_two_locations_forecast_day_with_ai(
+        _forecast_payload(
+            "Москва",
+            min_temp=7,
+            max_temp=15,
+            description="дождь",
+            max_pop=0.3,
+            avg_wind=3,
+            max_wind=5,
+        ),
+        _forecast_payload(
+            "Тула",
+            min_temp=8,
+            max_temp=14,
+            description="пасмурно",
+            max_pop=0.0,
+            avg_wind=2,
+            max_wind=4,
+        ),
+        "05.05",
+    )
+
+    assert "возможен дождь" in text
+    assert "возможны осадки" not in text
+
+
+def test_history_fallback_stays_factual_and_has_no_yo(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="")
+
+    text = service.explain_history_weather(
+        "Тольятти",
+        {
+            "date": "2026-05-01",
+            "date_label": "01.05.2026",
+            "temperature_max": 2.0,
+            "temperature_min": -1.0,
+            "temperature_mean": 0.0,
+            "precipitation_sum": 0.0,
+            "rain_sum": 0.0,
+            "snowfall_sum": 0.0,
+            "wind_speed_max": 4.0,
+            "relative_humidity_mean": 93.0,
+            "pressure_mean": 1025.0,
+            "weather_description": "пасмурно",
+        },
+    )
+
+    lowered = text.lower()
+    assert "по архивным данным" in lowered
+    assert "лучше" not in lowered
+    assert "одеться" not in lowered
+    assert "совет" not in lowered
+    assert "\u0451" not in lowered

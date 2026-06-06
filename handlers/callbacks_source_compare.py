@@ -1,58 +1,39 @@
-from .states import (
-    WAITING_FORECAST_CITY,
-    WAITING_TODAY_FORECAST_PICK,
-    WAITING_TODAY_FORECAST_CITY,
-    WAITING_TODAY_FORECAST_SAVED_PICK,
-    WAITING_TOMORROW_FORECAST_CITY,
-    WAITING_TOMORROW_FORECAST_PICK,
-    WAITING_TOMORROW_FORECAST_SAVED_PICK,
-)
 from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
+from .states import WAITING_SOURCE_COMPARE_CITY, WAITING_SOURCE_COMPARE_DATE_PICK
 
 
-def handle_forecast_callback(
+def handle_source_compare_callback(
     call,
     *,
     ctx,
     session_store,
+    send_source_compare_by_coordinates,
+    send_source_compare_by_selected_date,
     _message_stub_for_chat,
-    send_forecast_by_coordinates,
-    send_today_forecast_by_coordinates,
-    send_tomorrow_forecast_by_coordinates,
 ) -> None:
-    """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
+    """Handles inline location choice for source-compare flow."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-    state = session_store.get_state(user_id)
-    if state in {WAITING_TOMORROW_FORECAST_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
-        send_selected_forecast = send_tomorrow_forecast_by_coordinates
-        cancel_state = WAITING_TOMORROW_FORECAST_CITY
-    elif state in {WAITING_TODAY_FORECAST_PICK, WAITING_TODAY_FORECAST_SAVED_PICK}:
-        send_selected_forecast = send_today_forecast_by_coordinates
-        cancel_state = WAITING_TODAY_FORECAST_CITY
-    else:
-        send_selected_forecast = send_forecast_by_coordinates
-        cancel_state = WAITING_FORECAST_CITY
 
-    if call.data == "forecast_cancel":
-        session_store.forecast_location_choices.pop(user_id, None)
+    if call.data == "source_compare_cancel":
+        session_store.source_compare_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         return_to_location_input_context(
             chat_id,
             user_id,
             ctx=ctx,
             session_store=session_store,
-            target_state=cancel_state,
+            target_state=WAITING_SOURCE_COMPARE_CITY,
         )
         return
 
-    if call.data.startswith("forecast_pick:"):
+    if call.data.startswith("source_compare_pick:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
             ctx.bot.answer_callback_query(call.id)
             session_store.user_states.pop(user_id, None)
-            session_store.forecast_location_choices.pop(user_id, None)
+            session_store.source_compare_location_choices.pop(user_id, None)
             ctx.bot.send_message(
                 chat_id,
                 "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
@@ -60,11 +41,11 @@ def handle_forecast_callback(
             )
             return
 
-        choices = session_store.forecast_location_choices.get(user_id)
+        choices = session_store.source_compare_location_choices.get(user_id)
         if not choices or index < 0 or index >= len(choices):
             ctx.bot.answer_callback_query(call.id)
             session_store.user_states.pop(user_id, None)
-            session_store.forecast_location_choices.pop(user_id, None)
+            session_store.source_compare_location_choices.pop(user_id, None)
             ctx.bot.send_message(
                 chat_id,
                 "⚠️ Список вариантов устарел. Введи населённый пункт заново.",
@@ -73,39 +54,33 @@ def handle_forecast_callback(
             return
 
         location_item = ctx.build_geocode_item_with_disambiguated_label(choices, index)
-        ctx.logger.info(
-            "Пользователь %s выбрал локацию для прогноза #%s: %s",
-            user_id,
-            index,
-            location_item.get("label"),
-        )
-        ctx.bot.answer_callback_query(call.id)
-        stub = _message_stub_for_chat(chat_id)
         city = location_item.get("label") or ctx.build_location_label(location_item, show_coords=False)
         lat = location_item.get("lat")
         lon = location_item.get("lon")
         if lat is None or lon is None:
-            session_store.forecast_location_choices.pop(user_id, None)
+            session_store.source_compare_location_choices.pop(user_id, None)
             session_store.user_states.pop(user_id, None)
+            ctx.bot.answer_callback_query(call.id)
             ctx.bot.send_message(
                 chat_id,
-                "Не удалось получить прогноз. Попробуй позже.",
+                "Не удалось сравнить источники: один из прогнозов сейчас недоступен.",
                 reply_markup=ctx.main_menu(),
             )
             return
+        ctx.bot.answer_callback_query(call.id)
         mark_location_choice_selected(call, ctx, str(city))
-        send_selected_forecast(
+        stub = _message_stub_for_chat(chat_id)
+        send_source_compare_by_coordinates(
             stub,
             user_id,
             float(lat),
             float(lon),
             city,
-            save_location=True,
             preferred_city_label=city,
         )
         return
 
-    if call.data.startswith("forecast_saved_pick:"):
+    if call.data.startswith("source_compare_saved_pick:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         user_data = ctx.load_user(user_id)
         saved_locations = user_data.get("saved_locations", [])
@@ -133,59 +108,60 @@ def handle_forecast_callback(
         ctx.bot.answer_callback_query(call.id)
         mark_location_choice_selected(call, ctx, city)
         stub = _message_stub_for_chat(chat_id)
-        send_selected_forecast(
+        send_source_compare_by_coordinates(
             stub,
             user_id,
             float(lat),
             float(lon),
             city,
-            save_location=True,
             preferred_city_label=city,
         )
         return
 
-    cache = session_store.forecast_cache.get(user_id)
-    if not cache:
-        ctx.bot.answer_callback_query(call.id, "Данные прогноза устарели.")
-        return
-
-    if call.data == "forecast_back":
-        days = list(cache["grouped"].keys())
-        keyboard = ctx.build_forecast_days_keyboard(days)
-        ctx.bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"Выбери день прогноза для {cache['city']}:",
-            reply_markup=keyboard,
-        )
-        ctx.bot.answer_callback_query(call.id)
-        return
-
-    if call.data == "forecast_menu":
+    if call.data == "source_compare_date_cancel":
+        session_store.source_compare_drafts.pop(user_id, None)
         session_store.user_states.pop(user_id, None)
-        session_store.forecast_saved_drafts.pop(user_id, None)
-        session_store.forecast_cache.pop(user_id, None)
-        ctx.bot.send_message(call.message.chat.id, "Главное меню.", reply_markup=ctx.main_menu())
         ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(chat_id, "Выбор даты отменён.", reply_markup=ctx.main_menu())
         return
 
-    if call.data.startswith("forecast_day:"):
-        day = call.data.split(":", 1)[1]
-        ctx.logger.info("Пользователь %s выбрал день прогноза: %s", user_id, day)
-        day_items = cache["grouped"].get(day)
-        if not day_items:
-            ctx.bot.answer_callback_query(call.id, "День прогноза не найден.")
+    if call.data == "source_compare_date_another":
+        draft = session_store.source_compare_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")
             return
-
-        text = ctx.format_forecast_day(day, day_items, cache["city"])
-        keyboard = ctx.build_forecast_day_keyboard(list(cache["grouped"].keys()), day)
-        ctx.bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=text,
-            reply_markup=keyboard,
-        )
+        available_days = draft.get("available_days")
+        city_label = str(draft.get("city_label") or "локации")
+        if not isinstance(available_days, list) or not available_days:
+            ctx.bot.answer_callback_query(call.id, "Даты недоступны.")
+            return
+        session_store.user_states[user_id] = WAITING_SOURCE_COMPARE_DATE_PICK
         ctx.bot.answer_callback_query(call.id)
+        ctx.bot.send_message(
+            chat_id,
+            f"Выбери дату прогноза для {city_label}:",
+            reply_markup=ctx.build_source_compare_days_keyboard(available_days),
+        )
+        return
+
+    if call.data.startswith("source_compare_date_pick:"):
+        selected_day = call.data.split(":", 1)[1] if ":" in call.data else ""
+        draft = session_store.source_compare_drafts.get(user_id)
+        if not isinstance(draft, dict):
+            ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")
+            return
+        available_days = draft.get("available_days")
+        if not isinstance(available_days, list) or selected_day not in available_days:
+            ctx.bot.answer_callback_query(call.id, "Дата недоступна.")
+            return
+        ctx.bot.answer_callback_query(call.id)
+        mark_location_choice_selected(call, ctx, selected_day)
+        stub = _message_stub_for_chat(chat_id)
+        send_source_compare_by_selected_date(
+            stub,
+            user_id,
+            selected_day,
+        )
         return
 
     ctx.bot.answer_callback_query(call.id)

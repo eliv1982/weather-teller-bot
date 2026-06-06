@@ -135,6 +135,21 @@ def tomorrow_forecast_signature(city_label: str, day_forecast_data: list[dict]) 
     return {**signature, "mode": "tomorrow_forecast", "format_version": "tomorrow_ai_v2", "tomorrow_slots": slots}
 
 
+def today_forecast_signature(
+    city_label: str,
+    day_forecast_data: list[dict],
+    *,
+    is_remaining_day: bool = False,
+) -> dict:
+    signature = tomorrow_forecast_signature(city_label, day_forecast_data)
+    return {
+        **signature,
+        "mode": "today_forecast",
+        "format_version": "today_ai_v1",
+        "is_remaining_day": bool(is_remaining_day),
+    }
+
+
 def details_signature(city_label: str, weather_data: dict, air_quality_data: dict | None) -> dict:
     main_data = weather_data.get("main", {}) if isinstance(weather_data, dict) else {}
     wind_data = weather_data.get("wind", {}) if isinstance(weather_data, dict) else {}
@@ -150,6 +165,27 @@ def details_signature(city_label: str, weather_data: dict, air_quality_data: dic
         "wind_speed": round_1(wind_data.get("speed")),
         "wind_deg": wind_data.get("deg"),
         "air_quality": air_quality_signature(air_quality_data),
+    }
+
+
+def history_signature(city_label: str, history_data: dict) -> dict:
+    payload = history_data if isinstance(history_data, dict) else {}
+    return {
+        "mode": "history",
+        "format_version": "history_ai_v2",
+        "location": normalize_location(city_label),
+        "date": normalize_location(payload.get("date") or payload.get("date_label")),
+        "temp_max": round_step(payload.get("temperature_max"), step=0.5),
+        "temp_min": round_step(payload.get("temperature_min"), step=0.5),
+        "temp_mean": round_step(payload.get("temperature_mean"), step=0.5),
+        "precipitation_sum": round_1(payload.get("precipitation_sum")),
+        "rain_sum": round_1(payload.get("rain_sum")),
+        "snowfall_sum": round_1(payload.get("snowfall_sum")),
+        "wind_speed_max": round_step(payload.get("wind_speed_max"), step=1.0),
+        "wind_direction": as_int(payload.get("wind_direction_dominant")),
+        "humidity": as_int(payload.get("relative_humidity_mean")),
+        "pressure": as_int(payload.get("pressure_mean")),
+        "description": normalize_description(payload.get("weather_description")),
     }
 
 

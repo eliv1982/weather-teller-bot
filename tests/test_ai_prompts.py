@@ -19,7 +19,50 @@ def test_build_current_prompt_normalizes_description_without_mutating_input():
 
     assert NORMALIZED_DESCRIPTION in prompt
     assert RAW_DESCRIPTION not in prompt
+    assert "нужен ли зонт" not in prompt
+    assert "есть ли сейчас осадки" in prompt
+    assert "Осадки упоминай один раз." in prompt
+    assert "идут осадки" in prompt
     assert weather_data == original
+
+
+def test_build_history_prompt_normalizes_description_and_sets_no_advice_rules():
+    history_data = {
+        "date": "2026-05-01",
+        "temperature_max": 8.0,
+        "temperature_min": 2.0,
+        "temperature_mean": 5.0,
+        "wind_speed_max": 4.0,
+        "weather_description": RAW_DESCRIPTION,
+    }
+    original = deepcopy(history_data)
+
+    prompt = prompts.build_history_prompt("Москва", history_data)
+
+    assert NORMALIZED_DESCRIPTION in prompt
+    assert RAW_DESCRIPTION not in prompt
+    assert "Не давай рекомендаций." in prompt
+    assert "Не сравнивай с другими днями." in prompt
+    assert "Пиши через обычную е." in prompt
+    assert history_data == original
+
+
+def test_build_history_prompt_formats_pressure_for_user_facing_units():
+    history_data = {
+        "date": "2026-05-01",
+        "temperature_max": 8.0,
+        "temperature_min": 2.0,
+        "temperature_mean": 5.0,
+        "pressure_mean": 1020.2,
+        "weather_description": "пасмурно",
+    }
+
+    prompt = prompts.build_history_prompt("Москва", history_data)
+
+    assert "Давление: 765 мм рт. ст." in prompt
+    assert "1020.2" not in prompt
+    assert "pressure_mean" not in prompt
+    assert "Не пиши hPa, гПа" in prompt
 
 
 def test_build_details_prompt_normalizes_description_without_mutating_input():
@@ -82,3 +125,6 @@ def test_weather_alert_prompt_does_not_encourage_time_based_generic_advice():
 
     assert "выйти чуть раньше" not in prompt
     assert "время выхода" not in prompt
+    assert "менее открытые места" not in prompt
+    assert "время посуше" not in prompt
+    assert "время по суше" not in prompt

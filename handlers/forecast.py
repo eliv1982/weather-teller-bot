@@ -8,6 +8,11 @@ from .states import (
     WAITING_FORECAST_SAVED_PICK,
     WAITING_FORECAST_USE_FAVORITE,
     WAITING_FORECAST_USE_SAVED_LOCATION,
+    WAITING_TODAY_FORECAST_CITY,
+    WAITING_TODAY_FORECAST_COORDS,
+    WAITING_TODAY_FORECAST_GEO,
+    WAITING_TODAY_FORECAST_PICK,
+    WAITING_TODAY_FORECAST_SAVED_PICK,
     WAITING_TOMORROW_FORECAST_CITY,
     WAITING_TOMORROW_FORECAST_COORDS,
     WAITING_TOMORROW_FORECAST_GEO,
@@ -26,9 +31,17 @@ def handle_forecast_text(
     ctx,
     session_store,
     send_forecast_by_coordinates,
+    send_today_forecast_by_coordinates,
     send_tomorrow_forecast_by_coordinates,
 ) -> bool:
     """Обрабатывает текстовые состояния сценария прогноза."""
+    is_today = state in {
+        WAITING_TODAY_FORECAST_CITY,
+        WAITING_TODAY_FORECAST_COORDS,
+        WAITING_TODAY_FORECAST_GEO,
+        WAITING_TODAY_FORECAST_PICK,
+        WAITING_TODAY_FORECAST_SAVED_PICK,
+    }
     is_tomorrow = state in {
         WAITING_TOMORROW_FORECAST_CITY,
         WAITING_TOMORROW_FORECAST_COORDS,
@@ -36,11 +49,24 @@ def handle_forecast_text(
         WAITING_TOMORROW_FORECAST_PICK,
         WAITING_TOMORROW_FORECAST_SAVED_PICK,
     }
-    send_selected_forecast = send_tomorrow_forecast_by_coordinates if is_tomorrow else send_forecast_by_coordinates
-    coords_state = WAITING_TOMORROW_FORECAST_COORDS if is_tomorrow else WAITING_FORECAST_COORDS
-    geo_state = WAITING_TOMORROW_FORECAST_GEO if is_tomorrow else WAITING_FORECAST_GEO
-    pick_state = WAITING_TOMORROW_FORECAST_PICK if is_tomorrow else WAITING_FORECAST_PICK
-    saved_pick_state = WAITING_TOMORROW_FORECAST_SAVED_PICK if is_tomorrow else WAITING_FORECAST_SAVED_PICK
+    if is_tomorrow:
+        send_selected_forecast = send_tomorrow_forecast_by_coordinates
+        coords_state = WAITING_TOMORROW_FORECAST_COORDS
+        geo_state = WAITING_TOMORROW_FORECAST_GEO
+        pick_state = WAITING_TOMORROW_FORECAST_PICK
+        saved_pick_state = WAITING_TOMORROW_FORECAST_SAVED_PICK
+    elif is_today:
+        send_selected_forecast = send_today_forecast_by_coordinates
+        coords_state = WAITING_TODAY_FORECAST_COORDS
+        geo_state = WAITING_TODAY_FORECAST_GEO
+        pick_state = WAITING_TODAY_FORECAST_PICK
+        saved_pick_state = WAITING_TODAY_FORECAST_SAVED_PICK
+    else:
+        send_selected_forecast = send_forecast_by_coordinates
+        coords_state = WAITING_FORECAST_COORDS
+        geo_state = WAITING_FORECAST_GEO
+        pick_state = WAITING_FORECAST_PICK
+        saved_pick_state = WAITING_FORECAST_SAVED_PICK
 
     if state == WAITING_FORECAST_USE_FAVORITE:
         answer = (message.text or "").strip().lower()
@@ -149,7 +175,7 @@ def handle_forecast_text(
         ctx.bot.send_message(message.chat.id, "Пожалуйста, ответь: Да или Нет.", reply_markup=ctx.yes_no_menu())
         return True
 
-    if state in {WAITING_FORECAST_CITY, WAITING_TOMORROW_FORECAST_CITY}:
+    if state in {WAITING_FORECAST_CITY, WAITING_TODAY_FORECAST_CITY, WAITING_TOMORROW_FORECAST_CITY}:
         query = (message.text or "").strip()
         if query == "⭐ Из сохранённых":
             user_data = ctx.load_user(user_id)
@@ -262,7 +288,7 @@ def handle_forecast_text(
         )
         return True
 
-    if state in {WAITING_FORECAST_COORDS, WAITING_TOMORROW_FORECAST_COORDS}:
+    if state in {WAITING_FORECAST_COORDS, WAITING_TODAY_FORECAST_COORDS, WAITING_TOMORROW_FORECAST_COORDS}:
         parsed = parse_coordinates(message.text or "")
         if parsed is None:
             ctx.bot.send_message(message.chat.id, "⚠️ Некорректный формат. Введи координаты в формате: 55.5789, 37.9051")
@@ -281,7 +307,7 @@ def handle_forecast_text(
         )
         return True
 
-    if state in {WAITING_FORECAST_PICK, WAITING_TOMORROW_FORECAST_PICK}:
+    if state in {WAITING_FORECAST_PICK, WAITING_TODAY_FORECAST_PICK, WAITING_TOMORROW_FORECAST_PICK}:
         if not session_store.forecast_location_choices.get(user_id):
             session_store.user_states.pop(user_id, None)
             ctx.bot.send_message(
@@ -296,14 +322,14 @@ def handle_forecast_text(
         )
         return True
 
-    if state in {WAITING_FORECAST_SAVED_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
+    if state in {WAITING_FORECAST_SAVED_PICK, WAITING_TODAY_FORECAST_SAVED_PICK, WAITING_TOMORROW_FORECAST_SAVED_PICK}:
         ctx.bot.send_message(
             message.chat.id,
             "Выбери сохранённую локацию кнопкой ниже или нажми «⬅️ В меню».",
         )
         return True
 
-    if state in {WAITING_FORECAST_GEO, WAITING_TOMORROW_FORECAST_GEO}:
+    if state in {WAITING_FORECAST_GEO, WAITING_TODAY_FORECAST_GEO, WAITING_TOMORROW_FORECAST_GEO}:
         ctx.bot.send_message(
             message.chat.id,
             "Отправь геолокацию через кнопку ниже.",

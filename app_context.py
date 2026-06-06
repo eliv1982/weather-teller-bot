@@ -21,6 +21,7 @@ class AppContext:
     add_saved_location_menu: Any
     ai_compare_mode_menu: Any
     ai_compare_location_method_menu: Any
+    source_compare_mode_menu: Any
     location_input_menu: Any
     geo_request_menu: Any
     yes_no_menu: Any
@@ -31,6 +32,9 @@ class AppContext:
     build_alert_subscriptions_keyboard: Any
     build_saved_locations_keyboard: Any
     build_scenario_location_choice_keyboard: Any
+    build_history_date_keyboard: Any
+    build_source_compare_days_keyboard: Any
+    build_source_compare_date_post_result_keyboard: Any
     build_favorite_pick_keyboard: Any
     build_ai_action_keyboard: Any
     build_ai_compare_saved_locations_keyboard: Any
@@ -41,6 +45,10 @@ class AppContext:
     format_compare_response: Any
     format_details_response: Any
     format_saved_locations: Any
+    format_history_weather_response: Any
+    format_source_compare_current_response: Any
+    format_source_compare_response: Any
+    format_today_forecast_response: Any
     format_tomorrow_forecast_response: Any
     format_weather_response: Any
     help_text: Any
@@ -55,6 +63,7 @@ class AppContext:
     complete_current_weather_from_location: Any
     complete_alerts_location_from_item: Any
     group_forecast_by_day: Any
+    get_today_forecast_day: Any
     get_tomorrow_forecast_day: Any
     format_forecast_day: Any
     build_geocode_item_with_disambiguated_label: Any
