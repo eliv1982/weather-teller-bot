@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 import time
 
 from alerts_subscription_service import AlertsSubscriptionService
@@ -166,7 +166,7 @@ def detect_weather_alerts(
         description = normalize_weather_description(raw_description)
         if any(keyword in lowered for keyword in keywords):
             local_ts = slot_ts + offset_sec
-            local_dt = datetime.utcfromtimestamp(local_ts)
+            local_dt = datetime.fromtimestamp(local_ts, UTC)
             local_slot = local_dt.strftime("%d.%m %H:%M")
             text = f"{local_slot} — {description}"
             alerts.append(
