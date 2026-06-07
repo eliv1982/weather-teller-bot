@@ -3,6 +3,10 @@ from datetime import date
 from telebot import types
 from forecast_service import is_remaining_day_forecast
 from formatters import format_history_monthly_climate_response
+from flows_compare import (
+    complete_compare_two_locations as run_complete_compare_two_locations,
+    start_compare_flow as run_start_compare_flow,
+)
 from flows_forecast import (
     send_forecast_by_coordinates as run_send_forecast_by_coordinates,
     send_today_forecast_by_coordinates as run_send_today_forecast_by_coordinates,
@@ -26,7 +30,6 @@ from handlers.states import (
     SOURCE_COMPARE_MENU,
     WEATHER_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
-    WAITING_COMPARE_CITY_1,
     WAITING_CURRENT_WEATHER_CITY,
     WAITING_DETAILS_CITY,
     WAITING_GEO_LOCATION,
@@ -142,12 +145,7 @@ def start_details_flow(message: types.Message, *, ctx, session_store) -> None:
 
 def start_compare_flow(message: types.Message, *, ctx, session_store) -> None:
     """Запускает сценарий сравнения двух населённых пунктов."""
-    user_id = message.from_user.id
-    ctx.logger.info("Запущен сценарий сравнения населённых пунктов для пользователя %s.", user_id)
-    session_store.compare_drafts.pop(user_id, None)
-    session_store.compare_location_choices.pop(user_id, None)
-    session_store.user_states[user_id] = WAITING_COMPARE_CITY_1
-    ctx.bot.send_message(message.chat.id, "Введи первый населённый пункт для сравнения.")
+    run_start_compare_flow(message, ctx=ctx, session_store=session_store)
 
 
 def start_forecast_flow(message: types.Message, *, ctx, session_store) -> None:
@@ -601,32 +599,18 @@ def complete_compare_two_locations(
     session_store,
 ) -> None:
     """Загружает погоду по двум точкам и отправляет текст сравнения."""
-    weather_1 = ctx.get_current_weather(lat_1, lon_1)
-    weather_2 = ctx.get_current_weather(lat_2, lon_2)
-
-    if not weather_1 or not weather_2:
-        ctx.logger.warning("Не удалось получить данные для сравнения у пользователя %s.", user_id)
-        session_store.user_states.pop(user_id, None)
-        session_store.compare_drafts.pop(user_id, None)
-        session_store.compare_location_choices.pop(user_id, None)
-        ctx.bot.send_message(
-            chat_id,
-            "Не удалось получить данные для сравнения. Попробуй позже.",
-            reply_markup=ctx.main_menu(),
-        )
-        return
-
-    answer = ctx.format_compare_response(city_label_1, weather_1, city_label_2, weather_2)
-    ctx.logger.info(
-        "Успешно выполнено сравнение для пользователя %s: %s vs %s.",
+    run_complete_compare_two_locations(
+        chat_id,
         user_id,
+        lat_1,
+        lon_1,
         city_label_1,
+        lat_2,
+        lon_2,
         city_label_2,
+        ctx=ctx,
+        session_store=session_store,
     )
-    session_store.user_states.pop(user_id, None)
-    session_store.compare_drafts.pop(user_id, None)
-    session_store.compare_location_choices.pop(user_id, None)
-    ctx.bot.send_message(chat_id, answer, reply_markup=ctx.main_menu())
 
 
 def alerts_worker(*, ctx) -> None:
