@@ -35,12 +35,10 @@ from flows_source_compare import (
 
 from handlers.callbacks_common import try_delete_message
 from handlers.states import (
-    ALERTS_MENU,
     LOCATIONS_MENU,
     WEATHER_MENU,
     WAITING_ALERTS_SUBSCRIPTION_MENU,
     WAITING_GEO_LOCATION,
-    WAITING_HISTORY_CITY,
 )
 from source_compare_service import (
     compare_current_sources,
