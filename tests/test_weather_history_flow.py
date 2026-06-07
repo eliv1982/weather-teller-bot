@@ -20,6 +20,12 @@ from flows import (
     send_weather_history_by_date,
     start_weather_history_flow,
 )
+from flows_history import (
+    prepare_weather_history_by_coordinates as direct_prepare_weather_history_by_coordinates,
+    send_history_monthly_report as direct_send_history_monthly_report,
+    send_weather_history_by_date as direct_send_weather_history_by_date,
+    start_weather_history_flow as direct_start_weather_history_flow,
+)
 from session_store import SessionStore
 
 
@@ -459,3 +465,30 @@ def test_send_weather_history_by_date_deletes_date_prompt_on_success(monkeypatch
 
     assert result is True
     assert {"chat_id": 123, "message_id": 200} in bot.deleted_messages
+
+
+def test_history_flow_functions_are_importable_from_flows_history():
+    assert callable(direct_prepare_weather_history_by_coordinates)
+    assert callable(direct_send_history_monthly_report)
+    assert callable(direct_send_weather_history_by_date)
+    assert callable(direct_start_weather_history_flow)
+
+
+def test_start_weather_history_flow_works_via_direct_flows_history_import():
+    bot = _FakeBot()
+    ctx = SimpleNamespace(
+        bot=bot,
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        build_history_section_keyboard=lambda: "history-section-keyboard",
+    )
+    session_store = SessionStore()
+    session_store.user_states[7] = "waiting_history_city"
+    session_store.history_drafts[7] = {"city_label": "Старое"}
+
+    direct_start_weather_history_flow(_message(), ctx=ctx, session_store=session_store)
+
+    assert session_store.user_states[7] == "waiting_history_section"
+    assert 7 not in session_store.history_drafts
+    assert bot.messages == [
+        {"chat_id": 123, "text": "Что посмотрим?", "reply_markup": "history-section-keyboard"}
+    ]
