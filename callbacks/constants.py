@@ -14,6 +14,7 @@ Rules:
 # ---------------------------------------------------------------------------
 # Yes / No
 # ---------------------------------------------------------------------------
+YN_CALLBACK_PREFIX = "yn_"
 YN_YES = "yn_yes"
 YN_NO = "yn_no"
 YN_MENU = "yn_menu"
@@ -21,6 +22,7 @@ YN_MENU = "yn_menu"
 # ---------------------------------------------------------------------------
 # Current weather
 # ---------------------------------------------------------------------------
+CURRENT_CALLBACK_PREFIX = "current_"
 CURRENT_PICK_PREFIX = "current_pick"
 CURRENT_SAVED_PICK_PREFIX = "current_saved_pick"
 CURRENT_CANCEL = "current_cancel"
@@ -28,6 +30,7 @@ CURRENT_CANCEL = "current_cancel"
 # ---------------------------------------------------------------------------
 # Details (extended data)
 # ---------------------------------------------------------------------------
+DETAILS_CALLBACK_PREFIX = "details_"
 DETAILS_PICK_PREFIX = "details_pick"
 DETAILS_SAVED_PICK_PREFIX = "details_saved_pick"
 DETAILS_CANCEL = "details_cancel"
@@ -35,6 +38,7 @@ DETAILS_CANCEL = "details_cancel"
 # ---------------------------------------------------------------------------
 # Forecast (5-day / today / tomorrow)
 # ---------------------------------------------------------------------------
+FORECAST_CALLBACK_PREFIX = "forecast_"
 FORECAST_PICK_PREFIX = "forecast_pick"
 FORECAST_SAVED_PICK_PREFIX = "forecast_saved_pick"
 FORECAST_DAY_PREFIX = "forecast_day"
@@ -56,6 +60,7 @@ COMPARE_CANCEL = "compare_cancel"
 # ---------------------------------------------------------------------------
 # Source compare (OpenWeather vs Open-Meteo)
 # ---------------------------------------------------------------------------
+SOURCE_COMPARE_CALLBACK_PREFIX = "source_compare_"
 SOURCE_COMPARE_PICK_PREFIX = "source_compare_pick"
 SOURCE_COMPARE_SAVED_PICK_PREFIX = "source_compare_saved_pick"
 SOURCE_COMPARE_DATE_PICK_PREFIX = "source_compare_date_pick"
@@ -66,6 +71,7 @@ SOURCE_COMPARE_CANCEL = "source_compare_cancel"
 # ---------------------------------------------------------------------------
 # History (daily archive + climate normals)
 # ---------------------------------------------------------------------------
+HISTORY_CALLBACK_PREFIX = "history_"
 HISTORY_SECTION_PREFIX = "history_section"
 HISTORY_PICK_PREFIX = "history_pick"
 HISTORY_SAVED_PICK_PREFIX = "history_saved_pick"
@@ -96,6 +102,7 @@ HISTORY_CLIMATE_MODE_MONTHLY_NORMALS = "monthly_normals"
 # ---------------------------------------------------------------------------
 # AI compare (two saved locations)
 # ---------------------------------------------------------------------------
+AICMP_CALLBACK_PREFIX = "aicmp_"
 AICMP_SAVED_PICK_PREFIX = "aicmp_saved_pick"
 AICMP_GEO_PICK_PREFIX = "aicmp_geo_pick"
 AICMP_DATE_PICK_PREFIX = "aicmp_date_pick"
@@ -107,6 +114,7 @@ AICMP_DATE_ANOTHER = "aicmp_date_another"
 # ---------------------------------------------------------------------------
 # Saved locations management
 # ---------------------------------------------------------------------------
+SAVEDLOC_CALLBACK_PREFIX = "savedloc_"
 SAVEDLOC_PICK_PREFIX = "savedloc_pick"
 SAVEDLOC_CANCEL = "savedloc_cancel"
 FAVORITE_PICK_PREFIX = "favorite_pick"
@@ -116,6 +124,7 @@ RENAME_LOCATION_PICK_PREFIX = "rename_location_pick"
 # ---------------------------------------------------------------------------
 # Alert subscriptions
 # ---------------------------------------------------------------------------
+ALERTS_CALLBACK_PREFIX = "alerts_"
 ALERTS_ADD_PICK_PREFIX = "alerts_add_pick"
 ALERTS_SUB_ADD_SAVED_PREFIX = "alerts_sub_add_saved"
 ALERTS_SUB_TOGGLE_PREFIX = "alerts_sub_toggle"
@@ -126,6 +135,7 @@ ALERTS_ADD_CANCEL = "alerts_add_cancel"
 # ---------------------------------------------------------------------------
 # AI explanations (current / details)
 # ---------------------------------------------------------------------------
+AI_CALLBACK_PREFIX = "ai_"
 AI_CURRENT_EXPLAIN = "ai_current_explain"
 AI_CURRENT_EXPLAIN_PREFIX = "ai_current_explain"
 AI_DETAILS_EXPLAIN = "ai_details_explain"

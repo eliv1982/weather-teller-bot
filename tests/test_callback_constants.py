@@ -14,26 +14,29 @@ Coverage strategy:
   matched by handlers (startswith / == checks in bot.py and callbacks_*.py).
 """
 
+import ast
+from pathlib import Path
+
 import pytest
 from callbacks.constants import (
     # yes/no
-    YN_YES, YN_NO, YN_MENU,
+    YN_CALLBACK_PREFIX, YN_YES, YN_NO, YN_MENU,
     # current weather
-    CURRENT_PICK_PREFIX, CURRENT_SAVED_PICK_PREFIX, CURRENT_CANCEL,
+    CURRENT_CALLBACK_PREFIX, CURRENT_PICK_PREFIX, CURRENT_SAVED_PICK_PREFIX, CURRENT_CANCEL,
     # details
-    DETAILS_PICK_PREFIX, DETAILS_SAVED_PICK_PREFIX, DETAILS_CANCEL,
+    DETAILS_CALLBACK_PREFIX, DETAILS_PICK_PREFIX, DETAILS_SAVED_PICK_PREFIX, DETAILS_CANCEL,
     # forecast
-    FORECAST_PICK_PREFIX, FORECAST_DAY_PREFIX, FORECAST_BACK,
+    FORECAST_CALLBACK_PREFIX, FORECAST_PICK_PREFIX, FORECAST_DAY_PREFIX, FORECAST_BACK,
     FORECAST_MENU, FORECAST_CANCEL,
     AI_FORECAST_DAY_PREFIX,
     # compare
     COMPARE_PICK_PREFIX, COMPARE_CANCEL,
     # source compare
-    SOURCE_COMPARE_PICK_PREFIX, SOURCE_COMPARE_DATE_PICK_PREFIX,
+    SOURCE_COMPARE_CALLBACK_PREFIX, SOURCE_COMPARE_PICK_PREFIX, SOURCE_COMPARE_DATE_PICK_PREFIX,
     SOURCE_COMPARE_DATE_CANCEL, SOURCE_COMPARE_DATE_ANOTHER,
     SOURCE_COMPARE_CANCEL,
     # history
-    HISTORY_SECTION_PREFIX, HISTORY_SECTION_DAILY, HISTORY_SECTION_CLIMATE,
+    HISTORY_CALLBACK_PREFIX, HISTORY_SECTION_PREFIX, HISTORY_SECTION_DAILY, HISTORY_SECTION_CLIMATE,
     HISTORY_PICK_PREFIX, HISTORY_SAVED_PICK_PREFIX,
     HISTORY_DATE_PRESET_PREFIX, HISTORY_DATE_CUSTOM, HISTORY_DATE_YEAR_PREFIX,
     HISTORY_CLIMATE_MODE_PREFIX,
@@ -43,16 +46,16 @@ from callbacks.constants import (
     HISTORY_MENU, HISTORY_CANCEL,
     HISTORY_PRESET_YESTERDAY, HISTORY_PRESET_7D, HISTORY_PRESET_30D,
     # ai compare
-    AICMP_GEO_PICK_PREFIX, AICMP_SAVED_PICK_PREFIX, AICMP_DATE_PICK_PREFIX,
+    AICMP_CALLBACK_PREFIX, AICMP_GEO_PICK_PREFIX, AICMP_SAVED_PICK_PREFIX, AICMP_DATE_PICK_PREFIX,
     AICMP_GEO_CANCEL, AICMP_SAVED_CANCEL, AICMP_DATE_CANCEL, AICMP_DATE_ANOTHER,
     # saved locations
-    FAVORITE_PICK_PREFIX, DELETE_LOCATION_PICK_PREFIX, RENAME_LOCATION_PICK_PREFIX,
+    SAVEDLOC_CALLBACK_PREFIX, FAVORITE_PICK_PREFIX, DELETE_LOCATION_PICK_PREFIX, RENAME_LOCATION_PICK_PREFIX,
     # alerts
-    ALERTS_ADD_PICK_PREFIX, ALERTS_SUB_ADD_SAVED_PREFIX,
+    ALERTS_CALLBACK_PREFIX, ALERTS_ADD_PICK_PREFIX, ALERTS_SUB_ADD_SAVED_PREFIX,
     ALERTS_SUB_TOGGLE_PREFIX, ALERTS_SUB_INTERVAL_PREFIX,
     ALERTS_SUB_DELETE_PREFIX, ALERTS_ADD_CANCEL,
     # ai explain
-    AI_CURRENT_EXPLAIN, AI_CURRENT_EXPLAIN_PREFIX,
+    AI_CALLBACK_PREFIX, AI_CURRENT_EXPLAIN, AI_CURRENT_EXPLAIN_PREFIX,
     AI_DETAILS_EXPLAIN, AI_DETAILS_EXPLAIN_PREFIX,
     AI_TOMORROW_FORECAST_DAY_PREFIX,
     AI_TODAY_FORECAST_DAY_PREFIX,
@@ -66,6 +69,9 @@ from callbacks.constants import (
 
 
 class TestYesNoConstants:
+    def test_yn_callback_prefix(self):
+        assert YN_CALLBACK_PREFIX == "yn_"
+
     def test_yn_yes(self):
         assert YN_YES == "yn_yes"
 
@@ -77,6 +83,9 @@ class TestYesNoConstants:
 
 
 class TestCurrentWeatherConstants:
+    def test_current_callback_prefix(self):
+        assert CURRENT_CALLBACK_PREFIX == "current_"
+
     def test_current_pick_prefix(self):
         assert CURRENT_PICK_PREFIX == "current_pick"
         assert f"{CURRENT_PICK_PREFIX}:0" == "current_pick:0"
@@ -90,6 +99,9 @@ class TestCurrentWeatherConstants:
 
 
 class TestDetailsConstants:
+    def test_details_callback_prefix(self):
+        assert DETAILS_CALLBACK_PREFIX == "details_"
+
     def test_details_pick_prefix(self):
         assert DETAILS_PICK_PREFIX == "details_pick"
         assert f"{DETAILS_PICK_PREFIX}:2" == "details_pick:2"
@@ -102,6 +114,9 @@ class TestDetailsConstants:
 
 
 class TestForecastConstants:
+    def test_forecast_callback_prefix(self):
+        assert FORECAST_CALLBACK_PREFIX == "forecast_"
+
     def test_forecast_pick_prefix(self):
         assert FORECAST_PICK_PREFIX == "forecast_pick"
 
@@ -135,6 +150,9 @@ class TestCompareConstants:
 
 
 class TestSourceCompareConstants:
+    def test_source_compare_callback_prefix(self):
+        assert SOURCE_COMPARE_CALLBACK_PREFIX == "source_compare_"
+
     def test_source_compare_pick_prefix(self):
         assert SOURCE_COMPARE_PICK_PREFIX == "source_compare_pick"
 
@@ -156,6 +174,9 @@ class TestSourceCompareConstants:
 
 
 class TestHistoryConstants:
+    def test_history_callback_prefix(self):
+        assert HISTORY_CALLBACK_PREFIX == "history_"
+
     def test_history_section_daily_composition(self):
         assert f"{HISTORY_SECTION_PREFIX}:{HISTORY_SECTION_DAILY}" == "history_section:daily"
 
@@ -211,6 +232,9 @@ class TestHistoryConstants:
 
 
 class TestAiCompareConstants:
+    def test_aicmp_callback_prefix(self):
+        assert AICMP_CALLBACK_PREFIX == "aicmp_"
+
     def test_aicmp_geo_pick_prefix_with_step(self):
         assert f"{AICMP_GEO_PICK_PREFIX}:1:0" == "aicmp_geo_pick:1:0"
         assert f"{AICMP_GEO_PICK_PREFIX}:2:3" == "aicmp_geo_pick:2:3"
@@ -236,6 +260,9 @@ class TestAiCompareConstants:
 
 
 class TestSavedLocationsConstants:
+    def test_savedloc_callback_prefix(self):
+        assert SAVEDLOC_CALLBACK_PREFIX == "savedloc_"
+
     def test_favorite_pick_prefix_composition(self):
         assert f"{FAVORITE_PICK_PREFIX}:loc123" == "favorite_pick:loc123"
 
@@ -247,6 +274,9 @@ class TestSavedLocationsConstants:
 
 
 class TestAlertsConstants:
+    def test_alerts_callback_prefix(self):
+        assert ALERTS_CALLBACK_PREFIX == "alerts_"
+
     def test_alerts_add_pick_prefix(self):
         assert ALERTS_ADD_PICK_PREFIX == "alerts_add_pick"
 
@@ -267,6 +297,9 @@ class TestAlertsConstants:
 
 
 class TestAiExplainConstants:
+    def test_ai_callback_prefix(self):
+        assert AI_CALLBACK_PREFIX == "ai_"
+
     def test_ai_current_explain(self):
         assert AI_CURRENT_EXPLAIN == "ai_current_explain"
 
@@ -299,3 +332,36 @@ class TestAllConstantsAreStrings:
             assert isinstance(value, str), (
                 f"callbacks.constants.{name} должен быть строкой, получен {type(value).__name__!r}"
             )
+
+
+def test_bot_py_has_no_raw_callback_like_string_literals():
+    bot_path = Path(__file__).resolve().parents[1] / "bot.py"
+    tree = ast.parse(bot_path.read_text(encoding="utf-8"))
+    callback_prefixes = (
+        "ai_",
+        "alerts_",
+        "aicmp_",
+        "compare_",
+        "current_",
+        "delete_location_",
+        "details_",
+        "favorite_",
+        "forecast_",
+        "history_",
+        "rename_location_",
+        "savedloc_",
+        "source_compare_",
+        "yn_",
+    )
+
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        if node.value.startswith(callback_prefixes):
+            found.append((node.lineno, node.value))
+
+    assert found == [], (
+        "bot.py should route callback data via callbacks.constants, "
+        f"found raw callback-like string literals: {found}"
+    )

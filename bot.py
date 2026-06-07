@@ -7,6 +7,26 @@ from types import SimpleNamespace
 from dotenv import load_dotenv
 import telebot
 from telebot import types
+from callbacks.constants import (
+    AI_CALLBACK_PREFIX,
+    AI_CURRENT_EXPLAIN_PREFIX,
+    AICMP_CALLBACK_PREFIX,
+    ALERTS_CALLBACK_PREFIX,
+    COMPARE_CANCEL,
+    COMPARE_PICK_PREFIX,
+    CURRENT_CALLBACK_PREFIX,
+    DELETE_LOCATION_PICK_PREFIX,
+    DETAILS_CALLBACK_PREFIX,
+    FAVORITE_PICK_PREFIX,
+    FORECAST_CALLBACK_PREFIX,
+    HISTORY_CALLBACK_PREFIX,
+    RENAME_LOCATION_PICK_PREFIX,
+    SAVEDLOC_CALLBACK_PREFIX,
+    SOURCE_COMPARE_CALLBACK_PREFIX,
+    YN_CALLBACK_PREFIX,
+    YN_NO,
+    YN_YES,
+)
 from weather_app import (
     get_coordinates,
     get_locations,
@@ -610,7 +630,7 @@ def handle_location_message(message: types.Message) -> None:
             "✨ Хочешь короткое пояснение погоды?",
             reply_markup=build_ai_action_keyboard(
                 "✨ Короткое пояснение погоды",
-                f"ai_current_explain:{snapshot_id}",
+                f"{AI_CURRENT_EXPLAIN_PREFIX}:{snapshot_id}",
             ),
         )
         return
@@ -878,12 +898,12 @@ def handle_location_message(message: types.Message) -> None:
         "✨ Хочешь короткое пояснение погоды?",
         reply_markup=build_ai_action_keyboard(
             "✨ Короткое пояснение погоды",
-            f"ai_current_explain:{snapshot_id}",
+            f"{AI_CURRENT_EXPLAIN_PREFIX}:{snapshot_id}",
         ),
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("current_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(CURRENT_CALLBACK_PREFIX))
 def handle_current_weather_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации или отмену в сценарии «Текущая погода»."""
     handle_current_weather_callback(
@@ -893,7 +913,7 @@ def handle_current_weather_location_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("alerts_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(ALERTS_CALLBACK_PREFIX))
 def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации для уведомлений (inline) или отмену."""
     handle_alerts_callback_logic(
@@ -906,7 +926,7 @@ def handle_alerts_location_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("details_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(DETAILS_CALLBACK_PREFIX))
 def handle_details_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации для расширенных данных (inline) или отмену."""
     handle_details_callback_logic(
@@ -919,7 +939,7 @@ def handle_details_location_callback(call: types.CallbackQuery) -> None:
 
 
 @bot.callback_query_handler(
-    func=lambda call: call.data.startswith("compare_pick:") or call.data == "compare_cancel"
+    func=lambda call: call.data.startswith(f"{COMPARE_PICK_PREFIX}:") or call.data == COMPARE_CANCEL
 )
 def handle_compare_location_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор населённого пункта при сравнении (inline) или отмену."""
@@ -932,7 +952,7 @@ def handle_compare_location_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_pick:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(f"{FAVORITE_PICK_PREFIX}:"))
 def handle_favorite_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор основной локации из списка сохранённых."""
     handle_favorite_callback_logic(
@@ -943,7 +963,7 @@ def handle_favorite_pick_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_location_pick:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(f"{DELETE_LOCATION_PICK_PREFIX}:"))
 def handle_delete_location_pick_callback(call: types.CallbackQuery) -> None:
     """Удаляет выбранную сохранённую локацию."""
     handle_delete_location_callback_logic(
@@ -954,7 +974,7 @@ def handle_delete_location_pick_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("rename_location_pick:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(f"{RENAME_LOCATION_PICK_PREFIX}:"))
 def handle_rename_location_pick_callback(call: types.CallbackQuery) -> None:
     """Запоминает выбранную локацию и запрашивает новое имя."""
     handle_rename_location_callback_logic(
@@ -967,7 +987,7 @@ def handle_rename_location_pick_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("savedloc_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(SAVEDLOC_CALLBACK_PREFIX))
 def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает выбор локации при добавлении новой сохранённой локации."""
     handle_saved_location_callback_logic(
@@ -979,7 +999,7 @@ def handle_saved_location_pick_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("aicmp_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(AICMP_CALLBACK_PREFIX))
 def handle_ai_compare_locations_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает callback-шаги умного AI-сравнения локаций."""
     handle_ai_compare_callback_logic(
@@ -989,7 +1009,7 @@ def handle_ai_compare_locations_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("forecast_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(FORECAST_CALLBACK_PREFIX))
 def handle_forecast_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-навигацию прогноза и выбор локации перед прогнозом."""
     handle_forecast_callback_logic(
@@ -1003,7 +1023,7 @@ def handle_forecast_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("history_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(HISTORY_CALLBACK_PREFIX))
 def handle_history_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-выбор локации и даты для архивной погоды."""
     handle_history_callback_logic(
@@ -1016,7 +1036,7 @@ def handle_history_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("source_compare_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(SOURCE_COMPARE_CALLBACK_PREFIX))
 def handle_source_compare_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-выбор локации для сверки источников."""
     handle_source_compare_callback_logic(
@@ -1029,16 +1049,16 @@ def handle_source_compare_callback(call: types.CallbackQuery) -> None:
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("yn_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(YN_CALLBACK_PREFIX))
 def handle_yes_no_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает inline-кнопки Да/Нет/В меню для yes/no-сценариев."""
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     action = call.data
 
-    if action == "yn_yes":
+    if action == YN_YES:
         text_value = "Да"
-    elif action == "yn_no":
+    elif action == YN_NO:
         text_value = "Нет"
     else:
         text_value = "⬅️ В меню"
@@ -1058,7 +1078,7 @@ def handle_yes_no_callback(call: types.CallbackQuery) -> None:
     handle_unknown_text(stub_message)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ai_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(AI_CALLBACK_PREFIX))
 def handle_ai_callback(call: types.CallbackQuery) -> None:
     """Обрабатывает AI-действия для текущей погоды, прогноза и расширенных данных."""
     handle_ai_callback_logic(
