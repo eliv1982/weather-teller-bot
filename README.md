@@ -2,7 +2,7 @@
 
 ## English Summary
 
-Weather Teller is a Telegram bot for current weather, today and tomorrow forecasts, 5-day forecast, extended weather details, saved locations, location comparison, subscription updates, source comparison, historical weather reference, and short AI explanations. The project combines OpenWeather, Open-Meteo, Open-Meteo Historical Weather API, OpenAI, PostgreSQL, and Docker Compose. It can be run locally with Python for development or through Docker Compose for a closer-to-real deployment flow.
+Weather Teller is a Telegram bot for current weather, today and tomorrow forecasts, 5-day forecast, extended weather details, saved locations, location comparison, subscription updates, source comparison, historical weather reference, monthly climate indicators, and short AI explanations. The project combines OpenWeather, Open-Meteo, Open-Meteo Historical Weather API, OpenAI, PostgreSQL, and Docker Compose. It can be run locally with Python for development or through Docker Compose for a closer-to-real deployment flow.
 
 ## О проекте
 
@@ -37,7 +37,7 @@ Weather Teller Telegram Bot помогает быстро посмотреть �
 
 ### Архивная погода
 
-Архивная справка строится через Open-Meteo Historical Weather API.
+Архивная справка и климатические показатели строятся через Open-Meteo Historical Weather API.
 
 Поддерживается:
 
@@ -46,7 +46,13 @@ Weather Teller Telegram Bot помогает быстро посмотреть �
 - выбор сохраненной локации;
 - ввод координат;
 - быстрые даты: `Вчера`, `7 дней назад`, `30 дней назад`;
-- ручной ввод даты в форматах `YYYY-MM-DD` и `DD.MM.YYYY`.
+- ручной ввод даты в форматах `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, `DD.MM.YYYY`, `DD/MM/YYYY`, `DD-MM-YYYY`, `5 июня 2026`, `5 июн 2026`;
+- beta-фича `📊 Средние климатические показатели`.
+
+Внутри beta-фичи доступны два режима:
+
+- `🗓 Месяц конкретного года` — архивная справка за выбранный месяц выбранного года;
+- `📆 Среднемесячные показатели` — климатическая справка по архивным данным за период `1991-2020`.
 
 Отчет включает:
 
@@ -56,7 +62,13 @@ Weather Teller Telegram Bot помогает быстро посмотреть �
 - влажность;
 - давление;
 - погодные условия;
-- короткий блок `🤖 Коротко` с AI-расшифровкой или fallback-описанием.
+- короткий блок `✨ Коротко` с AI-расшифровкой или fallback-описанием.
+
+Важно:
+
+- это архивная и климатическая справка, а не прогноз;
+- для режима `1991-2020` бот явно показывает, что это не прогноз на конкретный месяц;
+- в месячных справках используется формулировка `доля дней с осадками по архивным данным`, а не `вероятность осадков`.
 
 History flow в beta-версии уже приведен к общему UX проекта: после выбора локации или даты inline-меню убирается, в чате остается короткое подтверждение выбора, затем приходит результат.
 

@@ -1,6 +1,7 @@
 import importlib
 import sys
 import types
+from datetime import date
 
 
 class _KeyboardButton:
@@ -127,6 +128,22 @@ def test_source_compare_mode_menu_groups_modes_cleanly(monkeypatch):
     assert keyboards.source_compare_mode_menu().kwargs.get("is_persistent") is True
 
 
+def test_history_section_keyboard_contains_daily_and_climate_modes(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    buttons = [
+        (button.text, button.callback_data)
+        for row in keyboards.build_history_section_keyboard().keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("📅 На дату", "history_section:daily"),
+        ("📊 Средние климатические показатели", "history_section:climate"),
+        ("⬅️ В меню", "history_menu"),
+    ]
+
+
 def test_history_date_keyboard_contains_presets_and_menu(monkeypatch):
     keyboards = _load_keyboards(monkeypatch)
 
@@ -140,6 +157,61 @@ def test_history_date_keyboard_contains_presets_and_menu(monkeypatch):
         ("Вчера", "history_date_preset:yesterday"),
         ("7 дней назад", "history_date_preset:7d"),
         ("30 дней назад", "history_date_preset:30d"),
-        ("Выбрать дату", "history_date_custom"),
+        ("Ввести дату", "history_date_custom"),
         ("⬅️ В меню", "history_menu"),
+    ]
+
+
+def test_history_climate_mode_keyboard_contains_branching_actions(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    buttons = [
+        (button.text, button.callback_data)
+        for row in keyboards.build_history_climate_mode_keyboard().keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("🗓 Месяц конкретного года", "history_climate_mode:monthly_year"),
+        ("📆 Среднемесячные показатели", "history_climate_mode:monthly_normals"),
+        ("⬅️ Назад", "history_climate_back_to_actions"),
+        ("⬅️ В меню", "history_menu"),
+    ]
+
+
+def test_history_month_keyboard_contains_all_months(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    texts = _button_texts(keyboards.build_history_month_keyboard())
+
+    assert texts[:12] == [
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
+    ]
+    assert texts[-2:] == ["⬅️ Назад", "⬅️ В меню"]
+
+
+def test_history_year_clarification_keyboard_contains_past_options_and_retry(monkeypatch):
+    keyboards = _load_keyboards(monkeypatch)
+
+    buttons = [
+        (button.text, button.callback_data)
+        for row in keyboards.build_history_year_clarification_keyboard([date(2025, 6, 8), date(1925, 6, 8)]).keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("08.06.2025", "history_date_year:2025-06-08"),
+        ("08.06.1925", "history_date_year:1925-06-08"),
+        ("Ввести другую дату", "history_date_custom"),
     ]

@@ -1,3 +1,5 @@
+from datetime import date
+
 from telebot import types
 
 from weather_app import build_disambiguated_location_labels
@@ -278,14 +280,89 @@ def build_source_compare_date_post_result_keyboard() -> types.InlineKeyboardMark
     return keyboard
 
 
+def build_history_section_keyboard() -> types.InlineKeyboardMarkup:
+    """Создает первое inline-подменю для раздела архивной погоды."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text="📅 На дату", callback_data="history_section:daily"))
+    keyboard.add(
+        types.InlineKeyboardButton(
+            text="📊 Средние климатические показатели",
+            callback_data="history_section:climate",
+        )
+    )
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    return keyboard
+
+
 def build_history_date_keyboard() -> types.InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру выбора даты для архивной погоды."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton(text="Вчера", callback_data="history_date_preset:yesterday"))
     keyboard.add(types.InlineKeyboardButton(text="7 дней назад", callback_data="history_date_preset:7d"))
     keyboard.add(types.InlineKeyboardButton(text="30 дней назад", callback_data="history_date_preset:30d"))
-    keyboard.add(types.InlineKeyboardButton(text="Выбрать дату", callback_data="history_date_custom"))
+    keyboard.add(types.InlineKeyboardButton(text="Ввести дату", callback_data="history_date_custom"))
     keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    return keyboard
+
+
+def build_history_climate_mode_keyboard() -> types.InlineKeyboardMarkup:
+    """Создает inline-клавиатуру выбора режима климатической справки."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(
+        types.InlineKeyboardButton(
+            text="🗓 Месяц конкретного года",
+            callback_data="history_climate_mode:monthly_year",
+        )
+    )
+    keyboard.add(
+        types.InlineKeyboardButton(
+            text="📆 Среднемесячные показатели",
+            callback_data="history_climate_mode:monthly_normals",
+        )
+    )
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data="history_climate_back_to_actions"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    return keyboard
+
+
+def build_history_month_keyboard() -> types.InlineKeyboardMarkup:
+    """Создает inline-клавиатуру выбора месяца для климатической справки."""
+    keyboard = types.InlineKeyboardMarkup()
+    month_labels = [
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
+    ]
+    for row_start in range(0, len(month_labels), 3):
+        row_buttons = []
+        for index, label in enumerate(month_labels[row_start : row_start + 3], start=row_start + 1):
+            row_buttons.append(types.InlineKeyboardButton(text=label, callback_data=f"history_climate_month:{index}"))
+        keyboard.row(*row_buttons)
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data="history_climate_back_to_modes"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    return keyboard
+
+
+def build_history_year_clarification_keyboard(options: list[date]) -> types.InlineKeyboardMarkup:
+    """Создает inline-клавиатуру для уточнения полного года в короткой дате."""
+    keyboard = types.InlineKeyboardMarkup()
+    for option in options:
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text=option.strftime("%d.%m.%Y"),
+                callback_data=f"history_date_year:{option.isoformat()}",
+            )
+        )
+    keyboard.add(types.InlineKeyboardButton(text="Ввести другую дату", callback_data="history_date_custom"))
     return keyboard
 
 

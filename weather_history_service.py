@@ -1,31 +1,112 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 
+from utils.date_parsing import parse_calendar_date, parse_day_first_short_year_date
 from weather.open_meteo import fetch_open_meteo_history_daily, weather_code_to_description_ru
+
+
+@dataclass(frozen=True)
+class HistoryDateResolution:
+    parsed_date: date | None
+    error_message: str | None
+    clarification_dates: list[date]
 
 
 def parse_history_date_input(raw_value: str, *, today: date | None = None) -> tuple[date | None, str | None]:
     """Parses a user-entered history date and validates that it is in the past."""
+    resolution = resolve_history_date_input(raw_value, today=today)
+    if resolution.clarification_dates:
+        return None, "Нужно уточнить год."
+    return resolution.parsed_date, resolution.error_message
+
+
+def resolve_history_date_input(raw_value: str, *, today: date | None = None) -> HistoryDateResolution:
+    """Parses a user-entered history date and optionally returns year-clarification choices."""
     text = str(raw_value or "").strip()
     today_value = today or date.today()
     if not text:
-        return None, "Не увидела дату. Введи ее в формате YYYY-MM-DD или DD.MM.YYYY."
+        return HistoryDateResolution(
+            parsed_date=None,
+            error_message="Не увидела дату. Введи ее в формате YYYY-MM-DD, DD.MM.YYYY, 8/6/2025 или 5 июня 2026.",
+            clarification_dates=[],
+        )
 
-    parsed_date: date | None = None
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+    clarification_dates = build_two_digit_year_clarification_dates(text, today=today_value)
+    if clarification_dates:
+        return HistoryDateResolution(parsed_date=None, error_message=None, clarification_dates=clarification_dates)
+
+    parsed_date = parse_calendar_date(text)
+    if parsed_date is None:
+        return HistoryDateResolution(
+            parsed_date=None,
+            error_message="Не получилось распознать дату. Введи ее в формате YYYY-MM-DD, DD.MM.YYYY, 8/6/2025 или 5 июня 2026.",
+            clarification_dates=[],
+        )
+    if parsed_date >= today_value:
+        return HistoryDateResolution(
+            parsed_date=None,
+            error_message="Нужна дата из прошлого. Введи день раньше сегодняшнего, например 2026-06-05 или 05.06.2026.",
+            clarification_dates=[],
+        )
+    return HistoryDateResolution(parsed_date=parsed_date, error_message=None, clarification_dates=[])
+
+
+def build_two_digit_year_clarification_dates(raw_value: str, *, today: date | None = None) -> list[date]:
+    """Builds valid day-first clarification options for dates like 8/06/25."""
+    parsed = parse_day_first_short_year_date(raw_value)
+    if parsed is None:
+        return []
+
+    today_value = today or date.today()
+    options: list[date] = []
+    for full_year in (2000 + parsed.year_two_digits, 1900 + parsed.year_two_digits):
         try:
-            parsed_date = datetime.strptime(text, fmt).date()
-            break
+            candidate = date(full_year, parsed.month, parsed.day)
         except ValueError:
             continue
+        if candidate >= today_value:
+            continue
+        options.append(candidate)
 
-    if parsed_date is None:
-        return None, "Не получилось распознать дату. Введи ее в формате YYYY-MM-DD или DD.MM.YYYY."
-    if parsed_date >= today_value:
-        return None, "Нужна дата из прошлого. Введи день раньше сегодняшнего, например 2026-06-05 или 05.06.2026."
-    return parsed_date, None
+    unique_options: list[date] = []
+    seen: set[date] = set()
+    for candidate in options:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique_options.append(candidate)
+    return unique_options
+
+
+def build_two_digit_year_future_warning(raw_value: str, *, today: date | None = None) -> str | None:
+    """Returns an explanation when the 20YY candidate is excluded because it is a future date.
+
+    Example: "15.07.26" → "15.07.2026 пока будущая дата, поэтому для архивной
+    справки доступен только 15.07.1926."
+    """
+    parsed = parse_day_first_short_year_date(raw_value)
+    if parsed is None:
+        return None
+    today_value = today or date.today()
+    try:
+        future_candidate = date(2000 + parsed.year_two_digits, parsed.month, parsed.day)
+    except ValueError:
+        return None
+    if future_candidate < today_value:
+        return None
+    try:
+        past_candidate = date(1900 + parsed.year_two_digits, parsed.month, parsed.day)
+    except ValueError:
+        return None
+    if past_candidate >= today_value:
+        return None
+    return (
+        f"{future_candidate.strftime('%d.%m.%Y')} пока будущая дата, "
+        f"поэтому для архивной справки доступен только {past_candidate.strftime('%d.%m.%Y')}."
+    )
 
 
 def resolve_history_preset_date(preset: str, *, today: date | None = None) -> date | None:

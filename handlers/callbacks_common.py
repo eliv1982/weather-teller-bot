@@ -100,6 +100,26 @@ def mark_location_choice_selected(
         )
 
 
+def try_delete_message(ctx, chat_id: int, message_id: int | None) -> None:
+    """Best-effort deletion of a technical/wait message.
+
+    Never raises — failures are only logged at debug level so they never
+    interrupt the user-facing flow.
+    """
+    if message_id is None:
+        return
+    bot = getattr(ctx, "bot", ctx)
+    try:
+        bot.delete_message(chat_id, message_id)
+    except Exception as exc:
+        logger.debug(
+            "Best-effort delete skipped: chat_id=%s message_id=%s: %s",
+            chat_id,
+            message_id,
+            exc,
+        )
+
+
 def clear_inline_choice_message(call, ctx) -> None:
     """Best-effort cleanup for an inline message when a scenario moves to the next step."""
     message = getattr(call, "message", None)

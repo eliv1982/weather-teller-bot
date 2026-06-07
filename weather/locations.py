@@ -207,6 +207,54 @@ REGION_NAMES_RU = {
 }
 _REGION_NAMES_RU_LOWER = {k.lower(): v for k, v in REGION_NAMES_RU.items()}
 
+# Contested/sensitive administrative regions where country and admin region labels
+# are intentionally suppressed from user-facing display names. Only the city name is shown.
+_SENSITIVE_STATE_PATTERNS: tuple[str, ...] = (
+    # Crimea — all naming conventions used by different geocoders
+    "republic of crimea",
+    "autonomous republic of crimea",
+    "republic of the crimea",
+    "crimea",          # plain "Crimea" state returned by some geocoders
+    "sevastopol",      # Sevastopol is administered as a separate federal-city-level unit
+    # Donetsk Oblast / DPR
+    "donetsk oblast",
+    "donetsk people",
+    "donetsk",
+    # Luhansk Oblast / LPR
+    "luhansk oblast",
+    "luhansk people",
+    "luhanska oblast",
+    "luhansk",
+    # Zaporizhzhia Oblast
+    "zaporizhzhia oblast",
+    "zaporizhzhya oblast",
+    "zaporizka oblast",
+    # Kherson Oblast
+    "kherson oblast",
+    "khersonska oblast",
+    # Russian-script variants
+    "республика крым",
+    "автономная республика крым",
+    "крым",
+    "севастополь",
+    "донецкая область",
+    "донецька область",
+    "луганская область",
+    "луганська область",
+    "запорожская область",
+    "запорізька область",
+    "херсонская область",
+    "херсонська область",
+)
+
+
+def _is_sensitive_location(location: dict) -> bool:
+    """Returns True if the location is in a politically contested/sensitive region."""
+    state = str(location.get("state") or "").strip().lower()
+    if not state:
+        return False
+    return any(pattern in state for pattern in _SENSITIVE_STATE_PATTERNS)
+
 
 def _lookup_region_dict(state: str) -> str | None:
     """Возвращает перевод из REGION_NAMES_RU при точном совпадении или совпадении без учёта регистра."""
@@ -271,18 +319,24 @@ def get_region_name_ru(state: str | None) -> str | None:
 
 
 def build_location_label(location: dict, show_coords: bool = False) -> str:
-    """Собирает строку подписи для локации (населённый пункт, страна, регион)."""
+    """Собирает строку подписи для локации (населенный пункт, страна, регион).
+
+    Для локаций в спорных/чувствительных регионах (Крым, Донецкая и Луганская
+    области и т.п.) намеренно показывается только название населенного пункта —
+    без страны и административного региона.
+    """
     city_name = get_city_name_ru(location)
-    region_name = get_region_name_ru(location.get("state"))
-    country_name = get_country_name_ru(location.get("country"))
-    details = []
-    if country_name:
-        details.append(country_name)
-    if region_name and region_name != city_name and region_name not in details:
-        details.append(region_name)
     label = city_name
-    if details:
-        label += f" ({', '.join(details)})"
+    if not _is_sensitive_location(location):
+        region_name = get_region_name_ru(location.get("state"))
+        country_name = get_country_name_ru(location.get("country"))
+        details = []
+        if country_name:
+            details.append(country_name)
+        if region_name and region_name != city_name and region_name not in details:
+            details.append(region_name)
+        if details:
+            label += f" ({', '.join(details)})"
     if show_coords:
         lat = location.get("lat")
         lon = location.get("lon")

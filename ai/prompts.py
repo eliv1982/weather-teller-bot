@@ -29,6 +29,73 @@ def _normalize_ai_weather_payload(value: object) -> object:
     return normalized
 
 
+def _normalize_prompt_number(value: object) -> float | None:
+    if not isinstance(value, (int, float)):
+        return None
+    normalized = float(value)
+    if round(normalized, 6) == 0:
+        return 0.0
+    return normalized
+
+
+def _format_prompt_metric(value: object, suffix: str, *, precision: int = 1) -> object:
+    normalized = _normalize_prompt_number(value)
+    if normalized is None:
+        return value
+    return f"{normalized:.{precision}f}{suffix}"
+
+
+def _format_prompt_share(value: object) -> object:
+    normalized = _normalize_prompt_number(value)
+    if normalized is None:
+        return value
+    return f"{round(normalized * 100):.0f}%"
+
+
+def _format_prompt_days(value: object) -> object:
+    normalized = _normalize_prompt_number(value)
+    if normalized is None:
+        return value
+    if normalized.is_integer():
+        return f"{int(normalized)} дней"
+    return f"{normalized:.1f} дня"
+
+
+def _apply_metric_formatting(prompt_payload: dict, *, share_keys: tuple[str, ...] = (), day_keys: tuple[str, ...] = ()) -> None:
+    metric_suffixes = {
+        "temperature_max": " °C",
+        "temperature_min": " °C",
+        "temperature_mean": " °C",
+        "temperature_month_mean": " °C",
+        "temperature_daily_max_mean": " °C",
+        "temperature_daily_min_mean": " °C",
+        "temperature_absolute_max": " °C",
+        "temperature_absolute_min": " °C",
+        "temperature_extreme_high_mean": " °C",
+        "temperature_extreme_low_mean": " °C",
+        "precipitation_sum": " мм",
+        "precipitation_month_sum": " мм",
+        "rain_sum": " мм",
+        "rain_month_sum": " мм",
+        "snowfall_sum": " см",
+        "snowfall_month_sum": " см",
+        "wind_speed_max": " м/с",
+        "wind_daily_max_mean": " м/с",
+        "wind_month_peak": " м/с",
+        "wind_month_peak_mean": " м/с",
+        "relative_humidity_mean": "%",
+    }
+    for key, suffix in metric_suffixes.items():
+        if key in prompt_payload:
+            prompt_payload[key] = _format_prompt_metric(prompt_payload.get(key), suffix)
+    for key in share_keys:
+        if key in prompt_payload:
+            prompt_payload[key] = _format_prompt_share(prompt_payload.get(key))
+    for key in day_keys:
+        if key in prompt_payload:
+            prompt_payload[key] = _format_prompt_days(prompt_payload.get(key))
+
+
 def _prepare_history_prompt_payload(history_data: dict) -> tuple[dict, str]:
     payload = _normalize_ai_weather_payload(history_data)
     if not isinstance(payload, dict):
@@ -36,6 +103,24 @@ def _prepare_history_prompt_payload(history_data: dict) -> tuple[dict, str]:
 
     prompt_payload = dict(payload)
     pressure_text = format_pressure_mmhg(prompt_payload.pop("pressure_mean", None))
+    prompt_payload.pop("pressure_mean_mmhg", None)
+    _apply_metric_formatting(prompt_payload)
+    return prompt_payload, pressure_text
+
+
+def _prepare_monthly_climate_prompt_payload(report_data: dict) -> tuple[dict, str]:
+    payload = _normalize_ai_weather_payload(report_data)
+    if not isinstance(payload, dict):
+        return {}, "н/д"
+
+    prompt_payload = dict(payload)
+    pressure_text = format_pressure_mmhg(prompt_payload.pop("pressure_mean", None))
+    prompt_payload.pop("pressure_mean_mmhg", None)
+    _apply_metric_formatting(
+        prompt_payload,
+        share_keys=("precipitation_days_share", "precipitation_days_share_mean"),
+        day_keys=("precipitation_days", "precipitation_days_mean"),
+    )
     return prompt_payload, pressure_text
 
 
@@ -219,6 +304,40 @@ def build_history_prompt(city_label: str, history_data: dict) -> str:
         f"Локация: {city_label}\n"
         f"{pressure_line}"
         f"Архивные данные за день: {ai_history_data}"
+    )
+
+
+def build_monthly_climate_prompt(city_label: str, report_data: dict) -> str:
+    prompt_payload, pressure_text = _prepare_monthly_climate_prompt_payload(report_data)
+    pressure_line = f"Давление: {pressure_text}\n" if pressure_text != "н/д" else ""
+    mode = str(prompt_payload.get("mode") or "")
+    if mode == "monthly_normals":
+        return (
+            "Коротко поясни среднемесячные климатические показатели простым русским языком.\n"
+            "Требования: 2-3 коротких предложения, спокойно и по делу, без канцелярита, "
+            "без драматизации, без дисклеймеров и без воды.\n"
+            "Используй только переданные данные, ничего не выдумывай.\n"
+            "Это архивная справка по данным за 1991-2020. Прямо скажи, что показатели рассчитаны по архивным данным "
+            "и не описывают конкретный будущий месяц.\n"
+            "Не давай советов. Не используй букву с двумя точками. Пиши через обычную е.\n"
+            "Не пиши «вероятность осадков». Используй формулировку «доля дней с осадками по архивным данным».\n"
+            "Если упоминаешь давление, используй только строку в мм рт. ст. Не пиши hPa, гПа и сырые числа.\n\n"
+            f"Локация: {city_label}\n"
+            f"{pressure_line}"
+            f"Климатические данные за месяц: {prompt_payload}"
+        )
+    return (
+        "Коротко поясни архивную картину месяца простым русским языком.\n"
+        "Требования: 2-3 коротких предложения, спокойно и по делу, без канцелярита, "
+        "без драматизации, без дисклеймеров и без воды.\n"
+        "Используй только переданные данные, ничего не выдумывай.\n"
+        "Это архивная справка за конкретный месяц, а не прогноз.\n"
+        "Не давай советов. Не используй букву с двумя точками. Пиши через обычную е.\n"
+        "Не пиши «вероятность осадков». Используй формулировку «доля дней с осадками по архивным данным».\n"
+        "Если упоминаешь давление, используй только строку в мм рт. ст. Не пиши hPa, гПа и сырые числа.\n\n"
+        f"Локация: {city_label}\n"
+        f"{pressure_line}"
+        f"Архивные данные за месяц: {prompt_payload}"
     )
 
 
