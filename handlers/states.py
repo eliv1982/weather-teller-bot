@@ -49,8 +49,12 @@ WAITING_HISTORY_PICK = "waiting_history_pick"
 WAITING_HISTORY_SAVED_PICK = "waiting_history_saved_pick"
 WAITING_HISTORY_COORDS = "waiting_history_coords"
 WAITING_HISTORY_GEO = "waiting_history_geo"
+WAITING_HISTORY_SECTION = "waiting_history_section"
 WAITING_HISTORY_DATE_PICK = "waiting_history_date_pick"
 WAITING_HISTORY_CUSTOM_DATE = "waiting_history_custom_date"
+WAITING_HISTORY_CLIMATE_MODE = "waiting_history_climate_mode"
+WAITING_HISTORY_CLIMATE_MONTH = "waiting_history_climate_month"
+WAITING_HISTORY_CLIMATE_YEAR = "waiting_history_climate_year"
 
 # Состояния сценария сравнения
 WAITING_COMPARE_CITY_1 = "waiting_compare_city_1"
@@ -144,6 +148,7 @@ FORECAST_STATES = {
 }
 
 HISTORY_STATES = {
+    WAITING_HISTORY_SECTION,
     WAITING_HISTORY_CITY,
     WAITING_HISTORY_PICK,
     WAITING_HISTORY_SAVED_PICK,
@@ -151,6 +156,9 @@ HISTORY_STATES = {
     WAITING_HISTORY_GEO,
     WAITING_HISTORY_DATE_PICK,
     WAITING_HISTORY_CUSTOM_DATE,
+    WAITING_HISTORY_CLIMATE_MODE,
+    WAITING_HISTORY_CLIMATE_MONTH,
+    WAITING_HISTORY_CLIMATE_YEAR,
 }
 
 COMPARE_STATES = {

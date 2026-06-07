@@ -189,6 +189,70 @@ def fetch_open_meteo_geocode(
     return data
 
 
+def fetch_open_meteo_history_daily_range(
+    lat: float,
+    lon: float,
+    *,
+    start_date: date,
+    end_date: date,
+    timezone: str = "auto",
+    timeout: int = 10,
+) -> dict[str, Any] | None:
+    """
+    Fetch Open-Meteo historical daily data for a calendar date range.
+
+    The Historical Weather API uses the dedicated archive endpoint and requires
+    ``timezone`` when requesting ``daily`` aggregations.
+    """
+    start_iso = start_date.isoformat()
+    end_iso = end_date.isoformat()
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start_iso,
+        "end_date": end_iso,
+        "daily": _HISTORY_DAILY_VARS,
+        "timezone": timezone,
+        "wind_speed_unit": "ms",
+    }
+    try:
+        response = requests.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=timeout)
+    except requests.RequestException:
+        logger.warning(
+            "Open-Meteo archive request failed for lat=%s lon=%s start=%s end=%s",
+            lat,
+            lon,
+            start_iso,
+            end_iso,
+            exc_info=True,
+        )
+        return None
+    if response.status_code != 200:
+        logger.warning(
+            "Open-Meteo archive HTTP %s for lat=%s lon=%s start=%s end=%s",
+            response.status_code,
+            lat,
+            lon,
+            start_iso,
+            end_iso,
+        )
+        return None
+    try:
+        data = response.json()
+    except ValueError:
+        logger.warning(
+            "Open-Meteo archive invalid JSON for lat=%s lon=%s start=%s end=%s",
+            lat,
+            lon,
+            start_iso,
+            end_iso,
+        )
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 def fetch_open_meteo_history_daily(
     lat: float,
     lon: float,
@@ -197,44 +261,15 @@ def fetch_open_meteo_history_daily(
     timezone: str = "auto",
     timeout: int = 10,
 ) -> dict[str, Any] | None:
-    """
-    Fetch Open-Meteo historical daily data for one calendar day.
-
-    The Historical Weather API uses the dedicated archive endpoint and requires
-    ``timezone`` when requesting ``daily`` aggregations.
-    """
-    day_iso = target_date.isoformat()
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": day_iso,
-        "end_date": day_iso,
-        "daily": _HISTORY_DAILY_VARS,
-        "timezone": timezone,
-        "wind_speed_unit": "ms",
-    }
-    try:
-        response = requests.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=timeout)
-    except requests.RequestException:
-        logger.warning("Open-Meteo archive request failed for lat=%s lon=%s date=%s", lat, lon, day_iso, exc_info=True)
-        return None
-    if response.status_code != 200:
-        logger.warning(
-            "Open-Meteo archive HTTP %s for lat=%s lon=%s date=%s",
-            response.status_code,
-            lat,
-            lon,
-            day_iso,
-        )
-        return None
-    try:
-        data = response.json()
-    except ValueError:
-        logger.warning("Open-Meteo archive invalid JSON for lat=%s lon=%s date=%s", lat, lon, day_iso)
-        return None
-    if not isinstance(data, dict):
-        return None
-    return data
+    """Fetch Open-Meteo historical daily data for one calendar day."""
+    return fetch_open_meteo_history_daily_range(
+        lat,
+        lon,
+        start_date=target_date,
+        end_date=target_date,
+        timezone=timezone,
+        timeout=timeout,
+    )
 
 
 def map_open_meteo_geocode_to_ow_candidates(root: dict[str, Any] | None) -> list[dict[str, Any]]:

@@ -32,7 +32,11 @@ from keyboards import (
     build_favorite_pick_keyboard,
     build_forecast_day_keyboard,
     build_forecast_days_keyboard,
+    build_history_climate_mode_keyboard,
     build_history_date_keyboard,
+    build_history_month_keyboard,
+    build_history_section_keyboard,
+    build_history_year_clarification_keyboard,
     build_location_pick_keyboard,
     build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard,
@@ -155,6 +159,7 @@ from handlers.states import (
     WAITING_HISTORY_GEO,
     WAITING_HISTORY_PICK,
     WAITING_HISTORY_SAVED_PICK,
+    WAITING_HISTORY_SECTION,
     WAITING_SOURCE_COMPARE_CITY,
     WAITING_SOURCE_COMPARE_DATE_PICK,
     WAITING_SOURCE_COMPARE_COORDS,
@@ -261,7 +266,11 @@ ctx = AppContext(
     build_alert_subscriptions_keyboard=build_alert_subscriptions_keyboard,
     build_saved_locations_keyboard=build_saved_locations_keyboard,
     build_scenario_location_choice_keyboard=build_scenario_location_choice_keyboard,
+    build_history_section_keyboard=build_history_section_keyboard,
     build_history_date_keyboard=build_history_date_keyboard,
+    build_history_climate_mode_keyboard=build_history_climate_mode_keyboard,
+    build_history_month_keyboard=build_history_month_keyboard,
+    build_history_year_clarification_keyboard=build_history_year_clarification_keyboard,
     build_source_compare_days_keyboard=build_source_compare_days_keyboard,
     build_source_compare_date_post_result_keyboard=build_source_compare_date_post_result_keyboard,
     build_favorite_pick_keyboard=build_favorite_pick_keyboard,
@@ -656,6 +665,14 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
+    if state == WAITING_HISTORY_SECTION:
+        bot.send_message(
+            message.chat.id,
+            "Сначала выбери раздел кнопкой ниже.",
+            reply_markup=build_history_section_keyboard(),
+        )
+        return
+
     if state in {WAITING_HISTORY_CITY, WAITING_HISTORY_GEO}:
         session_store.history_location_choices.pop(user_id, None)
         location_data = message.location
@@ -663,7 +680,6 @@ def handle_location_message(message: types.Message) -> None:
         lon = location_data.longitude
         location = get_location_by_coordinates(lat, lon)
         city = build_location_label(location, show_coords=False) if location else f"Координаты: {lat:.4f}, {lon:.4f}"
-        bot.send_message(message.chat.id, f"✅ Выбрано: {city}")
         prepare_weather_history_by_coordinates(
             message,
             user_id,

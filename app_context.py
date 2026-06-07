@@ -32,7 +32,11 @@ class AppContext:
     build_alert_subscriptions_keyboard: Any
     build_saved_locations_keyboard: Any
     build_scenario_location_choice_keyboard: Any
+    build_history_section_keyboard: Any
     build_history_date_keyboard: Any
+    build_history_climate_mode_keyboard: Any
+    build_history_month_keyboard: Any
+    build_history_year_clarification_keyboard: Any
     build_source_compare_days_keyboard: Any
     build_source_compare_date_post_result_keyboard: Any
     build_favorite_pick_keyboard: Any

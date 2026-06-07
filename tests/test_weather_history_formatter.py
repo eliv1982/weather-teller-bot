@@ -1,4 +1,9 @@
-from formatters import build_history_brief_summary, format_history_weather_response
+from formatters import (
+    build_history_brief_summary,
+    build_monthly_climate_brief_summary,
+    format_history_monthly_climate_response,
+    format_history_weather_response,
+)
 
 
 def _history_payload(**overrides):
@@ -16,6 +21,65 @@ def _history_payload(**overrides):
         "relative_humidity_mean": 71.0,
         "pressure_mean": 1012.8,
         "weather_description": "пасмурно",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _monthly_year_payload(**overrides):
+    payload = {
+        "mode": "monthly_year",
+        "month": 1,
+        "month_label": "Январь",
+        "month_label_lower": "январь",
+        "year": 2020,
+        "temperature_month_mean": -2.0,
+        "temperature_daily_max_mean": 1.0,
+        "temperature_daily_min_mean": -5.0,
+        "temperature_absolute_max": 4.0,
+        "temperature_absolute_min": -12.0,
+        "warmest_day_label": "14.01.2020",
+        "coldest_day_label": "03.01.2020",
+        "precipitation_month_sum": 35.0,
+        "rain_month_sum": 20.0,
+        "snowfall_month_sum": 15.0,
+        "precipitation_days": 11,
+        "precipitation_days_share": 0.35,
+        "wind_daily_max_mean": 5.2,
+        "wind_month_peak": 11.4,
+        "windiest_day_label": "22.01.2020",
+        "relative_humidity_mean": 78.0,
+        "pressure_mean": 1012.0,
+        "dominant_weather_description": "пасмурно",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _monthly_normals_payload(**overrides):
+    payload = {
+        "mode": "monthly_normals",
+        "month": 1,
+        "month_label": "Январь",
+        "month_label_lower": "январь",
+        "reference_period": "1991-2020",
+        "used_years_count": 24,
+        "expected_years_count": 30,
+        "temperature_month_mean": -3.0,
+        "temperature_daily_max_mean": -1.0,
+        "temperature_daily_min_mean": -6.0,
+        "temperature_extreme_high_mean": 2.5,
+        "temperature_extreme_low_mean": -10.5,
+        "precipitation_month_sum": 42.0,
+        "rain_month_sum": 18.0,
+        "snowfall_month_sum": 20.0,
+        "precipitation_days_mean": 12.4,
+        "precipitation_days_share_mean": 0.40,
+        "wind_daily_max_mean": 5.1,
+        "wind_month_peak_mean": 10.2,
+        "relative_humidity_mean": 80.0,
+        "pressure_mean": 1015.0,
+        "dominant_weather_description": "пасмурно",
     }
     payload.update(overrides)
     return payload
@@ -75,7 +139,7 @@ def test_history_formatter_uses_emoji_sections_and_short_block():
         "🌧 Осадки",
         "💨 Ветер",
         "📊 Дополнительно",
-        "🤖 Коротко",
+        "✨ Коротко",
     ):
         assert label in text
 
@@ -90,7 +154,7 @@ def test_history_formatter_falls_back_to_brief_summary_without_ai_text():
 
 def test_history_formatter_uses_mmhg_in_short_block_and_hides_raw_pressure():
     text = format_history_weather_response("Москва", _history_payload(pressure_mean=1020.2, relative_humidity_mean=93.0))
-    short_block = text.split("🤖 Коротко", 1)[1]
+    short_block = text.split("✨ Коротко", 1)[1]
 
     assert "765 мм рт. ст." in text
     assert "1020.2" not in short_block
@@ -120,7 +184,7 @@ def test_history_formatter_accepts_external_short_summary():
         short_summary="По архивным данным день выглядел спокойно и без существенных осадков.",
     )
 
-    assert "🤖 Коротко" in text
+    assert "✨ Коротко" in text
     assert "По архивным данным день выглядел спокойно и без существенных осадков." in text
 
 
@@ -137,3 +201,48 @@ def test_build_history_brief_summary_formats_pressure_in_mmhg():
 
     assert "765 мм рт. ст." in text
     assert "1020.2" not in text
+
+
+def test_monthly_year_formatter_uses_emoji_sections_and_short_block():
+    text = format_history_monthly_climate_response("Москва", _monthly_year_payload())
+
+    for label in (
+        "📊 Средние климатические показатели",
+        "📍 Москва",
+        "🗓 Январь 2020",
+        "🌡 Температура",
+        "🌧 Осадки",
+        "💨 Ветер",
+        "📊 Дополнительно",
+        "✨ Коротко",
+    ):
+        assert label in text
+
+
+def test_monthly_normals_formatter_mentions_archive_period_without_forecast_wording():
+    text = format_history_monthly_climate_response("Москва", _monthly_normals_payload())
+
+    assert "📆 Среднемесячные показатели" in text
+    assert "период 1991-2020" in text
+    assert "использовано 24 из 30 лет" in text.lower()
+    assert "прогноз" not in text.lower()
+    assert "вероятность осадков" not in text.lower()
+    assert "архив" in text.lower()
+
+
+def test_monthly_formatter_hides_raw_pressure_and_no_yo():
+    text = format_history_monthly_climate_response("Москва", _monthly_normals_payload(pressure_mean=1020.2))
+
+    assert "765 мм рт. ст." in text
+    assert "1020.2" not in text
+    assert "\u0451" not in text
+
+
+def test_build_monthly_climate_brief_summary_avoids_probability_wording():
+    text = build_monthly_climate_brief_summary(_monthly_normals_payload())
+
+    assert "доля дней с осадками по архивным данным" in text.lower()
+    assert "использовано 24 из 30 лет" in text.lower()
+    assert "вероятность осадков" not in text.lower()
+    assert "прогноз" not in text.lower()
+    assert "1991-2020" in text

@@ -189,6 +189,52 @@ def history_signature(city_label: str, history_data: dict) -> dict:
     }
 
 
+def monthly_climate_signature(city_label: str, report_data: dict) -> dict:
+    payload = report_data if isinstance(report_data, dict) else {}
+    mode = normalize_location(payload.get("mode"))
+    if mode == "monthly_normals":
+        return {
+            "mode": "monthly_normals",
+            "format_version": "monthly_climate_ai_v1",
+            "location": normalize_location(city_label),
+            "month": as_int(payload.get("month")),
+            "reference_period": normalize_location(payload.get("reference_period")),
+            "temp_mean": round_step(payload.get("temperature_month_mean"), step=0.5),
+            "temp_daily_max_mean": round_step(payload.get("temperature_daily_max_mean"), step=0.5),
+            "temp_daily_min_mean": round_step(payload.get("temperature_daily_min_mean"), step=0.5),
+            "temp_extreme_high_mean": round_step(payload.get("temperature_extreme_high_mean"), step=0.5),
+            "temp_extreme_low_mean": round_step(payload.get("temperature_extreme_low_mean"), step=0.5),
+            "precipitation_sum": round_1(payload.get("precipitation_month_sum")),
+            "precipitation_days_mean": round_1(payload.get("precipitation_days_mean")),
+            "precipitation_share_mean": round_1((payload.get("precipitation_days_share_mean") or 0) * 100),
+            "wind_daily_max_mean": round_step(payload.get("wind_daily_max_mean"), step=1.0),
+            "wind_peak_mean": round_step(payload.get("wind_month_peak_mean"), step=1.0),
+            "humidity": as_int(payload.get("relative_humidity_mean")),
+            "pressure": as_int(payload.get("pressure_mean")),
+            "description": normalize_description(payload.get("dominant_weather_description")),
+        }
+    return {
+        "mode": "monthly_year",
+        "format_version": "monthly_climate_ai_v1",
+        "location": normalize_location(city_label),
+        "month": as_int(payload.get("month")),
+        "year": as_int(payload.get("year")),
+        "temp_mean": round_step(payload.get("temperature_month_mean"), step=0.5),
+        "temp_daily_max_mean": round_step(payload.get("temperature_daily_max_mean"), step=0.5),
+        "temp_daily_min_mean": round_step(payload.get("temperature_daily_min_mean"), step=0.5),
+        "temp_max": round_step(payload.get("temperature_absolute_max"), step=0.5),
+        "temp_min": round_step(payload.get("temperature_absolute_min"), step=0.5),
+        "precipitation_sum": round_1(payload.get("precipitation_month_sum")),
+        "precipitation_days": as_int(payload.get("precipitation_days")),
+        "precipitation_share": round_1((payload.get("precipitation_days_share") or 0) * 100),
+        "wind_daily_max_mean": round_step(payload.get("wind_daily_max_mean"), step=1.0),
+        "wind_peak": round_step(payload.get("wind_month_peak"), step=1.0),
+        "humidity": as_int(payload.get("relative_humidity_mean")),
+        "pressure": as_int(payload.get("pressure_mean")),
+        "description": normalize_description(payload.get("dominant_weather_description")),
+    }
+
+
 def weather_alert_signature(location_label: str, alert_payload: dict) -> dict:
     payload = alert_payload if isinstance(alert_payload, dict) else {}
     return {

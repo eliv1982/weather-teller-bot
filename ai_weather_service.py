@@ -3,7 +3,7 @@ import os
 import json
 import re
 
-from formatters import build_history_brief_summary
+from formatters import build_history_brief_summary, build_monthly_climate_brief_summary
 from postgres_storage import get_ai_cached_response, save_ai_cached_response
 from ai import fallbacks, location_assist, prompts, signatures
 from weather.pressure import format_pressure_mmhg
@@ -110,6 +110,29 @@ class AiWeatherService:
             self._save_cached(cache_key, "history", final_text, ttl_seconds=self.ttl_history_seconds)
             return final_text
         logger.info("AI fallback used: scenario=history")
+        return fallback
+
+    def explain_monthly_climate(self, city_label: str, report_data: dict) -> str:
+        """Коротко поясняет месячную архивную или климатическую справку."""
+        fallback = self._fallback_monthly_climate(city_label, report_data)
+        signature = self._monthly_climate_signature(city_label, report_data)
+        cache_key = self._build_cache_key("monthly_climate", signature)
+        cached = self._get_cached(cache_key)
+        if cached:
+            logger.info("AI cache hit: scenario=monthly_climate")
+            final_text = self._postprocess_monthly_climate_text(cached, report_data)
+            if self._is_monthly_climate_text_valid(final_text, report_data):
+                return final_text
+            return fallback
+        logger.info("AI cache miss: scenario=monthly_climate")
+        prompt = prompts.build_monthly_climate_prompt(city_label, report_data)
+        model_answer = self._call_model(prompt, max_output_tokens=200)
+        if model_answer:
+            final_text = self._postprocess_monthly_climate_text(model_answer, report_data)
+            if self._is_monthly_climate_text_valid(final_text, report_data):
+                self._save_cached(cache_key, "monthly_climate", final_text, ttl_seconds=self.ttl_history_seconds)
+                return final_text
+        logger.info("AI fallback used: scenario=monthly_climate")
         return fallback
 
     def summarize_day_forecast(self, city_label: str, day_forecast_data: list[dict]) -> str:
@@ -328,6 +351,10 @@ class AiWeatherService:
         """Возвращает сигнатуру архивной погоды за день."""
         return signatures.history_signature(city_label, history_data)
 
+    def _monthly_climate_signature(self, city_label: str, report_data: dict) -> dict:
+        """Возвращает сигнатуру месячной климатической справки."""
+        return signatures.monthly_climate_signature(city_label, report_data)
+
     def _weather_alert_signature(self, location_label: str, alert_payload: dict) -> dict:
         """Сигнатура кэша для AI-объяснения погодного уведомления."""
         return signatures.weather_alert_signature(location_label, alert_payload)
@@ -448,6 +475,11 @@ class AiWeatherService:
         _ = city_label
         return build_history_brief_summary(history_data)
 
+    def _fallback_monthly_climate(self, city_label: str, report_data: dict) -> str:
+        """Детерминированный fallback для месячной климатической справки без OpenAI."""
+        _ = city_label
+        return build_monthly_climate_brief_summary(report_data)
+
     def _fallback_day_forecast(self, city_label: str, day_items: list[dict]) -> str:
         """Детерминированный fallback для дневного прогноза без OpenAI."""
         return fallbacks.fallback_day_forecast(city_label, day_items)
@@ -483,6 +515,7 @@ class AiWeatherService:
         """Слегка чистит AI-текст для архивной справки."""
         clean = re.sub(r"\s+", " ", str(text or "").strip())
         clean = clean.translate({1105: 1077, 1025: 1045})
+        clean = re.sub(r"(?<!\d)-0(?:\.0+)?(?=\D|$)", "0.0", clean)
         pressure_text = format_pressure_mmhg((history_data or {}).get("pressure_mean"))
         pressure_pattern = r"(?i)(?:^|(?<=[.!?]))\s*[^.!?]*(?:давлен|hpa|гпа)[^.!?]*[.!?]?"
         if pressure_text == "н/д":
@@ -491,6 +524,62 @@ class AiWeatherService:
             clean = re.sub(pressure_pattern, f" Давление было около {pressure_text}.", clean, count=1)
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
+
+    def _postprocess_monthly_climate_text(self, text: str, report_data: dict | None = None) -> str:
+        """Чистит AI-текст для месячной климатической справки."""
+        clean = self._postprocess_history_text(text, report_data)
+        clean = re.sub(
+            r"(?i)вероятност[ьи] осадков",
+            "доля дней с осадками по архивным данным",
+            clean,
+        )
+        mode = str((report_data or {}).get("mode") or "")
+        if mode == "monthly_normals":
+            clean = re.sub(
+                r"(?i)это не прогноз на конкретный месяц,?\s*а архивная справка по (?:периоду|данным за) 1991-2020\.?",
+                "Это архивная справка по данным за 1991-2020.",
+                clean,
+            )
+            clean = re.sub(
+                r"(?i)это не прогноз на конкретный месяц\.?",
+                "Это архивная справка по данным за 1991-2020.",
+                clean,
+            )
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
+
+    def _is_monthly_climate_text_valid(self, text: str, report_data: dict | None = None) -> bool:
+        lowered = str(text or "").lower()
+        if "ё" in lowered or "вероятност" in lowered:
+            return False
+        if any(token in lowered for token in ("hpa", "гпа")):
+            return False
+        if "давлен" in lowered and "мм рт. ст." not in lowered:
+            return False
+        if any(
+            phrase in lowered
+            for phrase in (
+                "надень",
+                "наденьте",
+                "возьми",
+                "возьмите",
+                "лучше",
+                "рекоменд",
+            )
+        ):
+            return False
+        mode = str((report_data or {}).get("mode") or "")
+        if mode == "monthly_normals":
+            if "прогноз" in lowered:
+                return False
+        elif "прогноз" in lowered:
+            return False
+        if mode == "monthly_normals":
+            if "1991-2020" not in text:
+                return False
+            if "архив" not in lowered:
+                return False
+        return True
 
     def _is_compare_text_factual(self, text: str) -> bool:
         lowered = str(text or "").lower()
