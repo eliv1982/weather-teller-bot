@@ -3,6 +3,37 @@ from datetime import date
 from telebot import types
 
 from weather_app import build_disambiguated_location_labels
+from callbacks.constants import (
+    # yes/no
+    YN_YES, YN_NO, YN_MENU,
+    # current weather
+    CURRENT_CANCEL,
+    # forecast
+    FORECAST_DAY_PREFIX, FORECAST_BACK, FORECAST_MENU,
+    AI_FORECAST_DAY_PREFIX,
+    # ai compare
+    AICMP_SAVED_PICK_PREFIX, AICMP_SAVED_CANCEL,
+    AICMP_DATE_PICK_PREFIX, AICMP_DATE_CANCEL, AICMP_DATE_ANOTHER,
+    # source compare
+    SOURCE_COMPARE_DATE_PICK_PREFIX, SOURCE_COMPARE_DATE_CANCEL,
+    SOURCE_COMPARE_DATE_ANOTHER,
+    # history
+    HISTORY_SECTION_PREFIX, HISTORY_SECTION_DAILY, HISTORY_SECTION_CLIMATE,
+    HISTORY_MENU,
+    HISTORY_DATE_PRESET_PREFIX,
+    HISTORY_PRESET_YESTERDAY, HISTORY_PRESET_7D, HISTORY_PRESET_30D,
+    HISTORY_DATE_CUSTOM,
+    HISTORY_CLIMATE_MODE_PREFIX,
+    HISTORY_CLIMATE_MODE_MONTHLY_YEAR, HISTORY_CLIMATE_MODE_MONTHLY_NORMALS,
+    HISTORY_CLIMATE_BACK_TO_ACTIONS, HISTORY_CLIMATE_BACK_TO_MODES,
+    HISTORY_CLIMATE_MONTH_PREFIX,
+    HISTORY_DATE_YEAR_PREFIX,
+    # saved locations / favorite
+    FAVORITE_PICK_PREFIX,
+    # scenario routing cancel callbacks
+    DETAILS_CANCEL, FORECAST_CANCEL, SOURCE_COMPARE_CANCEL,
+    HISTORY_CANCEL, COMPARE_CANCEL,
+)
 
 
 def _persistent_reply_keyboard() -> types.ReplyKeyboardMarkup:
@@ -54,10 +85,10 @@ def yes_no_menu() -> types.ReplyKeyboardMarkup:
     """Создаёт inline-клавиатуру выбора Да/Нет."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.row(
-        types.InlineKeyboardButton("Да", callback_data="yn_yes"),
-        types.InlineKeyboardButton("Нет", callback_data="yn_no"),
+        types.InlineKeyboardButton("Да", callback_data=YN_YES),
+        types.InlineKeyboardButton("Нет", callback_data=YN_NO),
     )
-    keyboard.add(types.InlineKeyboardButton("⬅️ В меню", callback_data="yn_menu"))
+    keyboard.add(types.InlineKeyboardButton("⬅️ В меню", callback_data=YN_MENU))
     return keyboard
 
 
@@ -177,19 +208,19 @@ def build_forecast_days_keyboard(days: list[str]) -> types.InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру с днями прогноза."""
     keyboard = types.InlineKeyboardMarkup()
     for day in days:
-        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"forecast_day:{day}"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="forecast_menu"))
+        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"{FORECAST_DAY_PREFIX}:{day}"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=FORECAST_MENU))
     return keyboard
 
 
 def build_forecast_day_keyboard(days: list[str], current_day: str) -> types.InlineKeyboardMarkup:
     """Создаёт inline-кнопки для выбранного дня прогноза."""
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(text="📅 К дням", callback_data="forecast_back"))
+    keyboard.add(types.InlineKeyboardButton(text="📅 К дням", callback_data=FORECAST_BACK))
     keyboard.add(
         types.InlineKeyboardButton(
             text="🪄 Краткая рекомендация",
-            callback_data=f"ai_forecast_day:{current_day}",
+            callback_data=f"{AI_FORECAST_DAY_PREFIX}:{current_day}",
         )
     )
 
@@ -197,13 +228,13 @@ def build_forecast_day_keyboard(days: list[str], current_day: str) -> types.Inli
     nav_buttons = []
     if index > 0:
         prev_day = days[index - 1]
-        nav_buttons.append(types.InlineKeyboardButton(text="◀️", callback_data=f"forecast_day:{prev_day}"))
+        nav_buttons.append(types.InlineKeyboardButton(text="◀️", callback_data=f"{FORECAST_DAY_PREFIX}:{prev_day}"))
     if index < len(days) - 1:
         next_day = days[index + 1]
-        nav_buttons.append(types.InlineKeyboardButton(text="▶️", callback_data=f"forecast_day:{next_day}"))
+        nav_buttons.append(types.InlineKeyboardButton(text="▶️", callback_data=f"{FORECAST_DAY_PREFIX}:{next_day}"))
     if nav_buttons:
         keyboard.row(*nav_buttons)
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="forecast_menu"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=FORECAST_MENU))
 
     return keyboard
 
@@ -237,8 +268,8 @@ def ai_compare_location_method_menu() -> types.ReplyKeyboardMarkup:
 
 def build_ai_compare_saved_locations_keyboard(saved_locations: list[dict], step: int) -> types.InlineKeyboardMarkup:
     """Создаёт inline-выбор сохранённой локации для шага AI-сравнения."""
-    keyboard = build_saved_locations_keyboard(saved_locations, f"aicmp_saved_pick:{step}")
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="aicmp_saved_cancel"))
+    keyboard = build_saved_locations_keyboard(saved_locations, f"{AICMP_SAVED_PICK_PREFIX}:{step}")
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data=AICMP_SAVED_CANCEL))
     return keyboard
 
 
@@ -246,8 +277,8 @@ def build_ai_compare_days_keyboard(days: list[str]) -> types.InlineKeyboardMarku
     """Создаёт inline-клавиатуру выбора даты для AI-сравнения локаций."""
     keyboard = types.InlineKeyboardMarkup()
     for day in days:
-        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"aicmp_date_pick:{day}"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="aicmp_date_cancel"))
+        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"{AICMP_DATE_PICK_PREFIX}:{day}"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data=AICMP_DATE_CANCEL))
     return keyboard
 
 
@@ -255,8 +286,8 @@ def build_ai_compare_date_post_result_keyboard() -> types.InlineKeyboardMarkup:
     """Действия после результата AI-сравнения на дату (ещё одна дата или выход в меню)."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.row(
-        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data="aicmp_date_another"),
-        types.InlineKeyboardButton(text="⬅️ В меню", callback_data="yn_menu"),
+        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data=AICMP_DATE_ANOTHER),
+        types.InlineKeyboardButton(text="⬅️ В меню", callback_data=YN_MENU),
     )
     return keyboard
 
@@ -265,8 +296,8 @@ def build_source_compare_days_keyboard(days: list[str]) -> types.InlineKeyboardM
     """Создаёт inline-клавиатуру выбора даты для сравнения источников."""
     keyboard = types.InlineKeyboardMarkup()
     for day in days:
-        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"source_compare_date_pick:{day}"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data="source_compare_date_cancel"))
+        keyboard.add(types.InlineKeyboardButton(text=day, callback_data=f"{SOURCE_COMPARE_DATE_PICK_PREFIX}:{day}"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Отмена", callback_data=SOURCE_COMPARE_DATE_CANCEL))
     return keyboard
 
 
@@ -274,8 +305,8 @@ def build_source_compare_date_post_result_keyboard() -> types.InlineKeyboardMark
     """Действия после сравнения источников на выбранную дату."""
     keyboard = types.InlineKeyboardMarkup()
     keyboard.row(
-        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data="source_compare_date_another"),
-        types.InlineKeyboardButton(text="⬅️ В меню", callback_data="yn_menu"),
+        types.InlineKeyboardButton(text="📅 Выбрать другую дату", callback_data=SOURCE_COMPARE_DATE_ANOTHER),
+        types.InlineKeyboardButton(text="⬅️ В меню", callback_data=YN_MENU),
     )
     return keyboard
 
@@ -283,45 +314,51 @@ def build_source_compare_date_post_result_keyboard() -> types.InlineKeyboardMark
 def build_history_section_keyboard() -> types.InlineKeyboardMarkup:
     """Создает первое inline-подменю для раздела архивной погоды."""
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(text="📅 На дату", callback_data="history_section:daily"))
-    keyboard.add(
-        types.InlineKeyboardButton(
-            text="📊 Средние климатические показатели",
-            callback_data="history_section:climate",
-        )
-    )
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    keyboard.add(types.InlineKeyboardButton(
+        text="📅 На дату",
+        callback_data=f"{HISTORY_SECTION_PREFIX}:{HISTORY_SECTION_DAILY}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        text="📊 Средние климатические показатели",
+        callback_data=f"{HISTORY_SECTION_PREFIX}:{HISTORY_SECTION_CLIMATE}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=HISTORY_MENU))
     return keyboard
 
 
 def build_history_date_keyboard() -> types.InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру выбора даты для архивной погоды."""
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(text="Вчера", callback_data="history_date_preset:yesterday"))
-    keyboard.add(types.InlineKeyboardButton(text="7 дней назад", callback_data="history_date_preset:7d"))
-    keyboard.add(types.InlineKeyboardButton(text="30 дней назад", callback_data="history_date_preset:30d"))
-    keyboard.add(types.InlineKeyboardButton(text="Ввести дату", callback_data="history_date_custom"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    keyboard.add(types.InlineKeyboardButton(
+        text="Вчера",
+        callback_data=f"{HISTORY_DATE_PRESET_PREFIX}:{HISTORY_PRESET_YESTERDAY}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        text="7 дней назад",
+        callback_data=f"{HISTORY_DATE_PRESET_PREFIX}:{HISTORY_PRESET_7D}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        text="30 дней назад",
+        callback_data=f"{HISTORY_DATE_PRESET_PREFIX}:{HISTORY_PRESET_30D}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(text="Ввести дату", callback_data=HISTORY_DATE_CUSTOM))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=HISTORY_MENU))
     return keyboard
 
 
 def build_history_climate_mode_keyboard() -> types.InlineKeyboardMarkup:
     """Создает inline-клавиатуру выбора режима климатической справки."""
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(
-        types.InlineKeyboardButton(
-            text="🗓 Месяц конкретного года",
-            callback_data="history_climate_mode:monthly_year",
-        )
-    )
-    keyboard.add(
-        types.InlineKeyboardButton(
-            text="📆 Среднемесячные показатели",
-            callback_data="history_climate_mode:monthly_normals",
-        )
-    )
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data="history_climate_back_to_actions"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    keyboard.add(types.InlineKeyboardButton(
+        text="🗓 Месяц конкретного года",
+        callback_data=f"{HISTORY_CLIMATE_MODE_PREFIX}:{HISTORY_CLIMATE_MODE_MONTHLY_YEAR}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        text="📆 Среднемесячные показатели",
+        callback_data=f"{HISTORY_CLIMATE_MODE_PREFIX}:{HISTORY_CLIMATE_MODE_MONTHLY_NORMALS}",
+    ))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data=HISTORY_CLIMATE_BACK_TO_ACTIONS))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=HISTORY_MENU))
     return keyboard
 
 
@@ -345,10 +382,13 @@ def build_history_month_keyboard() -> types.InlineKeyboardMarkup:
     for row_start in range(0, len(month_labels), 3):
         row_buttons = []
         for index, label in enumerate(month_labels[row_start : row_start + 3], start=row_start + 1):
-            row_buttons.append(types.InlineKeyboardButton(text=label, callback_data=f"history_climate_month:{index}"))
+            row_buttons.append(types.InlineKeyboardButton(
+                text=label,
+                callback_data=f"{HISTORY_CLIMATE_MONTH_PREFIX}:{index}",
+            ))
         keyboard.row(*row_buttons)
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data="history_climate_back_to_modes"))
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data="history_menu"))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад", callback_data=HISTORY_CLIMATE_BACK_TO_MODES))
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ В меню", callback_data=HISTORY_MENU))
     return keyboard
 
 
@@ -356,13 +396,11 @@ def build_history_year_clarification_keyboard(options: list[date]) -> types.Inli
     """Создает inline-клавиатуру для уточнения полного года в короткой дате."""
     keyboard = types.InlineKeyboardMarkup()
     for option in options:
-        keyboard.add(
-            types.InlineKeyboardButton(
-                text=option.strftime("%d.%m.%Y"),
-                callback_data=f"history_date_year:{option.isoformat()}",
-            )
-        )
-    keyboard.add(types.InlineKeyboardButton(text="Ввести другую дату", callback_data="history_date_custom"))
+        keyboard.add(types.InlineKeyboardButton(
+            text=option.strftime("%d.%m.%Y"),
+            callback_data=f"{HISTORY_DATE_YEAR_PREFIX}:{option.isoformat()}",
+        ))
+    keyboard.add(types.InlineKeyboardButton(text="Ввести другую дату", callback_data=HISTORY_DATE_CUSTOM))
     return keyboard
 
 
@@ -415,20 +453,20 @@ def build_scenario_location_choice_keyboard(
     scenario: «details», «forecast», «history» или «compare»; для compare обязательно передай compare_step (1 или 2).
     """
     if scenario == "details":
-        return build_location_pick_keyboard(locations, "details_pick", "details_cancel")
+        return build_location_pick_keyboard(locations, "details_pick", DETAILS_CANCEL)
     if scenario == "forecast":
-        return build_location_pick_keyboard(locations, "forecast_pick", "forecast_cancel")
+        return build_location_pick_keyboard(locations, "forecast_pick", FORECAST_CANCEL)
     if scenario == "source_compare":
-        return build_location_pick_keyboard(locations, "source_compare_pick", "source_compare_cancel")
+        return build_location_pick_keyboard(locations, "source_compare_pick", SOURCE_COMPARE_CANCEL)
     if scenario == "history":
-        return build_location_pick_keyboard(locations, "history_pick", "history_cancel")
+        return build_location_pick_keyboard(locations, "history_pick", HISTORY_CANCEL)
     if scenario == "compare":
         if compare_step not in (1, 2):
             raise ValueError("Для сценария compare нужен compare_step равный 1 или 2.")
         return build_location_pick_keyboard(
             locations,
             "compare_pick",
-            "compare_cancel",
+            COMPARE_CANCEL,
             compare_step=compare_step,
         )
     raise ValueError(f"Неизвестный сценарий: {scenario}")
@@ -436,7 +474,7 @@ def build_scenario_location_choice_keyboard(
 
 def build_current_weather_location_keyboard(locations: list[dict]) -> types.InlineKeyboardMarkup:
     """Inline-клавиатура выбора для сценария «Текущая погода»."""
-    return build_location_pick_keyboard(locations, "current_pick", "current_cancel")
+    return build_location_pick_keyboard(locations, "current_pick", CURRENT_CANCEL)
 
 
 def build_saved_locations_keyboard(
@@ -467,4 +505,4 @@ def build_saved_locations_keyboard(
 
 def build_favorite_pick_keyboard(saved_locations: list[dict]) -> types.InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру выбора основной локации."""
-    return build_saved_locations_keyboard(saved_locations, "favorite_pick")
+    return build_saved_locations_keyboard(saved_locations, FAVORITE_PICK_PREFIX)
