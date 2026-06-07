@@ -53,31 +53,6 @@ from weather_history_service import get_weather_history_by_date
 from weather_monthly_service import get_monthly_climate_normals, get_monthly_history_for_month
 from workers.alerts_worker import alerts_worker as run_alerts_worker
 
-
-def _get_favorite_location(user_data: dict) -> dict | None:
-    """Возвращает основную локацию пользователя из saved_locations, если она валидна."""
-    favorite_id = user_data.get("favorite_location_id")
-    saved_locations = user_data.get("saved_locations", [])
-    if not isinstance(favorite_id, str) or not favorite_id:
-        return None
-    if not isinstance(saved_locations, list):
-        return None
-
-    favorite_item = next(
-        (
-            item
-            for item in saved_locations
-            if isinstance(item, dict) and item.get("id") == favorite_id
-        ),
-        None,
-    )
-    if not isinstance(favorite_item, dict):
-        return None
-    if favorite_item.get("lat") is None or favorite_item.get("lon") is None:
-        return None
-    return favorite_item
-
-
 def start_alerts_flow(message: types.Message, *, ctx, session_store) -> None:
     """Запускает раздел уведомлений."""
     user_id = message.from_user.id
