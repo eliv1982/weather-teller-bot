@@ -4,10 +4,9 @@ import types
 
 from handlers import ai_compare
 from handlers import callbacks_locations
-from handlers import locations
 
 
-def test_ai_compare_module_direct_import_and_locations_compat_exports_match():
+def test_ai_compare_module_direct_import_exports_are_callable():
     sample_payload = {
         "city_label": "Москва",
         "min_temp": 5,
@@ -19,17 +18,10 @@ def test_ai_compare_module_direct_import_and_locations_compat_exports_match():
 
     assert callable(ai_compare.start_ai_compare_flow)
     assert callable(ai_compare.handle_ai_compare_text)
-    assert hasattr(locations, "start_ai_compare_flow")
-    assert hasattr(locations, "_ai_compare_after_two_locations")
-    assert hasattr(locations, "_ai_compare_day_payload")
-
-    assert (
-        locations.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
-        == ai_compare.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
-    )
-    assert locations.normalize_location_name("  ДоМ  —   Тольятти  ") == ai_compare.normalize_location_name(
-        "  ДоМ  —   Тольятти  "
-    )
+    assert callable(ai_compare._ai_compare_after_two_locations)
+    assert callable(ai_compare._ai_compare_day_payload)
+    assert ai_compare.format_ai_compare_day_summary_message(sample_payload, "01.05", 1).strip()
+    assert ai_compare.normalize_location_name("  ДоМ  —   Тольятти  ") == "тольятти"
 
 
 def test_runtime_modules_import_ai_compare_directly(monkeypatch):

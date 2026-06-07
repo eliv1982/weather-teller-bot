@@ -20,23 +20,6 @@ from locations_service import (
     format_saved_location_item,
 )
 
-
-def start_ai_compare_flow(message: types.Message, user_id: int, *, ctx, session_store) -> None:
-    return ai_compare_handlers.start_ai_compare_flow(
-        message,
-        user_id,
-        ctx=ctx,
-        session_store=session_store,
-    )
-
-
-def _ai_compare_reset(user_id: int, *, session_store) -> None:
-    return ai_compare_handlers._ai_compare_reset(
-        user_id,
-        session_store=session_store,
-    )
-
-
 def _set_new_saved_location_candidate(
     message: types.Message,
     user_id: int,
@@ -99,133 +82,6 @@ def _unresolved_coords_menu(types_module) -> types.ReplyKeyboardMarkup:
     )
     keyboard.row(types_module.KeyboardButton("⬅️ В меню"))
     return keyboard
-
-
-def _ai_compare_set_location(
-    message: types.Message,
-    user_id: int,
-    *,
-    step: int,
-    city_label: str,
-    lat: float,
-    lon: float,
-    announce_selection: bool = True,
-    ctx,
-    session_store,
-) -> bool:
-    return ai_compare_handlers._ai_compare_set_location(
-        message,
-        user_id,
-        step=step,
-        city_label=city_label,
-        lat=lat,
-        lon=lon,
-        announce_selection=announce_selection,
-        ctx=ctx,
-        session_store=session_store,
-        validate_second_compare_location_fn=validate_second_compare_location,
-        _ai_compare_after_two_locations_fn=_ai_compare_after_two_locations,
-    )
-
-
-def _ai_compare_current_payload(city_label: str, weather: dict, *, location_meta: dict | None = None) -> dict:
-    return ai_compare_handlers._ai_compare_current_payload(
-        city_label,
-        weather,
-        location_meta=location_meta,
-    )
-
-
-def _format_number(value: object, suffix: str = "") -> str:
-    return ai_compare_handlers._format_number(value, suffix)
-
-
-def _format_ai_compare_current_snapshot(payload: dict) -> str:
-    return ai_compare_handlers._format_ai_compare_current_snapshot(payload)
-
-
-def _ai_compare_day_payload(
-    city_label: str,
-    selected_day: str,
-    day_items: list[dict],
-    *,
-    location_meta: dict | None = None,
-) -> dict:
-    return ai_compare_handlers._ai_compare_day_payload(
-        city_label,
-        selected_day,
-        day_items,
-        location_meta=location_meta,
-    )
-
-
-def _format_precipitation_summary(payload: dict) -> str:
-    return ai_compare_handlers._format_precipitation_summary(payload)
-
-
-def format_ai_compare_day_summary(payload: dict) -> str:
-    return ai_compare_handlers.format_ai_compare_day_summary(payload)
-
-
-def format_ai_compare_day_summary_message(payload: dict, selected_day: str, location_index: int) -> str:
-    return ai_compare_handlers.format_ai_compare_day_summary_message(payload, selected_day, location_index)
-
-
-def normalize_location_name(value: object) -> str:
-    return ai_compare_handlers.normalize_location_name(value)
-
-
-def calculate_distance_km(lat_1: float, lon_1: float, lat_2: float, lon_2: float) -> float:
-    return ai_compare_handlers.calculate_distance_km(lat_1, lon_1, lat_2, lon_2)
-
-
-def is_same_location(loc_1: dict, loc_2: dict, *, distance_threshold_km: float = 2.5) -> bool:
-    return ai_compare_handlers.is_same_location(
-        loc_1,
-        loc_2,
-        distance_threshold_km=distance_threshold_km,
-    )
-
-
-def validate_second_compare_location(loc_1: dict, loc_2: dict) -> str | None:
-    return ai_compare_handlers.validate_second_compare_location(loc_1, loc_2)
-
-
-def _ai_compare_process_text_query(
-    message: types.Message,
-    user_id: int,
-    *,
-    step: int,
-    query: str,
-    ctx,
-    session_store,
-) -> bool:
-    return ai_compare_handlers._ai_compare_process_text_query(
-        message,
-        user_id,
-        step=step,
-        query=query,
-        ctx=ctx,
-        session_store=session_store,
-        find_locations_with_assist_fn=find_locations_with_assist,
-        _ai_compare_set_location_fn=_ai_compare_set_location,
-    )
-
-
-def _sorted_day_keys(day_keys: set[str]) -> list[str]:
-    return ai_compare_handlers._sorted_day_keys(day_keys)
-
-
-def _ai_compare_after_two_locations(message: types.Message, user_id: int, *, ctx, session_store) -> bool:
-    return ai_compare_handlers._ai_compare_after_two_locations(
-        message,
-        user_id,
-        ctx=ctx,
-        session_store=session_store,
-        _ai_compare_reset_fn=_ai_compare_reset,
-        _ai_compare_current_payload_fn=_ai_compare_current_payload,
-        _sorted_day_keys_fn=_sorted_day_keys,
-    )
 
 
 def handle_locations_text(
@@ -522,7 +378,7 @@ def handle_locations_text(
             return True
 
         if choice in {"⚖️ Сравнить локации", "✨ Сравнить локации"}:
-            start_ai_compare_flow(message, user_id, ctx=ctx, session_store=session_store)
+            ai_compare_handlers.start_ai_compare_flow(message, user_id, ctx=ctx, session_store=session_store)
             return True
 
         ctx.bot.send_message(
@@ -738,9 +594,4 @@ def handle_locations_text(
         state,
         ctx=ctx,
         session_store=session_store,
-        types_module=types,
-        parse_coordinates_fn=parse_coordinates,
-        _ai_compare_reset_fn=_ai_compare_reset,
-        _ai_compare_process_text_query_fn=_ai_compare_process_text_query,
-        _ai_compare_set_location_fn=_ai_compare_set_location,
     )
