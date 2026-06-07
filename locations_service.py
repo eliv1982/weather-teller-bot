@@ -6,7 +6,8 @@ from alerts_service import ensure_notifications_defaults
 from formatters import format_alerts_status, format_weather_response
 from keyboards import alerts_menu, build_ai_action_keyboard, main_menu
 from postgres_storage import load_user, save_user
-from weather_app import build_location_label, get_current_weather
+from weather.api import get_current_weather
+from weather.locations import build_location_label
 
 
 logger = logging.getLogger(__name__)

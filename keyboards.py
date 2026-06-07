@@ -2,7 +2,7 @@ from datetime import date
 
 from telebot import types
 
-from weather_app import build_disambiguated_location_labels
+from weather.locations import build_disambiguated_location_labels
 from callbacks.constants import (
     # yes/no
     YN_YES, YN_NO, YN_MENU,

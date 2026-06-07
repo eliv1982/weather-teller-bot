@@ -26,16 +26,18 @@ from callbacks.constants import (
     YN_NO,
     YN_YES,
 )
-from weather_app import (
+from weather.api import (
+    get_air_pollution,
     get_coordinates,
-    get_locations,
     get_current_weather,
     get_forecast_5d3h,
-    get_air_pollution,
-    build_geocode_item_with_disambiguated_label,
-    rank_locations,
-    build_location_label,
     get_location_by_coordinates,
+    get_locations,
+)
+from weather.locations import (
+    build_geocode_item_with_disambiguated_label,
+    build_location_label,
+    rank_locations,
 )
 from keyboards import (
     add_saved_location_menu,

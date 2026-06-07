@@ -4,7 +4,7 @@ Formatters for current weather, extended details, saved locations, alerts, and h
 
 from datetime import datetime
 
-from weather_app import analyze_air_pollution
+from weather.air_quality import analyze_air_pollution
 from weather.descriptions import normalize_weather_description
 from weather.pressure import get_pressure_note_hpa
 

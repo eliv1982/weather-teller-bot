@@ -170,7 +170,6 @@ weather_telegram_bot/
 ├── locations_service.py
 ├── storage.py
 ├── postgres_storage.py
-├── weather_app.py
 ├── docker-compose.yml
 ├── docker-compose.postgres.yml
 ├── .env.example
