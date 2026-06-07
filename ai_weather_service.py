@@ -5,7 +5,7 @@ import re
 
 from formatters import build_history_brief_summary, build_monthly_climate_brief_summary
 from postgres_storage import get_ai_cached_response, save_ai_cached_response
-from ai import fallbacks, location_assist, prompts, signatures
+from ai import compare_render, fallbacks, location_assist, prompts, signatures
 from weather.pressure import format_pressure_mmhg
 
 logger = logging.getLogger(__name__)
@@ -650,161 +650,11 @@ class AiWeatherService:
             return ""
         return phrase[:1].upper() + phrase[1:]
 
-    def _precipitation_absolute_note(
-        self,
-        description: object,
-        *,
-        probability: object = None,
-        current: bool = False,
-    ) -> str:
-        desc = self._normalize_description(description)
-        if "небольшой дождь" in desc:
-            return "идёт небольшой дождь" if current else "ожидается небольшой дождь"
-        if "сильный дождь" in desc:
-            return "идёт сильный дождь" if current else "ожидается сильный дождь"
-        if "гроза" in desc:
-            return "идёт гроза" if current else "возможна гроза"
-        has_snow = "снег" in desc
-        has_rain = any(marker in desc for marker in ("дожд", "лив", "морось"))
-        likely = isinstance(probability, (int, float)) and float(probability) >= 0.2
-        if has_snow:
-            return "идёт снег" if current else "возможен снег"
-        if has_rain:
-            return "идёт дождь" if current else "возможен дождь"
-        if likely:
-            return "возможны осадки"
-        return "без осадков"
-
-    def _clean_compare_description(self, value: object) -> str:
-        text = str(value or "").strip()
-        return text if text else "н/д"
-
-    def _current_precipitation_summary(self, description: object) -> str:
-        desc = self._normalize_description(description)
-        if "небольшой дождь" in desc:
-            return "идёт небольшой дождь"
-        if "снег" in desc:
-            return "идёт снег"
-        if "гроза" in desc:
-            return "идёт гроза"
-        if any(marker in desc for marker in ("дожд", "лив", "морось")):
-            return "идёт дождь"
-        return "осадков по текущим данным нет"
-
-    def _compare_location_label(self, city_label: str) -> str:
-        return self._get_short_location_name(city_label)
-
-    def _location_prefix(self, city_label: str) -> str:
-        return f"В локации {self._compare_location_label(city_label)}"
-
-    def _compare_current_lead(self, city_label: str, temperature_note: str, description: str) -> str:
-        label = self._location_prefix(city_label)
-        clean_description = str(description or "").strip()
-        if not clean_description or clean_description == "н/д":
-            return f"{label}: {temperature_note}"
-        desc_lower = clean_description.lower()
-        if "небольшой дождь" in desc_lower:
-            return f"{label}: {temperature_note}, идёт небольшой дождь"
-        if "снег" in desc_lower:
-            return f"{label}: {temperature_note}, идёт снег"
-        if "гроза" in desc_lower:
-            return f"{label}: {temperature_note}, идёт гроза"
-        if any(marker in desc_lower for marker in ("дожд", "лив", "морось")):
-            return f"{label}: {temperature_note}, идёт дождь"
-        return f"{label}: {temperature_note} и {desc_lower}"
-
-    def _temperature_weather_adjective(self, temperature_note: str) -> str:
-        mapping = {
-            "холодно": "холодная",
-            "прохладно": "прохладная",
-            "свежо": "свежая",
-            "тепло": "тёплая",
-            "жарко": "жаркая",
-        }
-        return mapping.get(temperature_note, "спокойная")
-
-    def _forecast_description_adjective(self, description: str) -> str | None:
-        desc = str(description or "").strip().lower()
-        mapping = {
-            "ясно": "ясная",
-            "солнечно": "солнечная",
-            "облачно": "облачная",
-            "пасмурно": "пасмурная",
-            "переменная облачность": "облачная",
-        }
-        return mapping.get(desc)
-
-    def _compare_forecast_lead(self, city_label: str, temperature_note: str, description: str) -> str:
-        label = self._location_prefix(city_label)
-        clean_description = str(description or "").strip()
-        weather_note = self._temperature_weather_adjective(temperature_note)
-        description_adjective = self._forecast_description_adjective(clean_description)
-        if description_adjective:
-            return f"{label}: ожидается {weather_note} {description_adjective} погода"
-        return f"{label}: ожидается {weather_note} погода"
-
-    def _forecast_short_precipitation_summary(self, description: object, probability: object) -> str:
-        desc = self._normalize_description(description)
-        if "гроза" in desc:
-            return "возможна гроза"
-        if "снег" in desc:
-            return "ожидается снег"
-        if any(marker in desc for marker in ("дожд", "лив", "морось")):
-            likely = isinstance(probability, (int, float)) and float(probability) >= 0.45
-            return f"ожидается {desc}" if likely else "возможен дождь"
-        if isinstance(probability, (int, float)) and float(probability) >= 0.2:
-            return "возможны осадки"
-        return "без осадков"
-
-    def _forecast_probability_phrase(self, probability: object) -> str | None:
-        if isinstance(probability, (int, float)) and float(probability) >= 0.2:
-            return f"вероятность до {round(float(probability) * 100):.0f}%"
-        return None
-
     def _render_compare_current_block(self, payload: dict, fallback_name: str) -> str:
-        city = str(payload.get("city_label") or fallback_name)
-        temperature = payload.get("temperature")
-        feels_like = payload.get("feels_like")
-        humidity = payload.get("humidity")
-        wind_speed = payload.get("wind_speed")
-        description = self._clean_compare_description(payload.get("description"))
-        precipitation_note = self._current_precipitation_summary(description)
-        temperature_note = self._temperature_absolute_note(
-            feels_like if isinstance(feels_like, (int, float)) else temperature
-        )
-        humidity_note = self._humidity_absolute_note(humidity)
-        wind_note = self._wind_absolute_note(wind_speed)
-        feels_like_note = (
-            f", ощущается около {round(float(feels_like))} °C"
-            if isinstance(feels_like, (int, float))
-            else ""
-        )
-        has_precip_in_lead = precipitation_note != "осадков по текущим данным нет"
-        details_sentence = (
-            f"{self._capitalize_phrase(humidity_note)}, {wind_note}."
-            if has_precip_in_lead
-            else f"{self._capitalize_phrase(humidity_note)}, {wind_note}, {precipitation_note}."
-        )
-        short = (
-            f"✨ {self._capitalize_phrase(self._compare_current_lead(city, temperature_note, description))}{feels_like_note}. "
-            f"{details_sentence}"
-        )
-        return "\n".join([
-            f"📍 {city}",
-            f"🌡 Температура: {self._format_number(temperature, '°C')}",
-            f"🤔 Ощущается как: {self._format_number(feels_like, '°C')}",
-            f"☁️ Описание: {description}",
-            f"💧 Влажность: {self._format_number(humidity, '%')}",
-            f"🌬 Ветер: {self._format_number(wind_speed, ' м/с')}",
-            "",
-            short,
-        ])
+        return compare_render._render_compare_current_block(self, payload, fallback_name)
 
     def _render_compare_current_factual(self, payload_1: dict, payload_2: dict) -> str:
-        return "\n\n".join([
-            self._render_compare_current_block(payload_1, "Локация A"),
-            self._render_compare_current_block(payload_2, "Локация B"),
-        ])
+        return compare_render._render_compare_current_factual(self, payload_1, payload_2)
 
     def _render_compare_current_clear(
         self,
@@ -1241,79 +1091,11 @@ class AiWeatherService:
             return "ветер ощутимый"
         return "ветер умеренный"
 
-    def _forecast_probability_text(self, payload: dict) -> str:
-        signal = payload.get("precipitation_signal") if isinstance(payload.get("precipitation_signal"), dict) else {}
-        max_pop = signal.get("max_pop") if isinstance(signal, dict) else None
-        if isinstance(max_pop, (int, float)):
-            return f"{round(float(max_pop) * 100):.0f}%"
-        return "н/д"
-
-    def _forecast_precipitation_note(self, payload: dict) -> str:
-        signal = payload.get("precipitation_signal") if isinstance(payload.get("precipitation_signal"), dict) else {}
-        probability = signal.get("max_pop") if isinstance(signal, dict) else None
-        return self._precipitation_absolute_note(
-            payload.get("dominant_description"),
-            probability=probability,
-            current=False,
-        )
-
-    def _forecast_avg_temp(self, payload: dict) -> float | None:
-        min_temp = payload.get("min_temp")
-        max_temp = payload.get("max_temp")
-        if isinstance(min_temp, (int, float)) and isinstance(max_temp, (int, float)):
-            return (float(min_temp) + float(max_temp)) / 2.0
-        return None
-
     def _render_compare_forecast_block(self, payload: dict, selected_day: str, fallback_name: str) -> str:
-        city = str(payload.get("city_label") or fallback_name)
-        description = self._clean_compare_description(payload.get("dominant_description"))
-        min_temp = payload.get("min_temp")
-        max_temp = payload.get("max_temp")
-        avg_temp = self._forecast_avg_temp(payload)
-        wind_signal = payload.get("wind_signal") if isinstance(payload.get("wind_signal"), dict) else {}
-        avg_wind = wind_signal.get("avg_speed") if isinstance(wind_signal, dict) else None
-        max_wind = wind_signal.get("max_speed") if isinstance(wind_signal, dict) else None
-        precipitation_note = self._forecast_precipitation_note(payload)
-        probability = payload.get("precipitation_signal", {}).get("max_pop") if isinstance(payload.get("precipitation_signal"), dict) else None
-        short_precipitation = self._forecast_short_precipitation_summary(description, probability)
-        precipitation_probability = self._forecast_probability_phrase(probability)
-        temp_band = f"{self._format_number(min_temp, '°C')}-{self._format_number(max_temp, '°C')}"
-        second_sentence = (
-            f"{self._capitalize_phrase(short_precipitation)}, {precipitation_probability}. {self._capitalize_phrase(self._wind_absolute_note(avg_wind))}."
-            if precipitation_probability
-            else f"{self._capitalize_phrase(short_precipitation)}. {self._capitalize_phrase(self._wind_absolute_note(avg_wind))}."
-        )
-        short = (
-            f"✨ {self._capitalize_phrase(self._compare_forecast_lead(city, self._temperature_absolute_note(avg_temp), description))}, "
-            f"температура около {temp_band}. {second_sentence}"
-        )
-        lines = [
-            f"📍 {city}",
-            f"📅 Дата: {selected_day}",
-            f"🌡 Температура: от {self._format_number(min_temp, '°C')} до {self._format_number(max_temp, '°C')}",
-            f"🌡 Средняя температура: {self._format_number(avg_temp, '°C')}",
-            f"☁️ Описание: {description}",
-            f"🌧 Осадки: {precipitation_note}",
-            f"☔ Вероятность осадков: {self._forecast_probability_text(payload)}",
-        ]
-        if isinstance(avg_wind, (int, float)) and isinstance(max_wind, (int, float)):
-            lines.append(
-                f"🌬 Ветер: в среднем {self._format_number(avg_wind, ' м/с')}, до {self._format_number(max_wind, ' м/с')}"
-            )
-        elif isinstance(avg_wind, (int, float)):
-            lines.append(f"🌬 Ветер: в среднем {self._format_number(avg_wind, ' м/с')}")
-        elif isinstance(max_wind, (int, float)):
-            lines.append(f"🌬 Ветер: до {self._format_number(max_wind, ' м/с')}")
-        else:
-            lines.append("🌬 Ветер: н/д")
-        lines.extend(["", short])
-        return "\n".join(lines)
+        return compare_render._render_compare_forecast_block(self, payload, selected_day, fallback_name)
 
     def _render_compare_forecast_factual(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
-        return "\n\n".join([
-            self._render_compare_forecast_block(payload_1, selected_day, "Локация A"),
-            self._render_compare_forecast_block(payload_2, selected_day, "Локация B"),
-        ])
+        return compare_render._render_compare_forecast_factual(self, payload_1, payload_2, selected_day)
 
     def _render_compare_forecast_profile_factual(self, profile_1: dict, profile_2: dict) -> str:
         def _from_profile(profile: dict) -> dict:
