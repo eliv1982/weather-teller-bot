@@ -1,3 +1,5 @@
+from callbacks.constants import CURRENT_CANCEL, CURRENT_PICK_PREFIX, CURRENT_SAVED_PICK_PREFIX
+
 from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
 from .states import WAITING_CURRENT_WEATHER_CITY
 
@@ -12,7 +14,7 @@ def handle_current_weather_callback(
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "current_cancel":
+    if call.data == CURRENT_CANCEL:
         session_store.current_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         return_to_location_input_context(
@@ -24,7 +26,7 @@ def handle_current_weather_callback(
         )
         return
 
-    if call.data.startswith("current_pick:"):
+    if call.data.startswith(f"{CURRENT_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -74,7 +76,7 @@ def handle_current_weather_callback(
         )
         return
 
-    if call.data.startswith("current_saved_pick:"):
+    if call.data.startswith(f"{CURRENT_SAVED_PICK_PREFIX}:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         user_data = ctx.load_user(user_id)
         saved_locations = user_data.get("saved_locations", [])

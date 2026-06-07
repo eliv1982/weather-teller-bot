@@ -1,3 +1,12 @@
+from callbacks.constants import (
+    SOURCE_COMPARE_CANCEL,
+    SOURCE_COMPARE_DATE_CANCEL,
+    SOURCE_COMPARE_DATE_ANOTHER,
+    SOURCE_COMPARE_PICK_PREFIX,
+    SOURCE_COMPARE_SAVED_PICK_PREFIX,
+    SOURCE_COMPARE_DATE_PICK_PREFIX,
+)
+
 from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
 from .states import WAITING_SOURCE_COMPARE_CITY, WAITING_SOURCE_COMPARE_DATE_PICK
 
@@ -15,7 +24,7 @@ def handle_source_compare_callback(
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "source_compare_cancel":
+    if call.data == SOURCE_COMPARE_CANCEL:
         session_store.source_compare_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         return_to_location_input_context(
@@ -27,7 +36,7 @@ def handle_source_compare_callback(
         )
         return
 
-    if call.data.startswith("source_compare_pick:"):
+    if call.data.startswith(f"{SOURCE_COMPARE_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -80,7 +89,7 @@ def handle_source_compare_callback(
         )
         return
 
-    if call.data.startswith("source_compare_saved_pick:"):
+    if call.data.startswith(f"{SOURCE_COMPARE_SAVED_PICK_PREFIX}:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         user_data = ctx.load_user(user_id)
         saved_locations = user_data.get("saved_locations", [])
@@ -118,14 +127,14 @@ def handle_source_compare_callback(
         )
         return
 
-    if call.data == "source_compare_date_cancel":
+    if call.data == SOURCE_COMPARE_DATE_CANCEL:
         session_store.source_compare_drafts.pop(user_id, None)
         session_store.user_states.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         ctx.bot.send_message(chat_id, "Выбор даты отменён.", reply_markup=ctx.main_menu())
         return
 
-    if call.data == "source_compare_date_another":
+    if call.data == SOURCE_COMPARE_DATE_ANOTHER:
         draft = session_store.source_compare_drafts.get(user_id)
         if not isinstance(draft, dict):
             ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")
@@ -144,7 +153,7 @@ def handle_source_compare_callback(
         )
         return
 
-    if call.data.startswith("source_compare_date_pick:"):
+    if call.data.startswith(f"{SOURCE_COMPARE_DATE_PICK_PREFIX}:"):
         selected_day = call.data.split(":", 1)[1] if ":" in call.data else ""
         draft = session_store.source_compare_drafts.get(user_id)
         if not isinstance(draft, dict):

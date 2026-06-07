@@ -1,3 +1,15 @@
+from callbacks.constants import (
+    SAVEDLOC_CANCEL,
+    SAVEDLOC_PICK_PREFIX,
+    AICMP_GEO_CANCEL,
+    AICMP_SAVED_CANCEL,
+    AICMP_DATE_CANCEL,
+    AICMP_DATE_ANOTHER,
+    AICMP_GEO_PICK_PREFIX,
+    AICMP_SAVED_PICK_PREFIX,
+    AICMP_DATE_PICK_PREFIX,
+)
+
 from .locations import (
     _ai_compare_day_payload,
     _ai_compare_reset,
@@ -174,14 +186,14 @@ def handle_saved_location_pick_callback(
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "savedloc_cancel":
+    if call.data == SAVEDLOC_CANCEL:
         session_store.saved_location_drafts.pop(user_id, None)
         session_store.user_states[user_id] = LOCATIONS_MENU
         ctx.bot.answer_callback_query(call.id)
         ctx.bot.send_message(chat_id, "Выбор отменён.", reply_markup=ctx.locations_menu())
         return
 
-    if call.data.startswith("savedloc_pick:"):
+    if call.data.startswith(f"{SAVEDLOC_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -251,7 +263,7 @@ def handle_ai_compare_callback(
     data = call.data
     state = session_store.get_state(user_id)
 
-    if data == "aicmp_geo_cancel":
+    if data == AICMP_GEO_CANCEL:
         if state == WAITING_AI_COMPARE_LOC1_PICK:
             session_store.ai_compare_location_choices.pop(user_id, None)
             session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
@@ -278,7 +290,7 @@ def handle_ai_compare_callback(
         ctx.bot.send_message(chat_id, "Сравнение отменено.", reply_markup=ctx.main_menu())
         return
 
-    if data == "aicmp_saved_cancel":
+    if data == AICMP_SAVED_CANCEL:
         if state == WAITING_AI_COMPARE_LOC1_SAVED_PICK:
             session_store.user_states[user_id] = WAITING_AI_COMPARE_LOC1_METHOD
             ctx.bot.answer_callback_query(call.id)
@@ -303,14 +315,14 @@ def handle_ai_compare_callback(
         ctx.bot.send_message(chat_id, "Сравнение отменено.", reply_markup=ctx.main_menu())
         return
 
-    if data == "aicmp_date_cancel":
+    if data == AICMP_DATE_CANCEL:
         _ai_compare_reset(user_id, session_store=session_store)
         session_store.user_states.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         ctx.bot.send_message(chat_id, "Сравнение отменено.", reply_markup=ctx.main_menu())
         return
 
-    if data == "aicmp_date_another":
+    if data == AICMP_DATE_ANOTHER:
         draft = session_store.ai_compare_drafts.get(user_id)
         available_days = draft.get("available_days") if isinstance(draft, dict) else None
         mode = draft.get("mode") if isinstance(draft, dict) else None
@@ -347,7 +359,7 @@ def handle_ai_compare_callback(
         )
         return
 
-    if data.startswith("aicmp_geo_pick:"):
+    if data.startswith(f"{AICMP_GEO_PICK_PREFIX}:"):
         parts = data.split(":")
         if len(parts) != 3:
             ctx.bot.answer_callback_query(call.id)
@@ -392,7 +404,7 @@ def handle_ai_compare_callback(
         )
         return
 
-    if data.startswith("aicmp_saved_pick:"):
+    if data.startswith(f"{AICMP_SAVED_PICK_PREFIX}:"):
         parts = data.split(":", 2)
         if len(parts) != 3:
             ctx.bot.answer_callback_query(call.id)
@@ -444,7 +456,7 @@ def handle_ai_compare_callback(
         )
         return
 
-    if data.startswith("aicmp_date_pick:"):
+    if data.startswith(f"{AICMP_DATE_PICK_PREFIX}:"):
         selected_day = data.split(":", 1)[1]
         if state != WAITING_AI_COMPARE_DATE_PICK:
             ctx.bot.answer_callback_query(call.id, "Данные устарели. Начни сравнение заново.")

@@ -1,5 +1,25 @@
 from datetime import date
 
+from callbacks.constants import (
+    HISTORY_CANCEL,
+    HISTORY_MENU,
+    HISTORY_DATE_CUSTOM,
+    HISTORY_CLIMATE_OPEN,
+    HISTORY_CLIMATE_BACK_TO_ACTIONS,
+    HISTORY_CLIMATE_BACK_TO_MODES,
+    HISTORY_PICK_PREFIX,
+    HISTORY_SAVED_PICK_PREFIX,
+    HISTORY_SECTION_PREFIX,
+    HISTORY_CLIMATE_MODE_PREFIX,
+    HISTORY_CLIMATE_MONTH_PREFIX,
+    HISTORY_DATE_PRESET_PREFIX,
+    HISTORY_DATE_YEAR_PREFIX,
+    HISTORY_SECTION_DAILY,
+    HISTORY_SECTION_CLIMATE,
+    HISTORY_CLIMATE_MODE_MONTHLY_YEAR,
+    HISTORY_CLIMATE_MODE_MONTHLY_NORMALS,
+)
+
 from keyboards import (
     build_history_climate_mode_keyboard,
     build_history_date_keyboard,
@@ -49,7 +69,7 @@ def handle_history_callback(
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "history_cancel":
+    if call.data == HISTORY_CANCEL:
         session_store.history_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         clear_inline_choice_message(call, ctx)
@@ -69,7 +89,7 @@ def handle_history_callback(
                 session_store.history_drafts[user_id] = _draft
         return
 
-    if call.data.startswith("history_pick:"):
+    if call.data.startswith(f"{HISTORY_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -124,7 +144,7 @@ def handle_history_callback(
         )
         return
 
-    if call.data.startswith("history_saved_pick:"):
+    if call.data.startswith(f"{HISTORY_SAVED_PICK_PREFIX}:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         user_data = ctx.load_user(user_id)
         saved_locations = user_data.get("saved_locations", [])
@@ -162,7 +182,7 @@ def handle_history_callback(
         )
         return
 
-    if call.data == "history_menu":
+    if call.data == HISTORY_MENU:
         session_store.history_location_choices.pop(user_id, None)
         session_store.history_drafts.pop(user_id, None)
         session_store.user_states.pop(user_id, None)
@@ -171,9 +191,9 @@ def handle_history_callback(
         ctx.bot.send_message(chat_id, "Главное меню.", reply_markup=ctx.main_menu())
         return
 
-    if call.data.startswith("history_section:"):
+    if call.data.startswith(f"{HISTORY_SECTION_PREFIX}:"):
         section = call.data.split(":", 1)[1] if ":" in call.data else ""
-        if section not in {"daily", "climate"}:
+        if section not in {HISTORY_SECTION_DAILY, HISTORY_SECTION_CLIMATE}:
             ctx.bot.answer_callback_query(call.id, "Не удалось определить раздел.")
             return
         draft = session_store.history_drafts.get(user_id)
@@ -185,13 +205,13 @@ def handle_history_callback(
         session_store.history_drafts[user_id] = draft
         ctx.bot.answer_callback_query(call.id)
         clear_inline_choice_message(call, ctx)
-        section_label = "на дату" if section == "daily" else "средние климатические показатели"
+        section_label = "на дату" if section == HISTORY_SECTION_DAILY else "средние климатические показатели"
         ctx.bot.send_message(chat_id, f"✅ Раздел выбран: {section_label}")
         lat = draft.get("lat")
         lon = draft.get("lon")
         city_label = str(draft.get("city_label") or "выбранной локации")
         if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
-            if section == "climate":
+            if section == HISTORY_SECTION_CLIMATE:
                 session_store.user_states[user_id] = WAITING_HISTORY_CLIMATE_MODE
                 keyboard_builder = getattr(ctx, "build_history_climate_mode_keyboard", build_history_climate_mode_keyboard)
                 ctx.bot.send_message(
@@ -222,7 +242,7 @@ def handle_history_callback(
             session_store.history_drafts[user_id] = draft
         return
 
-    if call.data == "history_date_custom":
+    if call.data == HISTORY_DATE_CUSTOM:
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)
@@ -244,7 +264,7 @@ def handle_history_callback(
             session_store.history_drafts[user_id] = draft
         return
 
-    if call.data == "history_climate_open":
+    if call.data == HISTORY_CLIMATE_OPEN:
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)
@@ -265,7 +285,7 @@ def handle_history_callback(
         )
         return
 
-    if call.data == "history_climate_back_to_actions":
+    if call.data == HISTORY_CLIMATE_BACK_TO_ACTIONS:
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)
@@ -285,13 +305,13 @@ def handle_history_callback(
         )
         return
 
-    if call.data.startswith("history_climate_mode:"):
+    if call.data.startswith(f"{HISTORY_CLIMATE_MODE_PREFIX}:"):
         mode = call.data.split(":", 1)[1] if ":" in call.data else ""
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)
             return
-        if mode not in {"monthly_year", "monthly_normals"}:
+        if mode not in {HISTORY_CLIMATE_MODE_MONTHLY_YEAR, HISTORY_CLIMATE_MODE_MONTHLY_NORMALS}:
             ctx.bot.answer_callback_query(call.id, "Не удалось определить режим.")
             return
         draft["monthly_mode"] = mode
@@ -301,7 +321,7 @@ def handle_history_callback(
         session_store.user_states[user_id] = WAITING_HISTORY_CLIMATE_MONTH
         ctx.bot.answer_callback_query(call.id)
         clear_inline_choice_message(call, ctx)
-        mode_label = "месяц конкретного года" if mode == "monthly_year" else "среднемесячные показатели"
+        mode_label = "месяц конкретного года" if mode == HISTORY_CLIMATE_MODE_MONTHLY_YEAR else "среднемесячные показатели"
         keyboard_builder = getattr(ctx, "build_history_month_keyboard", build_history_month_keyboard)
         ctx.bot.send_message(chat_id, f"✅ Режим выбран: {mode_label}")
         ctx.bot.send_message(
@@ -311,7 +331,7 @@ def handle_history_callback(
         )
         return
 
-    if call.data == "history_climate_back_to_modes":
+    if call.data == HISTORY_CLIMATE_BACK_TO_MODES:
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)
@@ -333,7 +353,7 @@ def handle_history_callback(
         )
         return
 
-    if call.data.startswith("history_climate_month:"):
+    if call.data.startswith(f"{HISTORY_CLIMATE_MONTH_PREFIX}:"):
         month_raw = call.data.split(":", 1)[1] if ":" in call.data else ""
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
@@ -348,7 +368,7 @@ def handle_history_callback(
             ctx.bot.answer_callback_query(call.id, "Не удалось определить месяц.")
             return
         mode = str(draft.get("monthly_mode") or "")
-        if mode not in {"monthly_year", "monthly_normals"}:
+        if mode not in {HISTORY_CLIMATE_MODE_MONTHLY_YEAR, HISTORY_CLIMATE_MODE_MONTHLY_NORMALS}:
             ctx.bot.answer_callback_query(call.id, "Сначала выбери режим.")
             return
         draft["monthly_month"] = month_value
@@ -356,7 +376,7 @@ def handle_history_callback(
         ctx.bot.answer_callback_query(call.id)
         clear_inline_choice_message(call, ctx)
         ctx.bot.send_message(chat_id, f"✅ Месяц выбран: {month_name(month_value)}")
-        if mode == "monthly_year":
+        if mode == HISTORY_CLIMATE_MODE_MONTHLY_YEAR:
             session_store.user_states[user_id] = WAITING_HISTORY_CLIMATE_YEAR
             year_prompt_msg = ctx.bot.send_message(
                 chat_id,
@@ -382,7 +402,7 @@ def handle_history_callback(
             send_history_monthly_report(stub, user_id, send_year_confirmation=False)
         return
 
-    if call.data.startswith("history_date_preset:"):
+    if call.data.startswith(f"{HISTORY_DATE_PRESET_PREFIX}:"):
         preset = call.data.split(":", 1)[1] if ":" in call.data else ""
         target_date = resolve_history_preset_date(preset)
         if target_date is None:
@@ -395,7 +415,7 @@ def handle_history_callback(
         send_weather_history_by_date(stub, user_id, target_date, send_confirmation=False)
         return
 
-    if call.data.startswith("history_date_year:"):
+    if call.data.startswith(f"{HISTORY_DATE_YEAR_PREFIX}:"):
         draft = session_store.history_drafts.get(user_id)
         if not isinstance(draft, dict):
             _notify_stale_history_flow(call, chat_id=chat_id, user_id=user_id, ctx=ctx, session_store=session_store)

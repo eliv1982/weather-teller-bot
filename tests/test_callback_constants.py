@@ -43,8 +43,8 @@ from callbacks.constants import (
     HISTORY_MENU, HISTORY_CANCEL,
     HISTORY_PRESET_YESTERDAY, HISTORY_PRESET_7D, HISTORY_PRESET_30D,
     # ai compare
-    AICMP_SAVED_PICK_PREFIX, AICMP_DATE_PICK_PREFIX,
-    AICMP_SAVED_CANCEL, AICMP_DATE_CANCEL, AICMP_DATE_ANOTHER,
+    AICMP_GEO_PICK_PREFIX, AICMP_SAVED_PICK_PREFIX, AICMP_DATE_PICK_PREFIX,
+    AICMP_GEO_CANCEL, AICMP_SAVED_CANCEL, AICMP_DATE_CANCEL, AICMP_DATE_ANOTHER,
     # saved locations
     FAVORITE_PICK_PREFIX, DELETE_LOCATION_PICK_PREFIX, RENAME_LOCATION_PICK_PREFIX,
     # alerts
@@ -52,7 +52,16 @@ from callbacks.constants import (
     ALERTS_SUB_TOGGLE_PREFIX, ALERTS_SUB_INTERVAL_PREFIX,
     ALERTS_SUB_DELETE_PREFIX, ALERTS_ADD_CANCEL,
     # ai explain
-    AI_CURRENT_EXPLAIN, AI_DETAILS_EXPLAIN,
+    AI_CURRENT_EXPLAIN, AI_CURRENT_EXPLAIN_PREFIX,
+    AI_DETAILS_EXPLAIN, AI_DETAILS_EXPLAIN_PREFIX,
+    AI_TOMORROW_FORECAST_DAY_PREFIX,
+    AI_TODAY_FORECAST_DAY_PREFIX,
+    # source compare (saved pick)
+    SOURCE_COMPARE_SAVED_PICK_PREFIX,
+    # forecast (saved pick)
+    FORECAST_SAVED_PICK_PREFIX,
+    # history climate open
+    HISTORY_CLIMATE_OPEN,
 )
 
 
@@ -108,6 +117,10 @@ class TestForecastConstants:
     def test_forecast_cancel(self):
         assert FORECAST_CANCEL == "forecast_cancel"
 
+    def test_forecast_saved_pick_prefix(self):
+        assert FORECAST_SAVED_PICK_PREFIX == "forecast_saved_pick"
+        assert f"{FORECAST_SAVED_PICK_PREFIX}:loc-uuid" == "forecast_saved_pick:loc-uuid"
+
     def test_ai_forecast_day_prefix_composition(self):
         assert f"{AI_FORECAST_DAY_PREFIX}:10.06.2025" == "ai_forecast_day:10.06.2025"
 
@@ -136,6 +149,10 @@ class TestSourceCompareConstants:
 
     def test_source_compare_cancel(self):
         assert SOURCE_COMPARE_CANCEL == "source_compare_cancel"
+
+    def test_source_compare_saved_pick_prefix(self):
+        assert SOURCE_COMPARE_SAVED_PICK_PREFIX == "source_compare_saved_pick"
+        assert f"{SOURCE_COMPARE_SAVED_PICK_PREFIX}:loc-uuid" == "source_compare_saved_pick:loc-uuid"
 
 
 class TestHistoryConstants:
@@ -189,8 +206,18 @@ class TestHistoryConstants:
     def test_history_cancel(self):
         assert HISTORY_CANCEL == "history_cancel"
 
+    def test_history_climate_open(self):
+        assert HISTORY_CLIMATE_OPEN == "history_climate_open"
+
 
 class TestAiCompareConstants:
+    def test_aicmp_geo_pick_prefix_with_step(self):
+        assert f"{AICMP_GEO_PICK_PREFIX}:1:0" == "aicmp_geo_pick:1:0"
+        assert f"{AICMP_GEO_PICK_PREFIX}:2:3" == "aicmp_geo_pick:2:3"
+
+    def test_aicmp_geo_cancel(self):
+        assert AICMP_GEO_CANCEL == "aicmp_geo_cancel"
+
     def test_aicmp_saved_pick_prefix_with_step(self):
         assert f"{AICMP_SAVED_PICK_PREFIX}:1:loc-uuid" == "aicmp_saved_pick:1:loc-uuid"
         assert f"{AICMP_SAVED_PICK_PREFIX}:2:loc-uuid" == "aicmp_saved_pick:2:loc-uuid"
@@ -243,8 +270,20 @@ class TestAiExplainConstants:
     def test_ai_current_explain(self):
         assert AI_CURRENT_EXPLAIN == "ai_current_explain"
 
+    def test_ai_current_explain_prefix_composition(self):
+        assert f"{AI_CURRENT_EXPLAIN_PREFIX}:snap123" == "ai_current_explain:snap123"
+
     def test_ai_details_explain(self):
         assert AI_DETAILS_EXPLAIN == "ai_details_explain"
+
+    def test_ai_details_explain_prefix_composition(self):
+        assert f"{AI_DETAILS_EXPLAIN_PREFIX}:snap456" == "ai_details_explain:snap456"
+
+    def test_ai_tomorrow_forecast_day_prefix_composition(self):
+        assert f"{AI_TOMORROW_FORECAST_DAY_PREFIX}:10.06.2025" == "ai_tomorrow_forecast_day:10.06.2025"
+
+    def test_ai_today_forecast_day_prefix_composition(self):
+        assert f"{AI_TODAY_FORECAST_DAY_PREFIX}:10.06.2025" == "ai_today_forecast_day:10.06.2025"
 
 
 class TestAllConstantsAreStrings:

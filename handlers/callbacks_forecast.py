@@ -1,3 +1,12 @@
+from callbacks.constants import (
+    FORECAST_CANCEL,
+    FORECAST_BACK,
+    FORECAST_MENU,
+    FORECAST_PICK_PREFIX,
+    FORECAST_SAVED_PICK_PREFIX,
+    FORECAST_DAY_PREFIX,
+)
+
 from .states import (
     WAITING_FORECAST_CITY,
     WAITING_TODAY_FORECAST_PICK,
@@ -34,7 +43,7 @@ def handle_forecast_callback(
         send_selected_forecast = send_forecast_by_coordinates
         cancel_state = WAITING_FORECAST_CITY
 
-    if call.data == "forecast_cancel":
+    if call.data == FORECAST_CANCEL:
         session_store.forecast_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         return_to_location_input_context(
@@ -46,7 +55,7 @@ def handle_forecast_callback(
         )
         return
 
-    if call.data.startswith("forecast_pick:"):
+    if call.data.startswith(f"{FORECAST_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -105,7 +114,7 @@ def handle_forecast_callback(
         )
         return
 
-    if call.data.startswith("forecast_saved_pick:"):
+    if call.data.startswith(f"{FORECAST_SAVED_PICK_PREFIX}:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         user_data = ctx.load_user(user_id)
         saved_locations = user_data.get("saved_locations", [])
@@ -149,7 +158,7 @@ def handle_forecast_callback(
         ctx.bot.answer_callback_query(call.id, "Данные прогноза устарели.")
         return
 
-    if call.data == "forecast_back":
+    if call.data == FORECAST_BACK:
         days = list(cache["grouped"].keys())
         keyboard = ctx.build_forecast_days_keyboard(days)
         ctx.bot.edit_message_text(
@@ -161,7 +170,7 @@ def handle_forecast_callback(
         ctx.bot.answer_callback_query(call.id)
         return
 
-    if call.data == "forecast_menu":
+    if call.data == FORECAST_MENU:
         session_store.user_states.pop(user_id, None)
         session_store.forecast_saved_drafts.pop(user_id, None)
         session_store.forecast_cache.pop(user_id, None)
@@ -169,7 +178,7 @@ def handle_forecast_callback(
         ctx.bot.answer_callback_query(call.id)
         return
 
-    if call.data.startswith("forecast_day:"):
+    if call.data.startswith(f"{FORECAST_DAY_PREFIX}:"):
         day = call.data.split(":", 1)[1]
         ctx.logger.info("Пользователь %s выбрал день прогноза: %s", user_id, day)
         day_items = cache["grouped"].get(day)

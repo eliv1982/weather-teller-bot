@@ -1,5 +1,15 @@
 from forecast_service import is_remaining_day_forecast
 
+from callbacks.constants import (
+    AI_CURRENT_EXPLAIN,
+    AI_CURRENT_EXPLAIN_PREFIX,
+    AI_DETAILS_EXPLAIN,
+    AI_DETAILS_EXPLAIN_PREFIX,
+    AI_FORECAST_DAY_PREFIX,
+    AI_TOMORROW_FORECAST_DAY_PREFIX,
+    AI_TODAY_FORECAST_DAY_PREFIX,
+)
+
 
 def handle_ai_callback(call, *, ctx, session_store) -> None:
     """Обрабатывает AI callback-действия для погодных сценариев."""
@@ -7,11 +17,11 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
     chat_id = call.message.chat.id
     data = call.data
 
-    if data == "ai_current_explain":
+    if data == AI_CURRENT_EXPLAIN:
         ctx.bot.answer_callback_query(call.id, "✨ Данные устарели. Открой текущую погоду заново.")
         return
 
-    if data.startswith("ai_current_explain:"):
+    if data.startswith(f"{AI_CURRENT_EXPLAIN_PREFIX}:"):
         snapshot_id = data.split(":", 1)[1].strip()
         snapshot = session_store.ai_current_snapshots.get(snapshot_id)
         if not isinstance(snapshot, dict):
@@ -32,11 +42,11 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
         ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
-    if data == "ai_details_explain":
+    if data == AI_DETAILS_EXPLAIN:
         ctx.bot.answer_callback_query(call.id, "💡 Данные устарели. Открой расширенные данные заново.")
         return
 
-    if data.startswith("ai_details_explain:"):
+    if data.startswith(f"{AI_DETAILS_EXPLAIN_PREFIX}:"):
         snapshot_id = data.split(":", 1)[1].strip()
         snapshot = session_store.ai_details_snapshots.get(snapshot_id)
         if not isinstance(snapshot, dict):
@@ -60,7 +70,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
         ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
-    if data.startswith("ai_forecast_day:"):
+    if data.startswith(f"{AI_FORECAST_DAY_PREFIX}:"):
         day = data.split(":", 1)[1]
         cache = session_store.forecast_cache.get(user_id)
         if not cache:
@@ -78,7 +88,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
         ctx.bot.send_message(chat_id, f"🪄 Рекомендация на день:\n{text}", reply_markup=ctx.main_menu())
         return
 
-    if data.startswith("ai_tomorrow_forecast_day:"):
+    if data.startswith(f"{AI_TOMORROW_FORECAST_DAY_PREFIX}:"):
         day = data.split(":", 1)[1]
         cache = session_store.forecast_cache.get(user_id)
         if not cache:
@@ -96,7 +106,7 @@ def handle_ai_callback(call, *, ctx, session_store) -> None:
         ctx.bot.send_message(chat_id, f"✨ {text}", reply_markup=ctx.main_menu())
         return
 
-    if data.startswith("ai_today_forecast_day:"):
+    if data.startswith(f"{AI_TODAY_FORECAST_DAY_PREFIX}:"):
         day = data.split(":", 1)[1]
         cache = session_store.forecast_cache.get(user_id)
         if not cache:

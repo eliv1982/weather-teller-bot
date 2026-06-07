@@ -1,3 +1,12 @@
+from callbacks.constants import (
+    ALERTS_ADD_CANCEL,
+    ALERTS_ADD_PICK_PREFIX,
+    ALERTS_SUB_ADD_SAVED_PREFIX,
+    ALERTS_SUB_TOGGLE_PREFIX,
+    ALERTS_SUB_INTERVAL_PREFIX,
+    ALERTS_SUB_DELETE_PREFIX,
+)
+
 from .callbacks_common import mark_location_choice_selected
 
 
@@ -18,7 +27,7 @@ def handle_alerts_location_callback(
     user_data = service.ensure_defaults(ctx.ensure_notifications_defaults(ctx.load_user(user_id)))
     subscriptions = service.list_subscriptions(user_data)
 
-    if call.data == "alerts_add_cancel":
+    if call.data == ALERTS_ADD_CANCEL:
         session_store.alerts_location_choices.pop(user_id, None)
         ctx.bot.answer_callback_query(call.id)
         session_store.user_states[user_id] = ALERTS_MENU
@@ -26,7 +35,7 @@ def handle_alerts_location_callback(
         ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
         return
 
-    if call.data.startswith("alerts_add_pick:"):
+    if call.data.startswith(f"{ALERTS_ADD_PICK_PREFIX}:"):
         try:
             index = int(call.data.split(":", 1)[1])
         except (ValueError, IndexError):
@@ -84,7 +93,7 @@ def handle_alerts_location_callback(
         ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
         return
 
-    if call.data.startswith("alerts_sub_add_saved:"):
+    if call.data.startswith(f"{ALERTS_SUB_ADD_SAVED_PREFIX}:"):
         location_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         if not location_id:
             ctx.bot.answer_callback_query(call.id)
@@ -161,7 +170,7 @@ def handle_alerts_location_callback(
         )
         return
 
-    if call.data.startswith("alerts_sub_toggle:"):
+    if call.data.startswith(f"{ALERTS_SUB_TOGGLE_PREFIX}:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         ctx.bot.answer_callback_query(call.id)
         user_data, toggled = service.toggle_subscription(user_data, subscription_id)
@@ -174,7 +183,7 @@ def handle_alerts_location_callback(
         ctx.bot.send_message(chat_id, ctx.format_alert_subscriptions(user_data), reply_markup=ctx.alerts_menu())
         return
 
-    if call.data.startswith("alerts_sub_interval:"):
+    if call.data.startswith(f"{ALERTS_SUB_INTERVAL_PREFIX}:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         ctx.bot.answer_callback_query(call.id)
         target = service.get_subscription(user_data, subscription_id)
@@ -191,7 +200,7 @@ def handle_alerts_location_callback(
         )
         return
 
-    if call.data.startswith("alerts_sub_delete:"):
+    if call.data.startswith(f"{ALERTS_SUB_DELETE_PREFIX}:"):
         subscription_id = call.data.split(":", 1)[1] if ":" in call.data else ""
         ctx.bot.answer_callback_query(call.id)
         user_data, deleted = service.delete_subscription(user_data, subscription_id)

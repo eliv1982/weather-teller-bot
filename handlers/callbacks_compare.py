@@ -1,3 +1,5 @@
+from callbacks.constants import COMPARE_CANCEL, COMPARE_PICK_PREFIX
+
 from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
 from .states import WAITING_COMPARE_CITY_1
 
@@ -14,7 +16,7 @@ def handle_compare_location_callback(
     user_id = call.from_user.id
     chat_id = call.message.chat.id
 
-    if call.data == "compare_cancel":
+    if call.data == COMPARE_CANCEL:
         meta = session_store.compare_location_choices.get(user_id)
         target_state = WAITING_COMPARE_CITY_1
         if isinstance(meta, dict) and meta.get("step") == 2:
@@ -31,7 +33,7 @@ def handle_compare_location_callback(
         return
 
     parts = call.data.split(":")
-    if len(parts) != 3 or parts[0] != "compare_pick":
+    if len(parts) != 3 or parts[0] != COMPARE_PICK_PREFIX:
         ctx.bot.answer_callback_query(call.id)
         return
 
