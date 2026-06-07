@@ -1,7 +1,6 @@
 import os
 import logging
 import threading
-import time
 from functools import partial
 from types import SimpleNamespace
 from dotenv import load_dotenv
@@ -113,6 +112,7 @@ from handlers.locations import (
     start_ai_compare_flow,
 )
 from handlers.geo import handle_geo_text
+from handlers.geo_flow import handle_geo_current_weather
 from handlers.callbacks_current import handle_current_weather_callback
 from handlers.callbacks_alerts import handle_alerts_location_callback as handle_alerts_callback_logic
 from handlers.callbacks_compare import handle_compare_location_callback as handle_compare_callback_logic
@@ -568,70 +568,13 @@ def handle_location_message(message: types.Message) -> None:
     state = session_store.get_state(user_id)
 
     if state in {WAITING_CURRENT_WEATHER_CITY, WAITING_CURRENT_WEATHER_GEO, WAITING_GEO_LOCATION}:
-        session_store.clear_location_choices(user_id)
-        location_data = message.location
-        lat = location_data.latitude
-        lon = location_data.longitude
-        logger.info(
-            "Получена геолокация от пользователя %s: lat=%s, lon=%s.",
+        handle_geo_current_weather(
+            message,
             user_id,
-            lat,
-            lon,
-        )
-
-        weather = get_current_weather(lat, lon)
-        if not weather:
-            logger.warning(
-                "Не удалось получить погоду по геолокации для пользователя %s (lat=%s, lon=%s).",
-                user_id,
-                lat,
-                lon,
-            )
-            session_store.user_states.pop(user_id, None)
-            bot.send_message(
-                message.chat.id,
-                "Не удалось получить данные о погоде по геолокации. Попробуй позже.",
-                reply_markup=main_menu(),
-            )
-            return
-
-        location = get_location_by_coordinates(lat, lon)
-        if location:
-            city_label = build_location_label(location, show_coords=False)
-        else:
-            city_label = "Выбранная геолокация"
-
-        user_data = load_user(user_id)
-        user_data["city"] = city_label
-        user_data["lat"] = lat
-        user_data["lon"] = lon
-        save_user(user_id, user_data)
-
-        answer = format_weather_response(city_label, weather)
-        logger.info(
-            "Успешно получена погода по геолокации для пользователя %s: %s (lat=%s, lon=%s).",
-            user_id,
-            city_label,
-            lat,
-            lon,
-        )
-        session_store.user_states.pop(user_id, None)
-        snapshot_id = session_store.generate_ai_snapshot_id(user_id)
-        session_store.ai_current_snapshots[snapshot_id] = {
-            "user_id": user_id,
-            "city_label": city_label,
-            "weather": weather,
-            "created_at": time.time(),
-        }
-        session_store.cleanup_ai_snapshots()
-        bot.send_message(message.chat.id, answer, reply_markup=main_menu())
-        bot.send_message(
-            message.chat.id,
-            "✨ Хочешь короткое пояснение погоды?",
-            reply_markup=build_ai_action_keyboard(
-                "✨ Короткое пояснение погоды",
-                f"{AI_CURRENT_EXPLAIN_PREFIX}:{snapshot_id}",
-            ),
+            ctx=ctx,
+            session_store=session_store,
+            ai_current_explain_prefix=AI_CURRENT_EXPLAIN_PREFIX,
+            received_log_message="Получена геолокация от пользователя %s: lat=%s, lon=%s.",
         )
         return
 
@@ -836,70 +779,13 @@ def handle_location_message(message: types.Message) -> None:
         )
         return
 
-    session_store.clear_location_choices(user_id)
-    location_data = message.location
-    lat = location_data.latitude
-    lon = location_data.longitude
-    logger.info(
-        "Получена геолокация от пользователя %s вне сценария: lat=%s, lon=%s.",
+    handle_geo_current_weather(
+        message,
         user_id,
-        lat,
-        lon,
-    )
-
-    weather = get_current_weather(lat, lon)
-    if not weather:
-        logger.warning(
-            "Не удалось получить погоду по геолокации для пользователя %s (lat=%s, lon=%s).",
-            user_id,
-            lat,
-            lon,
-        )
-        session_store.user_states.pop(user_id, None)
-        bot.send_message(
-            message.chat.id,
-            "Не удалось получить данные о погоде по геолокации. Попробуй позже.",
-            reply_markup=main_menu(),
-        )
-        return
-
-    location = get_location_by_coordinates(lat, lon)
-    if location:
-        city_label = build_location_label(location, show_coords=False)
-    else:
-        city_label = "Выбранная геолокация"
-
-    user_data = load_user(user_id)
-    user_data["city"] = city_label
-    user_data["lat"] = lat
-    user_data["lon"] = lon
-    save_user(user_id, user_data)
-
-    answer = format_weather_response(city_label, weather)
-    logger.info(
-        "Успешно получена погода по геолокации для пользователя %s: %s (lat=%s, lon=%s).",
-        user_id,
-        city_label,
-        lat,
-        lon,
-    )
-    session_store.user_states.pop(user_id, None)
-    snapshot_id = session_store.generate_ai_snapshot_id(user_id)
-    session_store.ai_current_snapshots[snapshot_id] = {
-        "user_id": user_id,
-        "city_label": city_label,
-        "weather": weather,
-        "created_at": time.time(),
-    }
-    session_store.cleanup_ai_snapshots()
-    bot.send_message(message.chat.id, answer, reply_markup=main_menu())
-    bot.send_message(
-        message.chat.id,
-        "✨ Хочешь короткое пояснение погоды?",
-        reply_markup=build_ai_action_keyboard(
-            "✨ Короткое пояснение погоды",
-            f"{AI_CURRENT_EXPLAIN_PREFIX}:{snapshot_id}",
-        ),
+        ctx=ctx,
+        session_store=session_store,
+        ai_current_explain_prefix=AI_CURRENT_EXPLAIN_PREFIX,
+        received_log_message="Получена геолокация от пользователя %s вне сценария: lat=%s, lon=%s.",
     )
 
 
