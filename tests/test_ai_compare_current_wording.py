@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
-from handlers.locations import _ai_compare_after_two_locations, handle_locations_text
+from handlers.ai_compare import _ai_compare_after_two_locations
+from handlers.locations import handle_locations_text
 from handlers.states import WAITING_AI_COMPARE_MODE
 
 

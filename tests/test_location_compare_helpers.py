@@ -111,13 +111,8 @@ def test_compatibility_functions_available_and_results_match():
             InlineKeyboardButton=object,
         )
         sys.modules["telebot"] = telebot_module
-    if "postgres_storage" not in sys.modules:
-        pg_module = types.ModuleType("postgres_storage")
-        pg_module.load_user = lambda user_id: {}
-        pg_module.save_user = lambda user_id, user_data: None
-        sys.modules["postgres_storage"] = pg_module
-    sys.modules.pop("handlers.locations", None)
-    locations = importlib.import_module("handlers.locations")
+    sys.modules.pop("handlers.ai_compare", None)
+    ai_compare = importlib.import_module("handlers.ai_compare")
 
     sample_payload = {
         "city_label": "Москва",
@@ -128,11 +123,11 @@ def test_compatibility_functions_available_and_results_match():
         "wind_signal": {"avg_speed": 3, "max_speed": 6},
     }
 
-    assert hasattr(locations, "format_ai_compare_day_summary_message")
-    assert hasattr(locations, "normalize_location_name")
-    assert hasattr(locations, "_ai_compare_day_payload")
+    assert hasattr(ai_compare, "format_ai_compare_day_summary_message")
+    assert hasattr(ai_compare, "normalize_location_name")
+    assert hasattr(ai_compare, "_ai_compare_day_payload")
 
-    from_locations = locations.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
+    from_ai_compare = ai_compare.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
     from_helpers = helpers.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
-    assert from_locations == from_helpers
+    assert from_ai_compare == from_helpers
 

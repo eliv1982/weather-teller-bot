@@ -27,7 +27,7 @@ class _Bot:
 def test_compare_manual_single_location_confirms_selection(monkeypatch):
     bot = _Bot()
     monkeypatch.setattr(
-        "handlers.locations.find_locations_with_assist",
+        "handlers.ai_compare.find_locations_with_assist",
         lambda query, scenario, ctx: {"locations": [{"label": "Москва", "lat": 55.75, "lon": 37.61}]},
     )
     ctx = SimpleNamespace(
@@ -52,7 +52,7 @@ def test_compare_manual_single_location_confirms_selection(monkeypatch):
 
 def test_compare_coordinate_selection_confirms_selection(monkeypatch):
     bot = _Bot()
-    monkeypatch.setattr("handlers.locations._ai_compare_after_two_locations", lambda *args, **kwargs: True)
+    monkeypatch.setattr("handlers.ai_compare._ai_compare_after_two_locations", lambda *args, **kwargs: True)
     ctx = SimpleNamespace(
         bot=bot,
         get_location_by_coordinates=lambda lat, lon: {"label": "Координатная точка"},
