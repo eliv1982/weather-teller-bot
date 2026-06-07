@@ -10,10 +10,12 @@ from callbacks.constants import (
     AICMP_DATE_PICK_PREFIX,
 )
 
-from .locations import (
+from .ai_compare import (
     _ai_compare_day_payload,
     _ai_compare_reset,
     _ai_compare_set_location,
+)
+from .locations import (
     _set_new_saved_location_candidate,
 )
 from .callbacks_common import mark_location_choice_selected

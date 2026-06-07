@@ -109,8 +109,10 @@ from handlers.source_compare import handle_source_compare_text
 from handlers.alerts import handle_alerts_text
 from handlers.locations import (
     handle_locations_text,
-    _ai_compare_set_location,
     _set_new_saved_location_candidate,
+)
+from handlers.ai_compare import (
+    _ai_compare_set_location,
     start_ai_compare_flow,
 )
 from handlers.geo import handle_geo_text
