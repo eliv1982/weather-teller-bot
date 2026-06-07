@@ -1,4 +1,13 @@
-# Состояния сценария текущей погоды
+# ---------------------------------------------------------------------------
+# Common / menu
+# ---------------------------------------------------------------------------
+WEATHER_MENU = "weather_menu"
+WAITING_GEO_LOCATION = "waiting_geo_location"
+
+# ---------------------------------------------------------------------------
+# Current / details
+# ---------------------------------------------------------------------------
+# Current weather
 WAITING_CURRENT_WEATHER_CITY = "waiting_current_weather_city"
 WAITING_CURRENT_WEATHER_PICK = "waiting_current_weather_pick"
 WAITING_CURRENT_WEATHER_SAVED_PICK = "waiting_current_weather_saved_pick"
@@ -6,10 +15,7 @@ WAITING_CURRENT_WEATHER_COORDS = "waiting_current_weather_coords"
 WAITING_CURRENT_WEATHER_GEO = "waiting_current_weather_geo"
 WAITING_CURRENT_USE_FAVORITE = "waiting_current_use_favorite"
 
-# Состояния сценария геолокации
-WAITING_GEO_LOCATION = "waiting_geo_location"
-
-# Состояния сценария расширенных данных
+# Extended details
 WAITING_DETAILS_CITY = "waiting_details_city"
 WAITING_DETAILS_PICK = "waiting_details_pick"
 WAITING_DETAILS_SAVED_PICK = "waiting_details_saved_pick"
@@ -18,9 +24,9 @@ WAITING_DETAILS_GEO = "waiting_details_geo"
 WAITING_DETAILS_USE_FAVORITE = "waiting_details_use_favorite"
 WAITING_DETAILS_USE_SAVED_LOCATION = "waiting_details_use_saved_location"
 
-# Состояния сценария прогноза
-WEATHER_MENU = "weather_menu"
-SOURCE_COMPARE_MENU = "source_compare_menu"
+# ---------------------------------------------------------------------------
+# Forecast / today / tomorrow
+# ---------------------------------------------------------------------------
 WAITING_FORECAST_CITY = "waiting_forecast_city"
 WAITING_FORECAST_PICK = "waiting_forecast_pick"
 WAITING_FORECAST_SAVED_PICK = "waiting_forecast_saved_pick"
@@ -28,22 +34,22 @@ WAITING_FORECAST_COORDS = "waiting_forecast_coords"
 WAITING_FORECAST_GEO = "waiting_forecast_geo"
 WAITING_FORECAST_USE_FAVORITE = "waiting_forecast_use_favorite"
 WAITING_FORECAST_USE_SAVED_LOCATION = "waiting_forecast_use_saved_location"
+
 WAITING_TODAY_FORECAST_CITY = "waiting_today_forecast_city"
 WAITING_TODAY_FORECAST_PICK = "waiting_today_forecast_pick"
 WAITING_TODAY_FORECAST_SAVED_PICK = "waiting_today_forecast_saved_pick"
 WAITING_TODAY_FORECAST_COORDS = "waiting_today_forecast_coords"
 WAITING_TODAY_FORECAST_GEO = "waiting_today_forecast_geo"
+
 WAITING_TOMORROW_FORECAST_CITY = "waiting_tomorrow_forecast_city"
 WAITING_TOMORROW_FORECAST_PICK = "waiting_tomorrow_forecast_pick"
 WAITING_TOMORROW_FORECAST_SAVED_PICK = "waiting_tomorrow_forecast_saved_pick"
 WAITING_TOMORROW_FORECAST_COORDS = "waiting_tomorrow_forecast_coords"
 WAITING_TOMORROW_FORECAST_GEO = "waiting_tomorrow_forecast_geo"
-WAITING_SOURCE_COMPARE_CITY = "waiting_source_compare_city"
-WAITING_SOURCE_COMPARE_PICK = "waiting_source_compare_pick"
-WAITING_SOURCE_COMPARE_SAVED_PICK = "waiting_source_compare_saved_pick"
-WAITING_SOURCE_COMPARE_COORDS = "waiting_source_compare_coords"
-WAITING_SOURCE_COMPARE_GEO = "waiting_source_compare_geo"
-WAITING_SOURCE_COMPARE_DATE_PICK = "waiting_source_compare_date_pick"
+
+# ---------------------------------------------------------------------------
+# History / monthly climate
+# ---------------------------------------------------------------------------
 WAITING_HISTORY_CITY = "waiting_history_city"
 WAITING_HISTORY_PICK = "waiting_history_pick"
 WAITING_HISTORY_SAVED_PICK = "waiting_history_saved_pick"
@@ -56,12 +62,41 @@ WAITING_HISTORY_CLIMATE_MODE = "waiting_history_climate_mode"
 WAITING_HISTORY_CLIMATE_MONTH = "waiting_history_climate_month"
 WAITING_HISTORY_CLIMATE_YEAR = "waiting_history_climate_year"
 
-# Состояния сценария сравнения
+# ---------------------------------------------------------------------------
+# Compare
+# ---------------------------------------------------------------------------
 WAITING_COMPARE_CITY_1 = "waiting_compare_city_1"
 WAITING_COMPARE_CITY_2 = "waiting_compare_city_2"
 WAITING_COMPARE_LOCATION_PICK = "waiting_compare_location_pick"
 
-# Состояния сценария уведомлений
+# ---------------------------------------------------------------------------
+# Source compare
+# ---------------------------------------------------------------------------
+SOURCE_COMPARE_MENU = "source_compare_menu"
+WAITING_SOURCE_COMPARE_CITY = "waiting_source_compare_city"
+WAITING_SOURCE_COMPARE_PICK = "waiting_source_compare_pick"
+WAITING_SOURCE_COMPARE_SAVED_PICK = "waiting_source_compare_saved_pick"
+WAITING_SOURCE_COMPARE_COORDS = "waiting_source_compare_coords"
+WAITING_SOURCE_COMPARE_GEO = "waiting_source_compare_geo"
+WAITING_SOURCE_COMPARE_DATE_PICK = "waiting_source_compare_date_pick"
+
+# ---------------------------------------------------------------------------
+# Saved locations
+# ---------------------------------------------------------------------------
+LOCATIONS_MENU = "locations_menu"
+WAITING_LOCATION_TITLE = "waiting_location_title"
+WAITING_NEW_SAVED_LOCATION_MENU = "waiting_new_saved_location_menu"
+WAITING_NEW_SAVED_LOCATION_TEXT = "waiting_new_saved_location_text"
+WAITING_NEW_SAVED_LOCATION_PICK = "waiting_new_saved_location_pick"
+WAITING_NEW_SAVED_LOCATION_GEO = "waiting_new_saved_location_geo"
+WAITING_NEW_SAVED_LOCATION_COORDS = "waiting_new_saved_location_coords"
+WAITING_NEW_SAVED_LOCATION_COORDS_UNRESOLVED = "waiting_new_saved_location_coords_unresolved"
+WAITING_NEW_SAVED_LOCATION_TITLE = "waiting_new_saved_location_title"
+WAITING_RENAME_LOCATION_TITLE = "waiting_rename_location_title"
+
+# ---------------------------------------------------------------------------
+# Alerts / subscriptions
+# ---------------------------------------------------------------------------
 ALERTS_MENU = "alerts_menu"
 WAITING_ALERTS_SUBSCRIPTION_MENU = "waiting_alerts_subscription_menu"
 WAITING_ALERTS_ADD_MENU = "waiting_alerts_add_menu"
@@ -75,17 +110,9 @@ WAITING_ALERTS_INTERVAL_PICK = "waiting_alerts_interval_pick"
 WAITING_ALERTS_INTERVAL_VALUE = "waiting_alerts_interval_value"
 WAITING_ALERTS_DELETE_PICK = "waiting_alerts_delete_pick"
 
-# Состояния сценария «Мои локации»
-LOCATIONS_MENU = "locations_menu"
-WAITING_LOCATION_TITLE = "waiting_location_title"
-WAITING_NEW_SAVED_LOCATION_MENU = "waiting_new_saved_location_menu"
-WAITING_NEW_SAVED_LOCATION_TEXT = "waiting_new_saved_location_text"
-WAITING_NEW_SAVED_LOCATION_PICK = "waiting_new_saved_location_pick"
-WAITING_NEW_SAVED_LOCATION_GEO = "waiting_new_saved_location_geo"
-WAITING_NEW_SAVED_LOCATION_COORDS = "waiting_new_saved_location_coords"
-WAITING_NEW_SAVED_LOCATION_COORDS_UNRESOLVED = "waiting_new_saved_location_coords_unresolved"
-WAITING_NEW_SAVED_LOCATION_TITLE = "waiting_new_saved_location_title"
-WAITING_RENAME_LOCATION_TITLE = "waiting_rename_location_title"
+# ---------------------------------------------------------------------------
+# AI compare
+# ---------------------------------------------------------------------------
 WAITING_AI_COMPARE_MODE = "waiting_ai_compare_mode"
 WAITING_AI_COMPARE_LOC1_METHOD = "waiting_ai_compare_loc1_method"
 WAITING_AI_COMPARE_LOC1_TEXT = "waiting_ai_compare_loc1_text"
@@ -139,12 +166,6 @@ FORECAST_STATES = {
     WAITING_TOMORROW_FORECAST_SAVED_PICK,
     WAITING_TOMORROW_FORECAST_COORDS,
     WAITING_TOMORROW_FORECAST_GEO,
-    WAITING_SOURCE_COMPARE_CITY,
-    WAITING_SOURCE_COMPARE_PICK,
-    WAITING_SOURCE_COMPARE_SAVED_PICK,
-    WAITING_SOURCE_COMPARE_COORDS,
-    WAITING_SOURCE_COMPARE_GEO,
-    WAITING_SOURCE_COMPARE_DATE_PICK,
 }
 
 HISTORY_STATES = {
@@ -165,6 +186,15 @@ COMPARE_STATES = {
     WAITING_COMPARE_CITY_1,
     WAITING_COMPARE_CITY_2,
     WAITING_COMPARE_LOCATION_PICK,
+}
+
+SOURCE_COMPARE_STATES = {
+    WAITING_SOURCE_COMPARE_CITY,
+    WAITING_SOURCE_COMPARE_PICK,
+    WAITING_SOURCE_COMPARE_SAVED_PICK,
+    WAITING_SOURCE_COMPARE_COORDS,
+    WAITING_SOURCE_COMPARE_GEO,
+    WAITING_SOURCE_COMPARE_DATE_PICK,
 }
 
 ALERTS_STATES = {
