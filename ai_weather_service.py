@@ -259,9 +259,6 @@ class AiWeatherService:
         selected_day: str,
     ) -> str:
         """Сравнивает прогноз двух локаций на выбранный день детерминированно."""
-        profile_1 = self._build_forecast_day_risk_profile(location_1_payload)
-        profile_2 = self._build_forecast_day_risk_profile(location_2_payload)
-        verdict = self._build_forecast_compare_verdict(profile_1, profile_2)
         signature = self._compare_forecast_day_signature(location_1_payload, location_2_payload, selected_day)
         cache_key = self._build_cache_key("ai_compare_forecast_day", signature)
         cached = self._get_cached(cache_key)

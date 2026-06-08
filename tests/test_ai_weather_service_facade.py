@@ -259,6 +259,16 @@ def test_compare_forecast_day_rejects_invalid_cached_text_and_stays_deterministi
         "_call_model",
         lambda prompt, max_output_tokens=None: (_ for _ in ()).throw(AssertionError("_call_model should not be used")),
     )
+    monkeypatch.setattr(
+        service,
+        "_build_forecast_day_risk_profile",
+        lambda payload: (_ for _ in ()).throw(AssertionError("_build_forecast_day_risk_profile should not be used")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_forecast_compare_verdict",
+        lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
+    )
 
     text = service.compare_two_locations_forecast_day_with_ai(
         {
@@ -286,6 +296,56 @@ def test_compare_forecast_day_rejects_invalid_cached_text_and_stays_deterministi
     assert "📍 Сочи" in text
     assert "выбирай" not in text.lower()
     assert saved == [{"scenario": "ai_compare_forecast_day", "text": text, "ttl_seconds": service.ttl_forecast_seconds}]
+
+
+def test_compare_forecast_day_cache_hit_skips_profile_and_verdict_helpers(monkeypatch):
+    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
+    service = AiWeatherService(api_key="")
+    cached_text = "📍 Москва\n📅 Дата: 2026-01-01\n\n✨ В локации Москва: ожидается прохладная погода."
+
+    monkeypatch.setattr(service, "_get_cached", lambda cache_key: cached_text)
+    monkeypatch.setattr(
+        service,
+        "_build_forecast_day_risk_profile",
+        lambda payload: (_ for _ in ()).throw(AssertionError("_build_forecast_day_risk_profile should not be used")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_build_forecast_compare_verdict",
+        lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_call_model",
+        lambda prompt, max_output_tokens=None: (_ for _ in ()).throw(AssertionError("_call_model should not be used")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_save_cached",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_save_cached should not be used")),
+    )
+
+    text = service.compare_two_locations_forecast_day_with_ai(
+        {
+            "city_label": "Москва",
+            "min_temp": 2,
+            "max_temp": 10,
+            "dominant_description": "дождь",
+            "precipitation_signal": {"max_pop": 0.7, "rain_slots": 2},
+            "wind_signal": {"avg_speed": 4, "max_speed": 7},
+        },
+        {
+            "city_label": "Сочи",
+            "min_temp": 8,
+            "max_temp": 16,
+            "dominant_description": "ясно",
+            "precipitation_signal": {"max_pop": 0.1, "rain_slots": 0},
+            "wind_signal": {"avg_speed": 2, "max_speed": 4},
+        },
+        "2026-01-01",
+    )
+
+    assert text == cached_text
 
 
 def test_explain_today_forecast_cache_hit_skips_model(monkeypatch):
