@@ -1,6 +1,6 @@
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 
@@ -14,6 +14,11 @@ except ImportError as exc:  # pragma: no cover
 
 
 load_dotenv()
+
+
+def _utc_now_naive() -> datetime:
+    """Возвращает текущее UTC-время без tzinfo для совместимости с TIMESTAMP."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _default_user_data() -> dict:
@@ -207,7 +212,7 @@ def get_ai_cached_response(cache_key: str) -> str | None:
             return None
 
         expires_at = row.get("expires_at")
-        if expires_at is not None and expires_at <= datetime.utcnow():
+        if expires_at is not None and expires_at <= _utc_now_naive():
             cur.execute("DELETE FROM ai_response_cache WHERE cache_key = %s;", (cache_key,))
             return None
 
@@ -228,7 +233,7 @@ def save_ai_cached_response(
 
     expires_at = None
     if isinstance(ttl_seconds, int) and ttl_seconds > 0:
-        expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+        expires_at = _utc_now_naive() + timedelta(seconds=ttl_seconds)
 
     with _cursor(commit=True) as cur:
         cur.execute(
