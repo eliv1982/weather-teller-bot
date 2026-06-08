@@ -603,48 +603,6 @@ class AiWeatherService:
     def _render_compare_current_factual(self, payload_1: dict, payload_2: dict) -> str:
         return compare_render._render_compare_current_factual(self, payload_1, payload_2)
 
-    def _render_compare_current_clear(
-        self,
-        winner_idx: int,
-        city_1_label: str,
-        city_2_label: str,
-        name_1: str,
-        name_2: str,
-        warmer: int | None,
-        calmer: int | None,
-        drier: int | None,
-        no_rain: int | None,
-    ) -> str:
-        """Совместимый factual-render для старого интерфейса ветки current."""
-        _ = (winner_idx, name_1, name_2, warmer, calmer, drier, no_rain)
-        return "\n\n".join([f"📍 {city_1_label}", "✨ Факты по локации не переданы.", f"📍 {city_2_label}", "✨ Факты по локации не переданы."])
-
-    def _render_compare_current_near_identical(
-        self,
-        name_1: str,
-        name_2: str,
-        d_wind: float | None,
-        d_hum: float | None,
-    ) -> str:
-        """Совместимый factual-render для старого интерфейса ветки current."""
-        _ = (d_wind, d_hum)
-        return "\n\n".join([f"📍 {name_1}", "✨ Факты по локации не переданы.", f"📍 {name_2}", "✨ Факты по локации не переданы."])
-
-    def _render_compare_current_mixed(
-        self,
-        city_1_label: str,
-        city_2_label: str,
-        name_1: str,
-        name_2: str,
-        warmer: int | None,
-        calmer: int | None,
-        drier: int | None,
-        no_rain: int | None,
-    ) -> str:
-        """Совместимый factual-render для старого интерфейса ветки current."""
-        _ = (name_1, name_2, warmer, calmer, drier, no_rain)
-        return "\n\n".join([f"📍 {city_1_label}", "✨ Факты по локации не переданы.", f"📍 {city_2_label}", "✨ Факты по локации не переданы."])
-
     def _fallback_weather_alert(self, location_label: str, alert_payload: dict) -> str:
         """Детерминированный fallback для погодного уведомления (1-2 коротких предложения)."""
         return fallbacks.fallback_weather_alert(location_label, alert_payload)

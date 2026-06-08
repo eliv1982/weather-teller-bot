@@ -2,6 +2,8 @@ import importlib
 import sys
 import types
 
+from ai import fallbacks
+
 
 def _import_service_with_stubbed_postgres(monkeypatch):
     fake_pg = types.ModuleType("postgres_storage")
@@ -225,6 +227,12 @@ def test_compare_current_rejects_invalid_cached_text_and_stays_deterministic(mon
         service,
         "_call_model",
         lambda prompt, max_output_tokens=None: (_ for _ in ()).throw(AssertionError("_call_model should not be used")),
+    )
+    monkeypatch.setattr(
+        fallbacks,
+        "fallback_compare_current",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fallback_compare_current should not be used")),
+        raising=False,
     )
 
     text = service.compare_two_locations_current_with_ai(

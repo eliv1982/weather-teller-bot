@@ -322,63 +322,6 @@ def fallback_details(city_label: str, weather_data: dict, air_quality_data: dict
         f"{pressure_note + ' ' if pressure_note else ''}"
         "Сейчас больше всего влияют влажность, ветер, видимость и качество воздуха."
     )
-
-
-def fallback_compare_current(service, payload_1: dict, payload_2: dict) -> str:
-    city_1_label = str(payload_1.get("city_label") or "Локация 1")
-    city_2_label = str(payload_2.get("city_label") or "Локация 2")
-    name_1 = service._get_short_location_name(city_1_label)
-    name_2 = service._get_short_location_name(city_2_label)
-    temp_1 = payload_1.get("temperature")
-    temp_2 = payload_2.get("temperature")
-    wind_1 = payload_1.get("wind_speed")
-    wind_2 = payload_2.get("wind_speed")
-    hum_1 = payload_1.get("humidity")
-    hum_2 = payload_2.get("humidity")
-    desc_1 = str(payload_1.get("description") or "").lower()
-    desc_2 = str(payload_2.get("description") or "").lower()
-    rain_markers = ("дожд", "лив", "гроза", "снег")
-    precip_1 = any(m in desc_1 for m in rain_markers)
-    precip_2 = any(m in desc_2 for m in rain_markers)
-
-    def _signed(a: object, b: object) -> float | None:
-        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-            return float(a) - float(b)
-        return None
-
-    d_temp = _signed(temp_1, temp_2)
-    d_wind = _signed(wind_1, wind_2)
-    d_hum = _signed(hum_1, hum_2)
-    warmer = 1 if d_temp is not None and abs(d_temp) >= 1.0 and d_temp > 0 else (2 if d_temp is not None and abs(d_temp) >= 1.0 else None)
-    calmer = 1 if d_wind is not None and abs(d_wind) >= 1.0 and d_wind < 0 else (2 if d_wind is not None and abs(d_wind) >= 1.0 else None)
-    drier = 1 if d_hum is not None and abs(d_hum) >= 8 and d_hum < 0 else (2 if d_hum is not None and abs(d_hum) >= 8 else None)
-    no_rain = 2 if (precip_1 and not precip_2) else (1 if (precip_2 and not precip_1) else None)
-    signals = [s for s in (warmer, calmer, drier, no_rain) if s is not None]
-    adv_1 = sum(1 for s in signals if s == 1)
-    adv_2 = sum(1 for s in signals if s == 2)
-    near_identical = (
-        no_rain is None
-        and (d_temp is None or abs(d_temp) < 1.0)
-        and (d_wind is None or abs(d_wind) < 1.5)
-        and (d_hum is None or abs(d_hum) < 10)
-    )
-    clear_winner = None
-    if not near_identical:
-        if adv_1 >= 2 and adv_2 == 0:
-            clear_winner = 1
-        elif adv_2 >= 2 and adv_1 == 0:
-            clear_winner = 2
-    if clear_winner is not None:
-        return service._render_compare_current_clear(
-            clear_winner, city_1_label, city_2_label, name_1, name_2, warmer, calmer, drier, no_rain
-        )
-    if near_identical:
-        return service._render_compare_current_near_identical(name_1, name_2, d_wind, d_hum)
-    return service._render_compare_current_mixed(
-        city_1_label, city_2_label, name_1, name_2, warmer, calmer, drier, no_rain
-    )
-
-
 def fallback_weather_alert(location_label: str, alert_payload: dict) -> str:
     payload = alert_payload if isinstance(alert_payload, dict) else {}
     slot_local = str(payload.get("slot_local") or "").strip()
