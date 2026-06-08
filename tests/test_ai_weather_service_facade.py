@@ -277,6 +277,18 @@ def test_compare_forecast_day_rejects_invalid_cached_text_and_stays_deterministi
         "_build_forecast_compare_verdict",
         lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
     )
+    monkeypatch.setattr(
+        service,
+        "_fallback_compare_forecast_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_fallback_compare_forecast_day should not be used")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fallbacks,
+        "fallback_compare_forecast_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fallback_compare_forecast_day should not be used")),
+        raising=False,
+    )
 
     text = service.compare_two_locations_forecast_day_with_ai(
         {
@@ -321,6 +333,18 @@ def test_compare_forecast_day_cache_hit_skips_profile_and_verdict_helpers(monkey
         service,
         "_build_forecast_compare_verdict",
         lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_fallback_compare_forecast_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_fallback_compare_forecast_day should not be used")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fallbacks,
+        "fallback_compare_forecast_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fallback_compare_forecast_day should not be used")),
+        raising=False,
     )
     monkeypatch.setattr(
         service,

@@ -611,10 +611,6 @@ class AiWeatherService:
         """Мягко нормализует формулировки AI-совета по уведомлениям."""
         return fallbacks.postprocess_weather_alert_text(text)
 
-    def _fallback_compare_forecast_day(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
-        """Fallback сравнения прогноза двух локаций на выбранную дату."""
-        return fallbacks.fallback_compare_forecast_day(self, payload_1, payload_2, selected_day)
-
     def _build_forecast_day_risk_profile(self, payload: dict) -> dict:
         """Строит детерминированный профиль погодных рисков для compare-by-date."""
         city_label = str(payload.get("city_label") or "Локация")
@@ -874,63 +870,3 @@ class AiWeatherService:
     def _render_compare_forecast_factual(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
         return compare_render._render_compare_forecast_factual(self, payload_1, payload_2, selected_day)
 
-    def _render_compare_forecast_profile_factual(self, profile_1: dict, profile_2: dict) -> str:
-        def _from_profile(profile: dict) -> dict:
-            return {
-                "city_label": profile.get("city_label"),
-                "min_temp": profile.get("temp_min"),
-                "max_temp": profile.get("temp_max"),
-                "dominant_description": profile.get("summary"),
-                "wind_signal": {"avg_speed": None, "max_speed": None},
-                "precipitation_signal": {"max_pop": None},
-            }
-
-        return self._render_compare_forecast_factual(_from_profile(profile_1), _from_profile(profile_2), "выбранная дата")
-
-    def _build_deterministic_compare_forecast_day_text(self, profile_1: dict, profile_2: dict, verdict: dict) -> str:
-        """Строит финальный compare-by-date текст как две фактические карточки."""
-        _ = verdict
-        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
-
-    def _render_compare_forecast_clear_winner(
-        self,
-        profile_1: dict,
-        profile_2: dict,
-        verdict: dict,
-        city_1_full: str,
-        city_2_full: str,
-        name_1: str,
-        name_2: str,
-    ) -> str:
-        """Совместимый factual-render для старой ветки compare-by-date."""
-        _ = (verdict, city_1_full, city_2_full, name_1, name_2)
-        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
-
-    def _render_compare_forecast_near_identical(
-        self,
-        profile_1: dict,
-        profile_2: dict,
-        city_1_full: str,
-        city_2_full: str,
-        name_1: str,
-        name_2: str,
-    ) -> str:
-        """Совместимый factual-render для старой ветки compare-by-date."""
-        _ = (city_1_full, city_2_full, name_1, name_2)
-        return self._render_compare_forecast_profile_factual(profile_1, profile_2)
-
-    def _render_compare_forecast_mixed(
-        self,
-        profile_1: dict,
-        profile_2: dict,
-        verdict: dict,
-        city_1_full: str,
-        city_2_full: str,
-        name_1: str,
-        name_2: str,
-        risk_1: float,
-        risk_2: float,
-    ) -> str:
-        """Совместимый factual-render для старой ветки compare-by-date."""
-        _ = (verdict, city_1_full, city_2_full, name_1, name_2, risk_1, risk_2)
-        return self._render_compare_forecast_profile_factual(profile_1, profile_2)

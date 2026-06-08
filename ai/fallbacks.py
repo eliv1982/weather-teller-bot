@@ -392,11 +392,3 @@ def postprocess_weather_alert_text(text: str) -> str:
         normalized = re.sub(rf"\b{re.escape(src)}\b", dst, normalized, flags=re.IGNORECASE)
     return normalized.strip()
 
-
-def fallback_compare_forecast_day(service, payload_1: dict, payload_2: dict, selected_day: str) -> str:
-    _ = selected_day
-    profile_1 = service._build_forecast_day_risk_profile(payload_1)
-    profile_2 = service._build_forecast_day_risk_profile(payload_2)
-    verdict = service._build_forecast_compare_verdict(profile_1, profile_2)
-    return service._build_deterministic_compare_forecast_day_text(profile_1, profile_2, verdict)
-

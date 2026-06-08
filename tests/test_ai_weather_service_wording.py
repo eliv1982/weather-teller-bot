@@ -212,31 +212,6 @@ def test_compare_forecast_outputs_factual_blocks(monkeypatch):
     _assert_no_advisory_or_comparative_phrases(text)
 
 
-def test_compare_forecast_legacy_renderers_are_factual(monkeypatch):
-    AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
-    service = AiWeatherService(api_key="")
-    profile_1 = service._build_forecast_day_risk_profile(
-        _forecast_payload("Екатеринбург", min_temp=5, max_temp=12, description="дождь", max_pop=0.6, avg_wind=5, max_wind=8)
-    )
-    profile_2 = service._build_forecast_day_risk_profile(
-        _forecast_payload("Москва", min_temp=10, max_temp=18, description="ясно", max_pop=0.0, avg_wind=2, max_wind=3)
-    )
-    verdict = service._build_forecast_compare_verdict(profile_1, profile_2)
-
-    outputs = [
-        service._render_compare_forecast_clear_winner(profile_1, profile_2, verdict, "Екатеринбург", "Москва", "Екатеринбург", "Москва"),
-        service._render_compare_forecast_near_identical(profile_1, profile_2, "Екатеринбург", "Москва", "Екатеринбург", "Москва"),
-        service._render_compare_forecast_mixed(profile_1, profile_2, verdict, "Екатеринбург", "Москва", "Екатеринбург", "Москва", 4.0, 3.0),
-    ]
-
-    for text in outputs:
-        assert "Екатеринбург" in text
-        assert "Москва" in text
-        assert text.count("✨ ") == 2
-        assert "Кратко:" not in text
-        _assert_no_advisory_or_comparative_phrases(text)
-
-
 def test_forecast_summary_prefers_specific_precipitation_type_over_generic(monkeypatch):
     AiWeatherService = _import_service_with_stubbed_postgres(monkeypatch)
     service = AiWeatherService(api_key="")
