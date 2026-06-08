@@ -4,8 +4,7 @@ import json
 import re
 
 from formatters import build_history_brief_summary, build_monthly_climate_brief_summary
-from postgres_storage import get_ai_cached_response, save_ai_cached_response
-from ai import compare_render, fallbacks, location_assist, prompts, signatures
+from ai import compare_render, fallbacks, location_assist, prompts, response_cache, signatures
 from weather.pressure import format_pressure_mmhg
 
 logger = logging.getLogger(__name__)
@@ -297,23 +296,17 @@ class AiWeatherService:
 
     def _get_cached(self, cache_key: str) -> str | None:
         """Безопасно читает ответ из PostgreSQL-кэша."""
-        try:
-            return get_ai_cached_response(cache_key)
-        except Exception as exc:
-            logger.warning("Ошибка чтения AI-кэша PostgreSQL: %s", exc)
-            return None
+        return response_cache.get_cached_response(cache_key, logger=logger)
 
     def _save_cached(self, cache_key: str, scenario: str, text: str, *, ttl_seconds: int) -> None:
         """Безопасно сохраняет ответ в PostgreSQL-кэш."""
-        try:
-            save_ai_cached_response(
-                cache_key,
-                scenario,
-                text,
-                ttl_seconds=ttl_seconds,
-            )
-        except Exception as exc:
-            logger.warning("Ошибка записи AI-кэша PostgreSQL: %s", exc)
+        response_cache.save_cached_response(
+            cache_key,
+            scenario,
+            text,
+            ttl_seconds=ttl_seconds,
+            logger=logger,
+        )
 
     def _current_signature(self, city_label: str, weather_data: dict) -> dict:
         """Возвращает сигнатуру ключевых параметров текущей погоды."""
