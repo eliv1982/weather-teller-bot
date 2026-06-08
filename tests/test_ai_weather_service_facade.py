@@ -271,11 +271,13 @@ def test_compare_forecast_day_rejects_invalid_cached_text_and_stays_deterministi
         service,
         "_build_forecast_day_risk_profile",
         lambda payload: (_ for _ in ()).throw(AssertionError("_build_forecast_day_risk_profile should not be used")),
+        raising=False,
     )
     monkeypatch.setattr(
         service,
         "_build_forecast_compare_verdict",
         lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
+        raising=False,
     )
     monkeypatch.setattr(
         service,
@@ -328,11 +330,13 @@ def test_compare_forecast_day_cache_hit_skips_profile_and_verdict_helpers(monkey
         service,
         "_build_forecast_day_risk_profile",
         lambda payload: (_ for _ in ()).throw(AssertionError("_build_forecast_day_risk_profile should not be used")),
+        raising=False,
     )
     monkeypatch.setattr(
         service,
         "_build_forecast_compare_verdict",
         lambda profile_1, profile_2: (_ for _ in ()).throw(AssertionError("_build_forecast_compare_verdict should not be used")),
+        raising=False,
     )
     monkeypatch.setattr(
         service,
