@@ -19,6 +19,27 @@ from .states import (
 from .callbacks_common import mark_location_choice_selected, return_to_location_input_context
 
 
+def _edit_forecast_message_best_effort(call, *, ctx, text: str, reply_markup) -> None:
+    """Редактирует сообщение прогноза; сбой Telegram не должен оставлять callback без ответа."""
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    try:
+        ctx.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+    except Exception as exc:
+        # Только тип исключения: сообщения сетевых ошибок могут содержать URL с токеном бота.
+        ctx.logger.warning(
+            "Forecast callback edit_message_text failed: chat_id=%s message_id=%s error=%s",
+            chat_id,
+            message_id,
+            type(exc).__name__,
+        )
+
+
 def handle_forecast_callback(
     call,
     *,
@@ -161,9 +182,9 @@ def handle_forecast_callback(
     if call.data == FORECAST_BACK:
         days = list(cache["grouped"].keys())
         keyboard = ctx.build_forecast_days_keyboard(days)
-        ctx.bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
+        _edit_forecast_message_best_effort(
+            call,
+            ctx=ctx,
             text=f"Выбери день прогноза для {cache['city']}:",
             reply_markup=keyboard,
         )
@@ -188,12 +209,7 @@ def handle_forecast_callback(
 
         text = ctx.format_forecast_day(day, day_items, cache["city"])
         keyboard = ctx.build_forecast_day_keyboard(list(cache["grouped"].keys()), day)
-        ctx.bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=text,
-            reply_markup=keyboard,
-        )
+        _edit_forecast_message_best_effort(call, ctx=ctx, text=text, reply_markup=keyboard)
         ctx.bot.answer_callback_query(call.id)
         return
 

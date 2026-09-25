@@ -177,7 +177,7 @@ def handle_forecast_text(
 
     if state in {WAITING_FORECAST_CITY, WAITING_TODAY_FORECAST_CITY, WAITING_TOMORROW_FORECAST_CITY}:
         query = (message.text or "").strip()
-        if query == "⭐ Из сохранённых":
+        if query.replace("ё", "е") == "⭐ Из сохраненных":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:

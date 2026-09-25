@@ -451,6 +451,56 @@ def save_user(user_id: int, user_data: dict) -> None:
             )
 
 
+def update_alert_subscription_state(
+    user_id: int,
+    location_id: str,
+    *,
+    last_check_ts: int,
+    expected_last_check_ts: int,
+    expected_interval_h: int,
+    last_alert_signature: str | None = None,
+) -> bool:
+    """
+    Точечно обновляет операционное состояние ОДНОЙ подписки уведомлений: (user_id, location_id).
+
+    Для фонового worker'а, который работает по устаревшему снимку пользователя (load_all_users
+    в начале итерации). В отличие от save_user, не переписывает saved_locations, остальные подписки
+    и настройки этой подписки (enabled, interval_h, title, label, lat, lon): параллельные правки
+    пользователя из бота не теряются, а удалённая подписка не «воскресает» (строка не найдена).
+
+    - last_check_ts выставляется, только если в БД одновременно last_check_ts всё ещё равен
+      expected_last_check_ts и interval_h всё ещё равен expected_interval_h (значениям из снимка):
+      при смене интервала бот меняет interval_h и сбрасывает last_check_ts в 0, и этот сброс не должен
+      затираться. Одной проверки last_check_ts мало: если в снимке он уже был 0, сброс в 0 от него не
+      отличить, а смена interval_h как раз выдаёт правку пользователя;
+    - last_alert_signature обновляется только если передан (не None) и всегда, независимо от условия выше.
+
+    Возвращает True, если подписка найдена, иначе False.
+    """
+    with _cursor(commit=True) as cur:
+        cur.execute(
+            """
+            UPDATE alert_subscriptions
+            SET last_check_ts = CASE
+                    WHEN last_check_ts = CAST(%s AS BIGINT) AND interval_h = CAST(%s AS INTEGER)
+                        THEN CAST(%s AS BIGINT)
+                    ELSE last_check_ts
+                END,
+                last_alert_signature = COALESCE(CAST(%s AS TEXT), last_alert_signature)
+            WHERE user_id = %s AND location_id = %s;
+            """,
+            (
+                int(expected_last_check_ts),
+                int(expected_interval_h),
+                int(last_check_ts),
+                last_alert_signature,
+                int(user_id),
+                str(location_id),
+            ),
+        )
+        return bool(cur.rowcount)
+
+
 def load_all_users() -> dict[int, dict]:
     """
     Загружает всех пользователей из PostgreSQL в совместимом формате.

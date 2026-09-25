@@ -2,7 +2,7 @@
 Formatters for current weather, extended details, saved locations, alerts, and help text.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from weather.air_quality import analyze_air_pollution
 from weather.descriptions import normalize_weather_description
@@ -125,11 +125,23 @@ def format_weather_response(city_label: str, weather: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_hh_mm_from_unix(unix_ts: int | None) -> str:
-    """Преобразует unix timestamp в формат ЧЧ:ММ."""
-    if unix_ts is None:
+def _timezone_offset_seconds(weather: dict) -> int | None:
+    """Возвращает сдвиг локации от UTC в секундах из payload (`timezone` в ответе OpenWeather)."""
+    raw = weather.get("timezone")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    return int(raw)
+
+
+def _format_hh_mm_from_unix(unix_ts: int | None, tz_offset_seconds: int | None) -> str:
+    """Преобразует unix timestamp в ЧЧ:ММ во времени локации (не в timezone сервера)."""
+    if unix_ts is None or tz_offset_seconds is None:
         return "н/д"
-    return datetime.fromtimestamp(unix_ts).strftime("%H:%M")
+    try:
+        location_tz = timezone(timedelta(seconds=tz_offset_seconds))
+        return datetime.fromtimestamp(unix_ts, location_tz).strftime("%H:%M")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "н/д"
 
 
 def _format_visibility(visibility_meters: int | float | None) -> str:
@@ -173,8 +185,9 @@ def format_details_response(city_label: str, weather: dict, air_components: dict
     wind_deg = wind_data.get("deg")
     clouds = clouds_data.get("all")
     visibility = weather.get("visibility")
-    sunrise = _format_hh_mm_from_unix(sys_data.get("sunrise"))
-    sunset = _format_hh_mm_from_unix(sys_data.get("sunset"))
+    tz_offset_seconds = _timezone_offset_seconds(weather)
+    sunrise = _format_hh_mm_from_unix(sys_data.get("sunrise"), tz_offset_seconds)
+    sunset = _format_hh_mm_from_unix(sys_data.get("sunset"), tz_offset_seconds)
 
     if wind_speed is None:
         wind_text = "н/д"

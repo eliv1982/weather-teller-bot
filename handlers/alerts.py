@@ -195,7 +195,7 @@ def handle_alerts_text(
         return True
 
     if state == WAITING_ALERTS_ADD_MENU:
-        if message.text == "⭐ Из сохранённых":
+        if (message.text or "").replace("ё", "е") == "⭐ Из сохраненных":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:

@@ -170,8 +170,9 @@ def format_forecast_day(day: str, day_items: list[dict], city_label: str) -> str
         "🕒 По времени:",
     ]
     for item in day_items:
-        dt_txt = item.get("dt_txt", "")
-        time_part = dt_txt.split(" ")[1][:5] if " " in dt_txt else "--:--"
+        # dt_txt — UTC; пользователю показываем локальное время слота (с его собственным offset).
+        local_dt = get_slot_local_datetime(item)
+        time_part = local_dt.strftime("%H:%M") if local_dt is not None else "--:--"
         temp = item.get("main", {}).get("temp")
         description = item.get("weather", [{}])[0].get("description", "без описания")
         temp_text = f"{temp:.1f}" if isinstance(temp, (int, float)) else "н/д"

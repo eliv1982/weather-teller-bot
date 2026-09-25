@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import copy
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from dotenv import load_dotenv
@@ -183,6 +184,12 @@ def _log_cache_set(scope: str, key: str, ttl_seconds: int, *, query: str | None 
     logger.info("API cache SET: %s ttl=%s key=%s", scope, ttl_seconds, key)
 
 
+def _endpoint_for_log(url: str) -> str:
+    """Возвращает URL без query-string и fragment, безопасный для логов."""
+    parts = urlsplit(str(url))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
 def safe_request(
     url: str,
     params: dict,
@@ -200,13 +207,20 @@ def safe_request(
     for attempt in range(1, retries + 1):
         try:
             response = requests.get(url, params=params, timeout=timeout)
-        except requests.RequestException:
+        except requests.RequestException as exc:
             if attempt < retries:
                 time.sleep(delay)
                 delay *= 2
                 continue
             LAST_ERROR_TYPE = "network"
-            logging.exception("safe_request request exception: %s", url)
+            # Не логируем str(exc)/traceback: сообщения requests содержат полный URL
+            # с query-string (в т.ч. appid=<OW_API_KEY>).
+            logger.error(
+                "safe_request network error: endpoint=%s exc_type=%s attempts=%s",
+                _endpoint_for_log(url),
+                type(exc).__name__,
+                attempt,
+            )
             return None
 
         if response.status_code == 429:

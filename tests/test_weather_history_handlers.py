@@ -17,6 +17,7 @@ sys.modules.setdefault("telebot", telebot_module)
 from handlers.callbacks_history import handle_history_callback
 from handlers.history import handle_history_text
 from session_store import SessionStore
+from weather_monthly_service import parse_monthly_history_year_input
 
 
 class _FakeBot:
@@ -510,7 +511,16 @@ def test_handle_history_text_valid_monthly_year_input_sends_report():
     assert sent == [(123, 7)]
 
 
-def test_handle_history_text_future_monthly_year_input_keeps_state_and_reprompts():
+def test_handle_history_text_future_monthly_year_input_keeps_state_and_reprompts(monkeypatch):
+    # The handler does not inject a reference date, so freeze "today" at the parser boundary
+    # (real parser, fixed date) and derive the future month from it: no wall-clock dependency.
+    reference_today = date(2026, 6, 7)
+    future_month_input = f"{reference_today.year}-{reference_today.month + 1:02d}"
+    monkeypatch.setattr(
+        "handlers.history.parse_monthly_history_year_input",
+        lambda raw_value, **kwargs: parse_monthly_history_year_input(raw_value, **kwargs, today=reference_today),
+    )
+
     bot = _FakeBot()
     ctx = SimpleNamespace(bot=bot)
     session_store = SessionStore()
@@ -524,7 +534,7 @@ def test_handle_history_text_future_monthly_year_input_keeps_state_and_reprompts
     }
 
     result = handle_history_text(
-        _message("2026-07"),
+        _message(future_month_input),
         7,
         "waiting_history_climate_year",
         ctx=ctx,

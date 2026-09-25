@@ -208,9 +208,11 @@ from postgres_storage import (
     load_user,
     save_all_users,
     save_user,
+    update_alert_subscription_state,
 )
 from session_store import SessionStore
 from app_context import AppContext
+from utils.logging_setup import build_log_handlers, protect_library_loggers, register_secret
 from flows import (
     alerts_worker as flow_alerts_worker,
     complete_compare_two_locations as flow_complete_compare_two_locations,
@@ -241,10 +243,7 @@ from flows import (
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("bot.log", encoding="utf-8"),
-    ],
+    handlers=build_log_handlers(),
 )
 logger = logging.getLogger(__name__)
 
@@ -257,6 +256,9 @@ if not BOT_TOKEN:
     logger.error("Ошибка запуска: BOT_TOKEN не найден в файле .env.")
     raise SystemExit(0)
 
+# Сетевые ошибки Telegram-клиента содержат URL /bot<TOKEN>/method: токен не должен попасть в логи.
+register_secret(BOT_TOKEN, "BOT_TOKEN")
+protect_library_loggers()
 
 bot = telebot.TeleBot(BOT_TOKEN)
 session_store = SessionStore()
@@ -270,6 +272,7 @@ ctx = AppContext(
     save_user=save_user,
     load_all_users=load_all_users,
     save_all_users=save_all_users,
+    update_alert_subscription_state=update_alert_subscription_state,
     main_menu=main_menu,
     weather_menu=weather_menu,
     alerts_menu=alerts_menu,
@@ -1126,6 +1129,12 @@ if __name__ == "__main__":
         alerts_thread.start()
         logger.info("Фоновый поток alerts_worker запущен (PID=%s).", process_id)
         logger.info("Старт polling (PID=%s).", process_id)
-        bot.infinity_polling(skip_pending=True)
+        try:
+            bot.infinity_polling(skip_pending=True)
+        except Exception:
+            # skip_pending выполняется до внутреннего try/except библиотеки: без этого traceback с URL
+            # /bot<TOKEN>/getUpdates ушел бы в stderr мимо logging-фильтра.
+            logger.exception("Polling остановлен из-за необработанной ошибки.")
+            raise SystemExit(1)
     except KeyboardInterrupt:
         print("Бот остановлен пользователем.")

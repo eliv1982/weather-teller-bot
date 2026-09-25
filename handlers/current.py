@@ -23,7 +23,7 @@ def handle_current_text(
     """Обрабатывает текстовые состояния сценария текущей погоды."""
     if state == WAITING_CURRENT_WEATHER_CITY:
         query = (message.text or "").strip()
-        if query == "⭐ Из сохранённых":
+        if query.replace("ё", "е") == "⭐ Из сохраненных":
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:

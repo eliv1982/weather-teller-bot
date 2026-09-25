@@ -1,6 +1,7 @@
 from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
 
+from forecast_service import get_slot_local_datetime
 from weather.descriptions import normalize_weather_description
 
 
@@ -134,10 +135,10 @@ def _ai_compare_day_payload(
         if isinstance(precipitation_amount, (int, float)):
             precipitation_amounts.append(float(precipitation_amount))
 
-        dt_txt = str(item.get("dt_txt") or "")
-        if " " in dt_txt:
-            time_part = dt_txt.split(" ")[1][:5]
-            intervals.append(time_part)
+        # dt_txt — UTC; интервалы уходят в AI-сводку как время локации, поэтому берём локальное время слота.
+        local_dt = get_slot_local_datetime(item)
+        if local_dt is not None:
+            intervals.append(local_dt.strftime("%H:%M"))
 
     dominant_description = max(desc_counter, key=desc_counter.get) if desc_counter else "без описания"
     meta = location_meta if isinstance(location_meta, dict) else {}

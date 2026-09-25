@@ -1,5 +1,6 @@
 """Prompt templates/builders extracted from AiWeatherService."""
 
+from forecast_service import get_slot_local_datetime
 from weather.descriptions import normalize_weather_description
 from weather.pressure import format_pressure_mmhg
 
@@ -165,8 +166,9 @@ def _tomorrow_ai_payload(day_forecast_data: list[dict]) -> dict:
         if not isinstance(item, dict):
             continue
         if not date_label:
-            dt_txt = str(item.get("dt_txt") or "")
-            date_label = dt_txt.split(" ", 1)[0] if dt_txt else ""
+            # dt_txt — UTC; дата прогноза должна быть локальной датой слота.
+            local_dt = get_slot_local_datetime(item)
+            date_label = local_dt.strftime("%Y-%m-%d") if local_dt is not None else ""
         main_data = item.get("main", {}) if isinstance(item.get("main"), dict) else {}
         wind_data = item.get("wind", {}) if isinstance(item.get("wind"), dict) else {}
         weather_list = item.get("weather")

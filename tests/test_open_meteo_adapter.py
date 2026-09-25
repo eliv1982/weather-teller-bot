@@ -182,6 +182,8 @@ def test_map_forecast_empty_on_bad_hourly():
 
 def test_non_utc_timezone_offset_propagates():
     om = _sample_om_root()
+    # Keep the payload self-consistent: the IANA id is authoritative, so it must match the offset.
+    om["timezone"] = "Europe/Moscow"
     om["utc_offset_seconds"] = 10800
     slots = map_open_meteo_to_forecast_slots(om, every_nth_hour=3)
     assert all(s["_timezone_offset"] == 10800 for s in slots)

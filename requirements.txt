@@ -1,5 +1,8 @@
-requests
-python-dotenv
-pyTelegramBotAPI
-psycopg[binary]
-openai
+# Production dependencies (installed by the Dockerfile).
+# Direct dependencies are pinned to the versions of the last verified image build; transitive
+# dependencies are resolved by pip at install time (no lockfile). Bump deliberately and re-run the tests.
+requests==2.34.2
+python-dotenv==1.2.2
+pyTelegramBotAPI==4.34.0
+psycopg[binary]==3.3.4
+openai==2.41.0

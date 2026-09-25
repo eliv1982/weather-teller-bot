@@ -15,6 +15,9 @@ from .states import (
 
 logger = logging.getLogger(__name__)
 
+# Во всех обработчиках ниже логируется только тип исключения: сообщения сетевых ошибок Telegram-клиента
+# (requests) содержат URL вида /bot<TOKEN>/method, то есть токен бота.
+
 
 def mark_location_choice_selected(
     call,
@@ -55,11 +58,10 @@ def mark_location_choice_selected(
         return
     except Exception as exc:
         logger.warning(
-            "Location choice cleanup edit_message_text failed: chat_id=%s message_id=%s error=%s: %s",
+            "Location choice cleanup edit_message_text failed: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
             type(exc).__name__,
-            exc,
         )
 
     try:
@@ -76,11 +78,10 @@ def mark_location_choice_selected(
         return
     except Exception as exc:
         logger.warning(
-            "Location choice cleanup edit_message_reply_markup failed: chat_id=%s message_id=%s error=%s: %s",
+            "Location choice cleanup edit_message_reply_markup failed: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
             type(exc).__name__,
-            exc,
         )
 
     try:
@@ -92,11 +93,10 @@ def mark_location_choice_selected(
         )
     except Exception as exc:
         logger.warning(
-            "Location choice cleanup delete_message failed: chat_id=%s message_id=%s error=%s: %s",
+            "Location choice cleanup delete_message failed: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
             type(exc).__name__,
-            exc,
         )
 
 
@@ -113,10 +113,10 @@ def try_delete_message(ctx, chat_id: int, message_id: int | None) -> None:
         bot.delete_message(chat_id, message_id)
     except Exception as exc:
         logger.debug(
-            "Best-effort delete skipped: chat_id=%s message_id=%s: %s",
+            "Best-effort delete skipped: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
-            exc,
+            type(exc).__name__,
         )
 
 
@@ -141,11 +141,10 @@ def clear_inline_choice_message(call, ctx) -> None:
         return
     except Exception as exc:
         logger.warning(
-            "Inline cleanup delete_message failed: chat_id=%s message_id=%s error=%s: %s",
+            "Inline cleanup delete_message failed: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
             type(exc).__name__,
-            exc,
         )
 
     try:
@@ -161,11 +160,10 @@ def clear_inline_choice_message(call, ctx) -> None:
         )
     except Exception as exc:
         logger.warning(
-            "Inline cleanup edit_message_reply_markup failed: chat_id=%s message_id=%s error=%s: %s",
+            "Inline cleanup edit_message_reply_markup failed: chat_id=%s message_id=%s error=%s",
             chat_id,
             message_id,
             type(exc).__name__,
-            exc,
         )
 
 

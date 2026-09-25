@@ -140,7 +140,7 @@ History flow в beta-версии уже приведен к общему UX п�
 
 ## Стек
 
-- Python
+- Python 3.12
 - pyTelegramBotAPI
 - Docker Compose
 - PostgreSQL
@@ -149,6 +149,7 @@ History flow в beta-версии уже приведен к общему UX п�
 - Open-Meteo Historical Weather API
 - OpenAI API
 - pytest
+- GitHub Actions (CI)
 
 ## Структура проекта
 
@@ -158,7 +159,6 @@ History flow в beta-версии уже приведен к общему UX п�
 weather_telegram_bot/
 ├── bot.py
 ├── flows.py
-├── formatters.py
 ├── keyboards.py
 ├── app_context.py
 ├── ai_weather_service.py
@@ -168,11 +168,26 @@ weather_telegram_bot/
 ├── alerts_service.py
 ├── alerts_subscription_service.py
 ├── locations_service.py
-├── storage.py
+├── session_store.py
 ├── postgres_storage.py
+├── Dockerfile
+├── .dockerignore
 ├── docker-compose.yml
 ├── docker-compose.postgres.yml
+├── requirements.txt
+├── requirements-dev.txt
 ├── .env.example
+├── .env.docker.example
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── ai/
+├── formatters/
+│   ├── weather.py
+│   ├── forecast.py
+│   ├── history.py
+│   ├── source_compare.py
+│   └── ...
 ├── handlers/
 │   ├── history.py
 │   ├── callbacks_history.py
@@ -190,6 +205,11 @@ weather_telegram_bot/
 │   ├── descriptions.py
 │   ├── locations.py
 │   └── pressure.py
+├── workers/
+│   └── alerts_worker.py
+├── utils/
+│   ├── date_parsing.py
+│   └── logging_setup.py
 └── tests/
     ├── test_weather_history_service.py
     ├── test_weather_history_formatter.py
@@ -203,23 +223,25 @@ weather_telegram_bot/
     └── ...
 ```
 
+Хранение данных: пользовательские данные и AI cache лежат в PostgreSQL (`postgres_storage.py`), временные состояния диалогов — в памяти процесса (`session_store.py`).
+
 ## Переменные окружения
 
-Актуальный набор переменных можно посмотреть в `.env.example`.
-
-Основные переменные:
+Актуальный набор переменных — в `.env.example` (запуск через Python) и `.env.docker.example` (Docker Compose). Значения ниже — плейсхолдеры из `.env.example`:
 
 ```env
-OW_API_KEY=
-BOT_TOKEN=
+OW_API_KEY=your_openweather_key
+BOT_TOKEN=your_telegram_token
 OPEN_METEO_FALLBACK=1
+
 PGHOST=localhost
 PGPORT=5432
 PGDATABASE=weather_teller
-PGUSER=postgres
-PGPASSWORD=postgres
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
+PGUSER=weather_user
+PGPASSWORD=change_me_strong_password
+
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 Пояснения:
@@ -228,12 +250,23 @@ OPENAI_MODEL=gpt-4.1-mini
 - `BOT_TOKEN` обязателен для запуска Telegram-бота.
 - `OPEN_METEO_FALLBACK=1` включает fallback на Open-Meteo для current weather, forecast и geocoding, когда это предусмотрено кодом.
 - Open-Meteo в этом проекте используется без отдельного API key.
+- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` — параметры подключения к PostgreSQL. В Docker Compose `PGHOST=postgres` (имя сервиса), при запуске через Python — адрес вашего PostgreSQL.
 - `OPENAI_API_KEY` опционален. Если он не задан, бот продолжает работать через factual fallback-пояснения.
-- `OPENAI_MODEL` задает модель для коротких AI-пояснений.
+- `OPENAI_MODEL` задает модель для коротких AI-пояснений; значение по умолчанию в коде — `gpt-5.4-mini`.
+
+Реальные значения хранятся только в локальном `.env`: он указан в `.gitignore` и исключен из Docker build context (`.dockerignore`).
 
 ## Локальный запуск
 
 ### Рекомендуемый путь: Docker Compose
+
+Создайте `.env` из шаблона для Docker и заполните значения (`BOT_TOKEN`, `OW_API_KEY`, `PGPASSWORD` и т. д.):
+
+```bash
+cp .env.docker.example .env
+```
+
+Затем:
 
 ```bash
 docker compose up -d --build
@@ -241,6 +274,8 @@ docker compose ps
 docker compose logs -f weather_bot
 docker compose down
 ```
+
+`docker-compose.yml` читает `.env` дважды: для подстановки `${PGDATABASE}`, `${PGUSER}`, `${PGPASSWORD}` в сервис `postgres` и через `env_file` для контейнера `weather_bot`.
 
 ### Запуск только бота после сборки
 
@@ -254,10 +289,13 @@ docker compose logs -f weather_bot
 Если нужен быстрый локальный цикл без контейнеров:
 
 ```bash
+python -m venv venv
+venv\Scripts\activate          # Linux/macOS: source venv/bin/activate
+pip install -r requirements-dev.txt   # для запуска одного бота достаточно requirements.txt
 python bot.py
 ```
 
-Перед запуском заполните `.env` на основе `.env.example`.
+Перед запуском заполните `.env` на основе `.env.example`. PostgreSQL должен быть доступен по `PGHOST`/`PGPORT`: в compose-файлах порт PostgreSQL наружу не публикуется (строка `ports` закомментирована).
 
 Важно: если используется тот же `BOT_TOKEN`, нельзя одновременно держать production polling и локальный polling. Иначе Telegram может вернуть conflict между двумя процессами.
 
@@ -278,6 +316,17 @@ docker compose up -d --build weather_bot
 docker compose down
 ```
 
+### Docker-образ
+
+- Образ основан на `python:3.12-slim`; ставятся только production-зависимости из `requirements.txt` (`requirements-dev.txt` и pytest в образ не устанавливаются).
+- Бот запускается не от root, а от пользователя `appuser` (UID 10001). `/app` принадлежит этому пользователю, поэтому `bot.log` и его ротируемые копии создаются без привилегий.
+- `.dockerignore` исключает из build context `.env`, `.env.*`, `.git`, `venv`, логи и кэши: секреты не попадают в образ и передаются только при запуске через `env_file: .env`.
+- Чтобы пересобрать образ на актуальном базовом образе `python:3.12-slim`: `docker compose build --pull`.
+
+### Логирование
+
+Логи пишутся в stderr (виден в `docker compose logs`) и в `bot.log` с ротацией (до 5 МБ на файл, 3 архивные копии). Значение `BOT_TOKEN` маскируется в записях лога приложения и логгера pyTelegramBotAPI, включая traceback сетевых ошибок, в которых токен присутствует в URL (`/bot<TOKEN>/getUpdates`): вместо него выводится `[REDACTED:BOT_TOKEN]`.
+
 ## PostgreSQL
 
 PostgreSQL используется для хранения пользовательских данных и AI cache.
@@ -293,13 +342,27 @@ PostgreSQL используется для хранения пользовате
 
 ## Тесты и проверки
 
-Основные команды проверки:
+Установка и запуск с нуля (нужен Python 3.12):
 
 ```bash
-python -m pytest
-python -m compileall .
-rg "ё|Ё"
+pip install -r requirements-dev.txt
+python -m pytest -q
+python -m compileall -q . -x "venv|\.git"
+python -m pip check
+git diff --check
 ```
+
+Тесты не требуют `.env`, секретов, PostgreSQL и доступа к сети: Telegram, OpenWeather, Open-Meteo и OpenAI подменяются, хранилище проверяется через моки и in-memory SQLite. Ожидаемый результат: без падений; часть тестов помечена `skip`/`xfail` (заглушки интеграционных тестов PostgreSQL).
+
+Дополнительно, при наличии `ripgrep`: `rg "ё|Ё"` (проверка на букву `ё`; в комментариях и docstrings старого кода совпадения пока есть).
+
+CI: GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull request в `main` ставит `requirements-dev.txt` на Python 3.12 и выполняет `pip check`, `compileall`, проверку пробелов в изменениях (`git diff --check`) и `pytest`.
+
+### Зависимости
+
+- `requirements.txt` — production-зависимости; прямые зависимости закреплены точными версиями (`==`).
+- `requirements-dev.txt` — `requirements.txt` плюс pytest.
+- Транзитивные зависимости pip подбирает при установке (lock-файла нет). Обновление версий — осознанное изменение: поменять пин, прогнать тесты и `pip check`.
 
 Что уже покрыто тестами:
 
@@ -312,7 +375,10 @@ rg "ё|Ё"
 - source compare formatter;
 - source compare flow;
 - date parsing;
-- error paths для history и fallback-сценариев Open-Meteo.
+- error paths для history и fallback-сценариев Open-Meteo;
+- фоновая проверка подписок и сохранение ее состояния;
+- маскирование секретов в логах и ротация `bot.log`;
+- статические проверки Docker build context и non-root запуска.
 
 ## Roadmap
 

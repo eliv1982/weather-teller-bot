@@ -12,6 +12,7 @@ class AppContext:
     save_user: Any
     load_all_users: Any
     save_all_users: Any
+    update_alert_subscription_state: Any
     main_menu: Any
     weather_menu: Any
     alerts_menu: Any

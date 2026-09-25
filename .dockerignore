@@ -1,0 +1,42 @@
+# Secrets / local environment: never bake into the image.
+# Runtime configuration is injected via docker-compose `env_file`, not COPY.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python caches / bytecode
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Local virtual environments / caches
+venv
+.venv
+env
+.cache
+
+# Local logs and legacy local data
+**/*.log
+**/*.log.*
+User_Data.json
+
+# Editor / tooling artifacts
+.vscode
+.idea
+.claude
+.cursor
+
+# README-only assets
+screenshots

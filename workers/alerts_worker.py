@@ -27,8 +27,53 @@ def _resolve_alert_location_label(sub: dict) -> str:
     return _short_location_name(raw_label)
 
 
+def _finish_subscription_check(
+    *,
+    ctx,
+    user_id_str: object,
+    sub: dict,
+    previous_check_ts: int,
+    interval_h: int,
+    now_ts: int,
+    new_signature: str | None = None,
+) -> None:
+    """
+    Фиксирует результат проверки одной подписки: last_check_ts (и last_alert_signature после отправки).
+
+    В БД уходит только состояние этой подписки (точечный UPDATE по user_id + location_id), а не весь
+    устаревший снимок пользователя: правки, сделанные пользователем в боте во время итерации
+    (локации, настройки подписок), не затираются. previous_check_ts и interval_h - значения из снимка,
+    по которым определялось, что подписка пора проверять: last_check_ts обновится, только если в БД оба
+    всё ещё такие же (смена интервала в боте меняет interval_h и сбрасывает last_check_ts в 0).
+    """
+    sub["last_check_ts"] = now_ts
+    if new_signature is not None:
+        sub["last_alert_signature"] = new_signature
+    location_id = sub.get("location_id")
+    try:
+        ctx.update_alert_subscription_state(
+            int(user_id_str),
+            str(location_id),
+            last_check_ts=now_ts,
+            expected_last_check_ts=previous_check_ts,
+            expected_interval_h=interval_h,
+            last_alert_signature=new_signature,
+        )
+    except Exception:
+        ctx.logger.exception(
+            "Не удалось сохранить состояние уведомления пользователя %s (подписка %s).",
+            user_id_str,
+            location_id,
+        )
+
+
 def run_alerts_worker_iteration(*, ctx) -> bool:
-    """Выполняет одну итерацию фоновой проверки уведомлений."""
+    """
+    Выполняет одну итерацию фоновой проверки уведомлений.
+
+    В БД записывается только состояние проверенных подписок (last_check_ts / last_alert_signature),
+    по одной подписке за раз; загруженный в начале итерации снимок пользователей целиком не сохраняется.
+    """
     all_users = ctx.load_all_users()
     changed = False
     now_ts = int(time.time())
@@ -57,12 +102,20 @@ def run_alerts_worker_iteration(*, ctx) -> bool:
             last_check_ts = sub.get("last_check_ts", 0)
             if not isinstance(last_check_ts, (int, float)):
                 last_check_ts = 0
-            if now_ts - int(last_check_ts) < interval_h * 3600:
+            previous_check_ts = int(last_check_ts)
+            if now_ts - previous_check_ts < interval_h * 3600:
                 continue
 
             forecast_items = ctx.get_forecast_5d3h(float(lat), float(lon))
             if not forecast_items:
-                sub["last_check_ts"] = now_ts
+                _finish_subscription_check(
+                    ctx=ctx,
+                    user_id_str=user_id_str,
+                    sub=sub,
+                    previous_check_ts=previous_check_ts,
+                    interval_h=interval_h,
+                    now_ts=now_ts,
+                )
                 changed = True
                 continue
 
@@ -81,7 +134,14 @@ def run_alerts_worker_iteration(*, ctx) -> bool:
                 previous_signature = str(sub.get("last_alert_signature") or "")
 
                 if previous_signature == alert_signature:
-                    sub["last_check_ts"] = now_ts
+                    _finish_subscription_check(
+                        ctx=ctx,
+                        user_id_str=user_id_str,
+                        sub=sub,
+                        previous_check_ts=previous_check_ts,
+                        interval_h=interval_h,
+                        now_ts=now_ts,
+                    )
                     changed = True
                     continue
 
@@ -143,18 +203,34 @@ def run_alerts_worker_iteration(*, ctx) -> bool:
                         "🪄 Совет:\n"
                         f"{ai_explanation}"
                     )
+                sent_signature = None
                 try:
                     ctx.bot.send_message(int(user_id_str), alert_text)
-                    sub["last_alert_signature"] = alert_signature
-                    changed = True
+                    sent_signature = alert_signature
                 except Exception:
                     ctx.logger.warning("Не удалось отправить уведомление пользователю %s.", user_id_str)
+                _finish_subscription_check(
+                    ctx=ctx,
+                    user_id_str=user_id_str,
+                    sub=sub,
+                    previous_check_ts=previous_check_ts,
+                    interval_h=interval_h,
+                    now_ts=now_ts,
+                    new_signature=sent_signature,
+                )
+                changed = True
+                continue
 
-            sub["last_check_ts"] = now_ts
+            _finish_subscription_check(
+                ctx=ctx,
+                user_id_str=user_id_str,
+                sub=sub,
+                previous_check_ts=previous_check_ts,
+                interval_h=interval_h,
+                now_ts=now_ts,
+            )
             changed = True
 
-    if changed:
-        ctx.save_all_users(all_users)
     return changed
 
 

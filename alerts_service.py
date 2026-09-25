@@ -150,6 +150,8 @@ def detect_weather_alerts(
     horizon_sec = max(1, int(horizon_hours)) * 3600
     upper_bound_ts = now_utc_ts + horizon_sec
     offset_sec = _extract_timezone_offset(forecast_items, explicit_offset=timezone_offset_seconds)
+    # Слоты могут нести собственный offset (Open-Meteo: DST внутри окна прогноза); явный offset приоритетнее.
+    use_slot_offsets = not isinstance(timezone_offset_seconds, int)
 
     for item in forecast_items:
         if not isinstance(item, dict):
@@ -165,7 +167,11 @@ def detect_weather_alerts(
         lowered = str(raw_description).lower()
         description = normalize_weather_description(raw_description)
         if any(keyword in lowered for keyword in keywords):
-            local_ts = slot_ts + offset_sec
+            slot_offset_sec = offset_sec
+            raw_slot_offset = item.get("_timezone_offset")
+            if use_slot_offsets and isinstance(raw_slot_offset, (int, float)) and not isinstance(raw_slot_offset, bool):
+                slot_offset_sec = int(raw_slot_offset)
+            local_ts = slot_ts + slot_offset_sec
             local_dt = datetime.fromtimestamp(local_ts, UTC)
             local_slot = local_dt.strftime("%d.%m %H:%M")
             text = f"{local_slot} — {description}"

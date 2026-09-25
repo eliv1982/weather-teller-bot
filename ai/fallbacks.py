@@ -1,8 +1,8 @@
 """Deterministic fallback text helpers extracted from AiWeatherService."""
 
-from datetime import datetime
 import re
 
+from forecast_service import get_slot_local_datetime
 from weather.descriptions import normalize_weather_description
 from weather.pressure import get_pressure_note_hpa
 
@@ -96,18 +96,14 @@ def fallback_day_forecast(city_label: str, day_items: list[dict]) -> str:
         pressure = main_data.get("pressure")
         if isinstance(pressure, (int, float)):
             pressure_values.append(float(pressure))
-        dt_txt = str(item.get("dt_txt") or "")
         if isinstance(temp, (int, float)) and (best_temp is None or temp > best_temp):
             best_temp = float(temp)
-            best_slot = dt_txt
+            # dt_txt — UTC; пользователю показываем локальное время слота.
+            best_slot = get_slot_local_datetime(item)
     rain_note = "В течение дня возможны осадки." if rain_slots > 0 else "Существенных осадков по прогнозу не видно."
     slot_note = ""
-    if best_slot and " " in best_slot:
-        try:
-            slot_dt = datetime.strptime(best_slot, "%Y-%m-%d %H:%M:%S")
-            slot_note = f"Лучшее окно для выхода — около {slot_dt.strftime('%H:%M')}."
-        except ValueError:
-            slot_note = ""
+    if best_slot is not None:
+        slot_note = f"Лучшее окно для выхода — около {best_slot.strftime('%H:%M')}."
     pressure_note = ""
     if pressure_values:
         avg_pressure = sum(pressure_values) / len(pressure_values)

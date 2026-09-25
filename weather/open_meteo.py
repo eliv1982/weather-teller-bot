@@ -13,8 +13,9 @@ Open-Meteo forecast/current/geocode fallbacks behind env flags in ``weather.api`
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
@@ -80,7 +81,23 @@ def _num(value: object) -> float | None:
     return None
 
 
-def _parse_om_time(time_str: object) -> datetime | None:
+def _parse_om_time(
+    time_str: object,
+    utc_offset_seconds: int = 0,
+    *,
+    zone: tzinfo | None = None,
+    fold: int = 0,
+) -> datetime | None:
+    """
+    Parse an Open-Meteo time string into an aware UTC datetime.
+
+    Open-Meteo returns naive *local wall-clock* times in the requested timezone
+    (``timezone=auto`` -> the location's zone), not UTC. A naive value is interpreted in
+    ``zone`` (the IANA zone from the payload) when given, so the effective UTC offset follows
+    that timestamp's own DST state; ``fold`` picks the occurrence of a repeated wall-clock hour.
+    Without ``zone`` the payload's fixed ``utc_offset_seconds`` is used instead.
+    Values that carry an explicit offset / ``Z`` are honored as-is.
+    """
     if not isinstance(time_str, str) or not time_str.strip():
         return None
     raw = time_str.strip().replace("Z", "+00:00")
@@ -89,7 +106,13 @@ def _parse_om_time(time_str: object) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        if zone is not None:
+            dt = dt.replace(tzinfo=zone, fold=fold)
+        else:
+            try:
+                dt = dt.replace(tzinfo=timezone(timedelta(seconds=utc_offset_seconds)))
+            except (ValueError, OverflowError):
+                return None
     return dt.astimezone(timezone.utc)
 
 
@@ -98,6 +121,31 @@ def _utc_offset_seconds(om_root: dict[str, Any]) -> int:
     if isinstance(raw, (int, float)):
         return int(raw)
     return 0
+
+
+def _payload_zone(om_root: dict[str, Any]) -> ZoneInfo | None:
+    """
+    IANA zone Open-Meteo reported for the location (``"timezone": "Europe/Berlin"``), or None.
+
+    None means "use the fixed ``utc_offset_seconds``": the identifier is absent, is the literal
+    request value ``"auto"``, is malformed, or the local tz database does not know it.
+    """
+    name = om_root.get("timezone")
+    if not isinstance(name, str) or not name.strip() or name.strip().lower() == "auto":
+        return None
+    try:
+        return ZoneInfo(name.strip())
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        logger.warning("Open-Meteo timezone %r is not resolvable; using fixed utc_offset_seconds", name)
+        return None
+
+
+def _local_offset_seconds(instant_utc: datetime, zone: ZoneInfo | None, fallback_seconds: int) -> int:
+    """UTC offset in effect at ``instant_utc`` in ``zone`` (``fallback_seconds`` without a zone)."""
+    if zone is None:
+        return fallback_seconds
+    offset = instant_utc.astimezone(zone).utcoffset()
+    return int(offset.total_seconds()) if offset is not None else fallback_seconds
 
 
 def _pressure_hpa(current: dict[str, Any]) -> float | None:
@@ -111,13 +159,18 @@ def fetch_open_meteo_forecast_bundle(
     lat: float,
     lon: float,
     *,
-    timezone: str = "UTC",
+    timezone: str = "auto",
     forecast_days: int = 5,
     timeout: int = 10,
 ) -> dict[str, Any] | None:
     """
     Fetch Open-Meteo /v1/forecast JSON for current + hourly variables.
     No API key. Returns parsed dict or None on transport/parse failure.
+
+    ``timezone="auto"`` resolves the location's real timezone: the response then
+    carries local wall-clock ``time`` values, the IANA ``timezone`` id (e.g. ``Europe/Berlin``)
+    and ``utc_offset_seconds``, which the mappers below use to build OpenWeather-like UTC
+    ``dt`` and a per-slot ``_timezone_offset``.
     """
     params = {
         "latitude": lat,
@@ -357,6 +410,15 @@ def map_open_meteo_to_current_weather(om: dict[str, Any]) -> dict[str, Any] | No
             "deg": wind_deg_f,
         },
     }
+    if isinstance(om.get("utc_offset_seconds"), (int, float)):
+        # OpenWeather /weather-shaped shift from UTC in seconds. Prefer the offset in effect at
+        # ``current.time`` (zone-aware) over the payload-wide value, which can differ across DST.
+        payload_offset = _utc_offset_seconds(om)
+        zone = _payload_zone(om)
+        current_utc = _parse_om_time(cur.get("time"), payload_offset, zone=zone)
+        out["timezone"] = (
+            _local_offset_seconds(current_utc, zone, payload_offset) if current_utc is not None else payload_offset
+        )
     return out
 
 
@@ -379,6 +441,15 @@ def map_open_meteo_to_forecast_slots(
     ``every_nth_hour``-th row (default 3 → ~3 h cadence, similar to OW 3h slots).
 
     Each slot includes dt, dt_txt (UTC), _timezone_offset, main, weather, wind, pop.
+
+    Open-Meteo ``time`` values are local wall-clock times in the payload's IANA ``timezone``.
+    ``dt`` / ``dt_txt`` are converted to UTC (OpenWeather convention) and the offset in effect
+    *at that slot* is kept in ``_timezone_offset``, so ``dt + _timezone_offset`` is exactly the
+    local time Open-Meteo reported and day grouping matches the location's calendar days, also
+    when a DST transition falls inside the forecast window (offsets then differ between slots).
+    If the payload has no usable IANA id, the fixed ``utc_offset_seconds`` is used for all slots.
+    A wall-clock hour repeated on a fall-back day is resolved to the later instant on its
+    second occurrence (the series is read in order and must stay increasing in UTC).
     """
     if not isinstance(om, dict):
         return []
@@ -410,14 +481,29 @@ def map_open_meteo_to_forecast_slots(
         if seq:
             n = min(n, len(seq))
     offset_sec = _utc_offset_seconds(om)
+    zone = _payload_zone(om)
     step = max(1, int(every_nth_hour))
+
+    # Resolve every hourly row (not only the sampled ones) so a repeated wall-clock hour on a
+    # fall-back day is detected before downsampling.
+    instants: list[datetime | None] = []
+    previous_utc: datetime | None = None
+    for time_str in times[:n]:
+        dt = _parse_om_time(time_str, offset_sec, zone=zone)
+        if dt is not None and zone is not None and previous_utc is not None and dt <= previous_utc:
+            later = _parse_om_time(time_str, offset_sec, zone=zone, fold=1)
+            if later is not None and later > previous_utc:
+                dt = later
+        if dt is not None:
+            previous_utc = dt
+        instants.append(dt)
 
     slots: list[dict[str, Any]] = []
     for i in range(0, n, step):
-        time_str = times[i]
-        dt = _parse_om_time(time_str)
+        dt = instants[i]
         if dt is None:
             continue
+        slot_offset_sec = _local_offset_seconds(dt, zone, offset_sec)
         unix_utc = int(dt.timestamp())
         dt_txt = dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -452,7 +538,7 @@ def map_open_meteo_to_forecast_slots(
             {
                 "dt": unix_utc,
                 "dt_txt": dt_txt,
-                "_timezone_offset": offset_sec,
+                "_timezone_offset": slot_offset_sec,
                 "main": {
                     "temp": temp,
                     "feels_like": feels,

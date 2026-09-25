@@ -410,7 +410,7 @@ def handle_ai_compare_text(
             session_store.user_states.pop(user_id, None)
             ctx.bot.send_message(message.chat.id, "Сравнение отменено.", reply_markup=ctx.main_menu())
             return True
-        if choice in {"⭐ Из сохранённых", "Из сохранённых"}:
+        if choice.replace("ё", "е") in {"⭐ Из сохраненных", "Из сохраненных"}:
             user_data = ctx.load_user(user_id)
             saved_locations = user_data.get("saved_locations", [])
             if not isinstance(saved_locations, list) or not saved_locations:
