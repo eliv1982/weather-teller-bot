@@ -377,3 +377,52 @@ def test_valid_source_compare_button_does_not_trigger_unknown_command_fallback(m
 
     assert calls == ["🔎 Сравнить источники"]
     assert all("Не понял команду" not in args[1] for args, _kwargs in sent if len(args) > 1)
+
+
+def test_start_sends_updated_greeting_with_main_menu(monkeypatch):
+    telebot_module = types.ModuleType("telebot")
+    telebot_module.TeleBot = _FakeTeleBot
+    telebot_module.types = types.SimpleNamespace(
+        Message=object,
+        CallbackQuery=object,
+        ReplyKeyboardMarkup=object,
+        KeyboardButton=object,
+        InlineKeyboardMarkup=object,
+        InlineKeyboardButton=object,
+        ReplyKeyboardRemove=lambda: "reply-keyboard-remove",
+    )
+    dotenv_module = types.ModuleType("dotenv")
+    dotenv_module.load_dotenv = lambda: None
+
+    monkeypatch.setenv("BOT_TOKEN", "test-bot-token")
+    monkeypatch.setitem(sys.modules, "telebot", telebot_module)
+    monkeypatch.setitem(sys.modules, "dotenv", dotenv_module)
+    sys.modules.pop("bot", None)
+    bot = importlib.import_module("bot")
+
+    sent = []
+    monkeypatch.setattr(bot, "main_menu", lambda: "main-menu-markup")
+    monkeypatch.setattr(bot.bot, "send_message", lambda *args, **kwargs: sent.append((args, kwargs)))
+    message = types.SimpleNamespace(text="/start", from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=2))
+
+    bot.handle_start(message)
+
+    assert sent == [
+        (
+            (
+                2,
+                "Привет! Я Weather Teller 🌤\n\n"
+                "Помогу:\n"
+                "• узнать текущую погоду и прогноз;\n"
+                "• посмотреть расширенные данные и качество воздуха;\n"
+                "• сравнить прогнозы разных источников;\n"
+                "• сравнить погоду в двух местах на выбранную дату;\n"
+                "• сохранить важные локации;\n"
+                "• настроить погодные уведомления;\n"
+                "• посмотреть исторические и климатические данные;\n"
+                "• объяснить погоду простым языком ✨\n\n"
+                "Выбери раздел ниже — и начнем.",
+            ),
+            {"reply_markup": "main-menu-markup"},
+        )
+    ]
