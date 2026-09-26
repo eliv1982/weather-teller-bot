@@ -12,6 +12,61 @@ Weather Teller Telegram Bot помогает быстро посмотреть �
 
 Бот ориентирован на понятные ответы в Telegram, аккуратные AI-пояснения и fallback-режимы, когда AI недоступен. Архивная погода показывается как справка по архивным данным, а не как гарантированное наблюдение конкретной метеостанции.
 
+## Скриншоты
+
+Интерфейс бота в Telegram на демонстрационных локациях. Клик по изображению открывает полноразмерный скриншот.
+
+<table>
+  <tr>
+    <td valign="top" width="50%">
+      <b>Главное меню</b><br>
+      Основные разделы: прогноз, локации, подписки, помощь.<br><br>
+      <a href="screenshots/01_main_menu.png"><img src="screenshots/01_main_menu.png" alt="Главное меню бота" width="100%"></a>
+    </td>
+    <td valign="top" width="50%">
+      <b>Текущая погода и AI-пояснение</b><br>
+      Основные показатели и короткое пояснение простым языком.<br><br>
+      <a href="screenshots/02_current_weather_ai.png"><img src="screenshots/02_current_weather_ai.png" alt="Текущая погода и краткое AI-пояснение" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" width="50%">
+      <b>Расширенные данные и качество воздуха</b><br>
+      Облачность, видимость, восход и закат, показатели качества воздуха (PM2.5, PM10, NO2, SO2, O3, CO).<br><br>
+      <a href="screenshots/03_extended_weather.png"><img src="screenshots/03_extended_weather.png" alt="Расширенные данные и качество воздуха" width="100%"></a>
+    </td>
+    <td valign="top" width="50%">
+      <b>Сравнение прогнозов OpenWeather и Open-Meteo</b><br>
+      Данные двух источников рядом и нейтральный вывод о том, где они сходятся и где расходятся.<br><br>
+      <a href="screenshots/04_source_comparison.png"><img src="screenshots/04_source_comparison.png" alt="Сравнение прогнозов OpenWeather и Open-Meteo" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" width="50%">
+      <b>Сохраненные локации</b><br>
+      Добавление места по названию с собственным именем, например «Поездка».<br><br>
+      <a href="screenshots/05_saved_locations.png"><img src="screenshots/05_saved_locations.png" alt="Сохраненные локации" width="100%"></a>
+    </td>
+    <td valign="top" width="50%">
+      <b>Погодные уведомления</b><br>
+      Подписка на локации и настройка интервала обновлений.<br><br>
+      <a href="screenshots/06_weather_alerts.png"><img src="screenshots/06_weather_alerts.png" alt="Погодные уведомления" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" width="50%">
+      <b>Исторические и климатические данные</b><br>
+      Среднемесячные показатели по архивным данным за 1991-2020: справка, а не прогноз.<br><br>
+      <a href="screenshots/07_climate_history.png"><img src="screenshots/07_climate_history.png" alt="Исторические и климатические данные" width="100%"></a>
+    </td>
+    <td valign="top" width="50%">
+      <b>Сравнение погоды в двух местах на выбранную дату</b><br>
+      Помогает сопоставить условия в двух местах на дату поездки: температуру, осадки и ветер, с кратким пояснением по каждой локации.<br><br>
+      <a href="screenshots/08_location_comparison.png"><img src="screenshots/08_location_comparison.png" alt="Сравнение погоды в двух местах на выбранную дату" width="100%"></a>
+    </td>
+  </tr>
+</table>
+
 ## Возможности
 
 ### Главное меню
@@ -210,6 +265,7 @@ weather_telegram_bot/
 ├── utils/
 │   ├── date_parsing.py
 │   └── logging_setup.py
+├── screenshots/
 └── tests/
     ├── test_weather_history_service.py
     ├── test_weather_history_formatter.py
