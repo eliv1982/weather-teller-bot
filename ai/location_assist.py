@@ -239,4 +239,3 @@ def build_structured_location_alternatives(normalized_input: str) -> dict | None
         "clarification_text": "",
         "reason": "structured_settlement_area_query",
     }
-

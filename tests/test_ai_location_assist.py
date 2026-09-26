@@ -57,4 +57,3 @@ def test_fallback_near_me_requires_geolocation_clarification():
     result = location_assist.fallback_location_assist(service, "рядом со мной", None)
     assert result["needs_clarification"] is True
     assert "геолокац" in result["clarification_text"].lower()
-

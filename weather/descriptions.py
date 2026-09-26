@@ -16,4 +16,3 @@ def normalize_weather_description(description: object) -> str:
         "проливной дождь": "сильный дождь",
     }
     return replacements.get(lowered, text)
-

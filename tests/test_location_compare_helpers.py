@@ -130,4 +130,3 @@ def test_compatibility_functions_available_and_results_match():
     from_ai_compare = ai_compare.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
     from_helpers = helpers.format_ai_compare_day_summary_message(sample_payload, "01.05", 1)
     assert from_ai_compare == from_helpers
-

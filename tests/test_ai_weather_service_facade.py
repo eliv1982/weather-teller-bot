@@ -521,4 +521,3 @@ def test_postprocess_weather_alert_text_softens_route_and_comfort_phrases(monkey
     assert "ветер делает воздух прохладнее" in text
     assert "заметно влияет на комфорт" in text
     assert "маршрут под крышей" not in text.lower()
-

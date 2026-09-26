@@ -154,4 +154,3 @@ def test_compare_forecast_day_signature_has_stable_deterministic_version():
     assert result["selected_day"] == "05.05"
     assert result["location_1"]["label"] == "москва"
     assert result["location_2"]["label"] == "сочи"
-

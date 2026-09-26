@@ -625,4 +625,3 @@ class AiWeatherService:
 
     def _render_compare_forecast_factual(self, payload_1: dict, payload_2: dict, selected_day: str) -> str:
         return compare_render._render_compare_forecast_factual(self, payload_1, payload_2, selected_day)
-

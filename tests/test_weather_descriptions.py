@@ -39,4 +39,3 @@ def test_formatter_uses_normalized_description():
     )
     assert "небольшой кратковременный дождь" in text
     assert "небольшой проливной дождь" not in text
-

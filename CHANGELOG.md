@@ -14,4 +14,3 @@
 - Bumped compare-by-date cache signature version.
 - Removed `User_Data.json` from Git tracking and added it to `.gitignore`.
 - Verified deployment with Docker Compose.
-

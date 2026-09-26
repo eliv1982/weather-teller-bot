@@ -312,4 +312,3 @@ def _sorted_day_keys(day_keys: set[str]) -> list[str]:
         return sorted(day_keys, key=_to_date)
     except Exception:
         return sorted(day_keys)
-

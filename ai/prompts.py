@@ -469,4 +469,3 @@ def build_weather_alert_prompt(location_label: str, alert_payload: dict) -> str:
         f"Локация: {location_label}\n"
         f"Событие: {ai_alert_payload}"
     )
-

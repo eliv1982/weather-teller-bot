@@ -387,4 +387,3 @@ def postprocess_weather_alert_text(text: str) -> str:
     for src, dst in replacements.items():
         normalized = re.sub(rf"\b{re.escape(src)}\b", dst, normalized, flags=re.IGNORECASE)
     return normalized.strip()
-

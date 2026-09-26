@@ -19,4 +19,3 @@ def collect_inline_callback_data(markup) -> list[str]:
 
 
 TELEGRAM_CALLBACK_DATA_LIMIT = 64
-

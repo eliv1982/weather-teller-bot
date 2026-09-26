@@ -312,4 +312,3 @@ def compare_forecast_day_signature(payload_1: dict, payload_2: dict, selected_da
         "rain_slots_2": as_int((payload_2.get("precipitation_signal") or {}).get("rain_slots")),
         "max_pop_2": round_1((payload_2.get("precipitation_signal") or {}).get("max_pop")),
     }
-
